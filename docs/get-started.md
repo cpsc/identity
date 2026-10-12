@@ -356,6 +356,11 @@ Things to notice:
 - Users, passkeys and sessions are custom resources:
   `kubectl -n genkan-system get users,credentials,grants` (as cluster admin on the VM).
 
+## Next
+
+- [Sign in with GitHub](github-sign-in.md) as an alternative to the passkey for ordinary
+  access.
+
 ## Troubleshooting
 
 - **Browser shows a certificate error, or no passkey prompt:** the mkcert CA is not trusted

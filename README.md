@@ -72,6 +72,8 @@ Cargo.
 
 ## Install
 
+To try it end to end on a k3s VM, follow [docs/get-started.md](docs/get-started.md).
+
 ```sh
 genkanctl crds | kubectl apply -f -
 genkanctl manifests --issuer https://login.example.com --image <image@digest> | kubectl apply -f -

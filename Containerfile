@@ -4,6 +4,7 @@
 # Built by scripts/build-image.sh.
 FROM scratch
 COPY --chmod=0555 genkan /genkan
-COPY --chmod=0444 ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+# Modes come from the build context (directories 0755, bundle 0444); see build-image.sh.
+COPY etc /etc
 USER 65532:65532
 ENTRYPOINT ["/genkan"]

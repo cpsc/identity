@@ -13,7 +13,10 @@ context="$root/target/image"
 rm -rf "$context"
 mkdir -p "$context"
 cp "$root/target/$target/release/genkan" "$context/genkan"
-cp "${GENKAN_CA_BUNDLE:?run inside nix develop}" "$context/ca-certificates.crt"
+# Staged as a tree with explicit modes: `COPY --chmod` to a nested path also applies the mode to
+# the parent directories it creates, and a 0444 /etc cannot be traversed by the non-root user.
+install -d -m 0755 "$context/etc" "$context/etc/ssl" "$context/etc/ssl/certs"
+install -m 0444 "${GENKAN_CA_BUNDLE:?run inside nix develop}" "$context/etc/ssl/certs/ca-certificates.crt"
 docker build --file "$root/Containerfile" --tag "$tag" "$context"
 size=$(docker image inspect --format '{{.Size}}' "$tag")
 echo "image $tag: $size bytes"

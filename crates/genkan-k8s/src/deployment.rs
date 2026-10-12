@@ -220,6 +220,9 @@ pub fn deployment(namespace: &str, issuer: &BaseUrl, options: &Options) -> Deplo
                     security_context: Some(PodSecurityContext {
                         run_as_user: Some(RUN_AS),
                         run_as_group: Some(RUN_AS),
+                        // Secret volume files belong to root; without `fsGroup` the 0440 config
+                        // files are unreadable to this group. The kubelet gives them this group.
+                        fs_group: Some(RUN_AS),
                         run_as_non_root: Some(true),
                         seccomp_profile: Some(SeccompProfile {
                             type_: "RuntimeDefault".to_owned(),
@@ -311,6 +314,9 @@ mod tests {
         assert_eq!(container["volumeMounts"][0]["mountPath"], CONFIG_DIR);
         assert_eq!(container["volumeMounts"][0]["readOnly"], true);
         assert_eq!(pod["volumes"][0]["secret"]["secretName"], "genkan-config");
+        // The 0440 config files must be readable by the container's group.
+        assert_eq!(pod["volumes"][0]["secret"]["defaultMode"], 0o440);
+        assert_eq!(pod["securityContext"]["fsGroup"], RUN_AS);
         assert_eq!(
             container["env"][1]["valueFrom"]["fieldRef"]["fieldPath"],
             "metadata.namespace"

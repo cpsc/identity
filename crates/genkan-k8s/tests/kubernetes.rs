@@ -218,6 +218,16 @@ mod tests {
         grant
     }
 
+    fn user_object(name: &str) -> User {
+        User::new(
+            name,
+            UserSpec {
+                username: name.into(),
+                ..UserSpec::default()
+            },
+        )
+    }
+
     fn status_code(error: &kube::Error) -> Option<u16> {
         if let kube::Error::Api(status) = error {
             Some(status.code)
@@ -719,10 +729,7 @@ mod tests {
 
         let env = Env::new().await;
         env.admin_api::<User>()
-            .create(
-                &PostParams::default(),
-                &user_object("alice", "alice", &[], false),
-            )
+            .create(&PostParams::default(), &user_object("alice"))
             .await
             .unwrap();
         let store = KubeGrantStore::new(env.genkan_api());
@@ -1018,7 +1025,7 @@ mod tests {
         let secrets: Api<Secret> = env.genkan_api();
         let credential_store = KubeCredentialStore::new(credentials.clone());
         let grant_store = KubeGrantStore::new(grants.clone());
-        let user = user_object("alice", "alice", &[], false);
+        let user = user_object("alice");
         let pp = PostParams::default();
         let mut uid = users.create(&pp, &user).await.unwrap().uid().unwrap();
         let issuer = BaseUrl::parse("issuer", "https://login.example.com").unwrap();
@@ -1030,8 +1037,6 @@ mod tests {
             display_name: None,
             groups: vec![],
             elevated_groups: vec![],
-            email: None,
-            language: None,
         };
 
         // Setup precedes credentials; only GC, never reset, removes these dependents.
@@ -1292,10 +1297,6 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
     #[ignore = "needs a Kubernetes cluster (KUBECONFIG)"]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one end-to-end scenario reads best top to bottom"
-    )]
     async fn invitations_are_single_use_and_admin_only() {
         use genkan_k8s::crd::invitation::{Invitation, InvitationSpec};
         use genkan_k8s::invitations::{Invitee, invite};
@@ -1311,8 +1312,6 @@ mod tests {
             display_name: Some("Eve".into()),
             groups: vec!["dev".into()],
             elevated_groups: vec![],
-            email: None,
-            language: None,
         };
         let first = invite(
             env.admin.clone(),
@@ -1325,13 +1324,7 @@ mod tests {
         .await
         .unwrap();
         assert!(first.created_user);
-        let token = first
-            .url
-            .unwrap()
-            .split("#token=")
-            .nth(1)
-            .unwrap()
-            .to_owned();
+        let token = first.url.split("#token=").nth(1).unwrap().to_owned();
         assert!(token.starts_with(&format!("{}.", first.name)));
 
         let store = KubeSetupStore::new(env.genkan_api()).with_invitations(env.genkan_api());
@@ -1370,37 +1363,12 @@ mod tests {
         assert_eq!(consumed, 1);
         assert!(store.load(&token).await.unwrap().is_none());
 
-        // A mailed invitation has no usable token until Genkan records one.
-        let mailed = invite(
-            env.admin.clone(),
-            &env.namespace,
-            &issuer,
-            &Invitee {
-                email: Some("eve@example.com".into()),
-                ..invitee.clone()
-            },
-            Duration::from_hours(1),
-            t0,
-        )
-        .await
-        .unwrap();
-        assert!(mailed.url.is_none() && !mailed.created_user);
-        assert!(
-            store
-                .load(&format!("{}.anything", mailed.name))
-                .await
-                .unwrap()
-                .is_none()
-        );
-
         // Genkan's service account cannot mint invitations; admission rejects malformed ones.
         let forged = Invitation::new(
             "inv-forged",
             InvitationSpec {
                 user: "eve".into(),
-                email: None,
-                token_hash: Some(format!("sha256:{}", "a".repeat(64))),
-                language: None,
+                token_hash: format!("sha256:{}", "a".repeat(64)),
                 expires_at: 0,
             },
         );
@@ -1410,182 +1378,259 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(status_code(&error), Some(403), "{error}");
-        let neither = Invitation::new(
+        let malformed = Invitation::new(
             "inv-bad",
             InvitationSpec {
-                token_hash: None,
+                token_hash: "sha256:not-a-hash".into(),
                 ..forged.spec.clone()
             },
         );
         let error = env
             .admin_api::<Invitation>()
-            .create(&PostParams::default(), &neither)
+            .create(&PostParams::default(), &malformed)
             .await
             .unwrap_err();
         assert_eq!(status_code(&error), Some(422), "{error}");
         env.cleanup().await;
     }
 
-    /// Server-side apply of any object, as the admin.
-    async fn apply_any(client: &Client, value: serde_json::Value) {
-        use kube::api::{DynamicObject, Patch, PatchParams};
-        use kube::core::GroupVersionKind;
-        use kube::discovery::{Scope, pinned_kind};
-        let object: DynamicObject = serde_json::from_value(value).unwrap();
-        let gvk = GroupVersionKind::try_from(object.types.as_ref().unwrap()).unwrap();
-        let (resource, capabilities) = pinned_kind(client, &gvk).await.unwrap();
-        let api: Api<DynamicObject> = match capabilities.scope {
-            Scope::Namespaced => Api::namespaced_with(
-                client.clone(),
-                object.namespace().as_deref().unwrap(),
-                &resource,
-            ),
-            Scope::Cluster => Api::all_with(client.clone(), &resource),
-        };
-        api.patch(
-            &object.name_any(),
-            &PatchParams::apply("genkan-test").force(),
-            &Patch::Apply(&object),
+    /// Runs `kubectl` with `stdin`; returns whether it succeeded and its stderr.
+    fn kubectl(args: &[&str], stdin: &str) -> (bool, String) {
+        use std::io::Write as _;
+        use std::process::{Command, Stdio};
+        let mut child = Command::new("kubectl")
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("kubectl must be on PATH");
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(stdin.as_bytes())
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        (
+            output.status.success(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
         )
-        .await
-        .unwrap();
     }
 
-    fn user_object(name: &str, username: &str, groups: &[&str], scim: bool) -> User {
-        use genkan_k8s::users::{SCIM_SOURCE, SOURCE_LABEL};
-        let mut user = User::new(
-            name,
-            UserSpec {
-                username: username.into(),
-                groups: groups.iter().map(|g| (*g).into()).collect(),
-                ..UserSpec::default()
-            },
-        );
-        if scim {
-            user.metadata.labels = Some([(SOURCE_LABEL.to_owned(), SCIM_SOURCE.to_owned())].into());
-        }
-        user
-    }
-
+    /// The RBAC and admission policy in `docs/provisioning-users.md`, applied as written (with
+    /// this test's namespace), bound a sync tool that writes with server-side apply and merge
+    /// patches: PATCH reaches admission as CREATE or UPDATE.
     #[tokio::test]
     #[ignore = "needs a Kubernetes cluster (KUBECONFIG)"]
     #[expect(
         clippy::too_many_lines,
         reason = "one end-to-end scenario reads best top to bottom"
     )]
-    async fn scim_writes_are_bounded_by_the_admission_policy() {
-        use genkan_k8s::users::KubeUserAdmin;
-        use genkan_store::scim::{ManagedUser, UserAdmin as _, Write};
-
+    async fn provisioning_guide_policy_bounds_the_sync_tool() {
         let env = Env::new().await;
-        // Install SCIM's extra rules and policy, as `genkanctl rbac --scim --scim-group dev` does.
-        let mut role = env.admin_api::<Role>().get(rbac::NAME).await.unwrap();
-        role.rules = Some(
-            rbac::rules()
-                .into_iter()
-                .chain(rbac::scim_rules())
-                .collect(),
-        );
-        env.admin_api::<Role>()
-            .replace(rbac::NAME, &PostParams::default(), &role)
+        let ns = env.namespace.clone();
+        let policy = format!("genkan-user-sync-{ns}");
+        let guide = include_str!("../../../docs/provisioning-users.md");
+        let manifests = guide
+            .split("```yaml\n")
+            .skip(1)
+            .filter_map(|block| block.split("\n```").next())
+            .collect::<Vec<_>>()
+            .join("\n---\n")
+            .replace("genkan-system", &ns)
+            .replace("genkan-user-sync", &policy);
+        let (ok, stderr) = kubectl(&["apply", "-f", "-"], &manifests);
+        assert!(ok, "{stderr}");
+
+        // A user created by an admin, outside the tool's reach.
+        env.admin_api::<User>()
+            .create(
+                &PostParams::default(),
+                &User::new(
+                    "root",
+                    UserSpec {
+                        username: "root".into(),
+                        groups: vec!["admins".into()],
+                        ..UserSpec::default()
+                    },
+                ),
+            )
             .await
             .unwrap();
-        for object in rbac::scim_policy(&env.namespace, &["dev".to_owned()]) {
-            apply_any(&env.admin, object).await;
-        }
-        let users: Api<User> = env.genkan_api();
-        let pp = PostParams::default();
 
-        // The policy takes a moment to load; wait until it denies an unlabelled user.
-        let mut denied = None;
+        let as_tool = format!("--as=system:serviceaccount:{ns}:user-sync");
+        let user = |name: &str, username: &str, labelled: bool, spec: &str| {
+            let labels = if labelled {
+                "\n  labels: {genkan.engawahq.dev/source: directory}"
+            } else {
+                ""
+            };
+            format!(
+                "apiVersion: genkan.engawahq.dev/v1alpha1\nkind: User\nmetadata:\n  name: {name}\n  namespace: {ns}{labels}\nspec: {{username: {username}{spec}}}\n"
+            )
+        };
+
+        // `--force-conflicts`, as a compromised tool would: field ownership is not the boundary,
+        // admission is.
+        let apply = |manifest: &str| {
+            kubectl(
+                &[
+                    "apply",
+                    "--server-side",
+                    "--force-conflicts",
+                    "--field-manager=user-sync",
+                    &as_tool,
+                    "-f",
+                    "-",
+                ],
+                manifest,
+            )
+        };
+
+        // The policy takes a moment to reach the admission plugin: wait until it refuses.
+        let mallory = user("mallory", "mallory", true, ", elevatedGroups: [admins]");
+        let mut refused = None;
         for _ in 0..60 {
-            if let Err(error) = users
-                .create(&pp, &user_object("probe", "probe", &[], false))
-                .await
-            {
-                denied = status_code(&error);
+            let (ok, stderr) = apply(&mallory);
+            if !ok {
+                refused = Some(stderr);
                 break;
             }
-            env.admin_api::<User>()
-                .delete("probe", &DeleteParams::default())
-                .await
-                .unwrap();
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            kubectl(&["-n", &ns, "delete", "gkuser", "mallory"], "");
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
-        assert!(matches!(denied, Some(403 | 422)), "{denied:?}");
+        let refused = refused.expect("the policy never took effect");
+        assert!(
+            refused.contains("never assigns or changes elevated groups"),
+            "{refused}"
+        );
 
-        // Allowlisted groups on a labelled user: allowed.
-        let admin = KubeUserAdmin::new(env.genkan_api());
-        let Write::Done(created) = admin
-            .create(&ManagedUser {
-                name: "u-1".into(),
-                username: "alice@example.com".into(),
-                groups: vec!["dev".into()],
-                ..ManagedUser::default()
-            })
-            .await
-            .unwrap()
-        else {
-            panic!("create failed");
-        };
-        assert_eq!(created.username, "alice@example.com");
-
-        // Not allowlisted, or elevated: denied even with the label.
-        for forged in [user_object("u-2", "bob", &["admins"], true), {
-            let mut user = user_object("u-3", "carol", &["dev"], true);
-            user.spec.elevated_groups = vec!["admins".into()];
-            user
-        }] {
-            let error = users.create(&pp, &forged).await.unwrap_err();
-            assert!(matches!(status_code(&error), Some(403 | 422)), "{error}");
-        }
-        let widened = ManagedUser {
-            groups: vec!["ops".into()],
-            ..created.clone()
-        };
-        assert!(admin.replace(&widened).await.is_err());
-
-        // Users Genkan did not create through SCIM are out of reach.
-        env.admin_api::<User>()
-            .create(&pp, &user_object("root", "root", &["admins"], false))
-            .await
-            .unwrap();
-        assert!(admin.username_taken("root").await.unwrap());
-        assert!(admin.get("root").await.unwrap().is_none());
-        assert_eq!(admin.delete("root").await.unwrap(), Write::NotFound);
-        let error = users
-            .delete("root", &DeleteParams::default())
-            .await
-            .unwrap_err();
-        assert!(matches!(status_code(&error), Some(403 | 422)), "{error}");
-        let mut root = env.admin_api::<User>().get("root").await.unwrap();
-        root.spec.disabled = true;
-        let error = users.replace("root", &pp, &root).await.unwrap_err();
-        assert!(matches!(status_code(&error), Some(403 | 422)), "{error}");
-
-        // Its own users it can update and delete.
-        let deactivated = ManagedUser {
-            disabled: true,
-            ..created
-        };
-        assert!(matches!(
-            admin.replace(&deactivated).await.unwrap(),
-            Write::Done(_)
+        // Server-side apply: create (CREATE) and change (UPDATE) a managed user.
+        let (ok, stderr) = apply(&user("ana", "ana", true, ", groups: [dev]"));
+        assert!(ok, "{stderr}");
+        let (ok, stderr) = apply(&user(
+            "ana",
+            "ana",
+            true,
+            ", groups: [dev, ops], disabled: true",
         ));
-        assert!(matches!(admin.delete("u-1").await.unwrap(), Write::Done(_)));
+        assert!(ok, "{stderr}");
 
-        for object in rbac::scim_policy(&env.namespace, &[]) {
-            let name = object["metadata"]["name"].as_str().unwrap().to_owned();
-            let kind = object["kind"].as_str().unwrap().to_owned();
-            let api: Api<kube::api::DynamicObject> = Api::all_with(
-                env.admin.clone(),
-                &kube::discovery::ApiResource::from_gvk(&kube::core::GroupVersionKind::gvk(
-                    "admissionregistration.k8s.io",
-                    "v1",
-                    &kind,
-                )),
+        for (manifest, message) in [
+            (
+                user("ana", "ana", true, ", groups: [admins]"),
+                "only assign allowlisted groups",
+            ),
+            (
+                user("ana", "ana", false, ", groups: [dev]"),
+                "must keep the label",
+            ),
+            (user("bob", "bob", false, ""), "must keep the label"),
+            (user("eve", "root", true, ""), "must equal the username"),
+            (
+                user("root", "root", true, ", groups: [dev]"),
+                "only change users it created",
+            ),
+        ] {
+            let (ok, stderr) = apply(&manifest);
+            assert!(!ok && stderr.contains(message), "{manifest}\n{stderr}");
+        }
+
+        // A merge patch is admitted as UPDATE too.
+        let (ok, stderr) = kubectl(
+            &[
+                "-n",
+                &ns,
+                "patch",
+                "gkuser",
+                "root",
+                &as_tool,
+                "--type=merge",
+                "-p",
+                r#"{"spec":{"disabled":true}}"#,
+            ],
+            "",
+        );
+        assert!(
+            !ok && stderr.contains("only change users it created"),
+            "{stderr}"
+        );
+        let (ok, stderr) = kubectl(
+            &[
+                "-n",
+                &ns,
+                "patch",
+                "gkuser",
+                "ana",
+                &as_tool,
+                "--type=merge",
+                "-p",
+                r#"{"spec":{"elevatedGroups":["admins"]}}"#,
+            ],
+            "",
+        );
+        assert!(
+            !ok && stderr.contains("never assigns or changes elevated groups"),
+            "{stderr}"
+        );
+
+        // Elevated groups an admin adds to a managed user survive the tool's updates, which may
+        // neither drop nor change them.
+        let (ok, stderr) = kubectl(
+            &[
+                "-n",
+                &ns,
+                "patch",
+                "gkuser",
+                "ana",
+                "--type=merge",
+                "-p",
+                r#"{"spec":{"elevatedGroups":["admins"]}}"#,
+            ],
+            "",
+        );
+        assert!(ok, "{stderr}");
+        let (ok, stderr) = apply(&user("ana", "ana", true, ", groups: [dev]"));
+        assert!(ok, "{stderr}");
+        for manifest in [
+            user("ana", "ana", true, ", groups: [dev], elevatedGroups: []"),
+            user(
+                "ana",
+                "ana",
+                true,
+                ", groups: [dev], elevatedGroups: [admins, ops]",
+            ),
+        ] {
+            let (ok, stderr) = apply(&manifest);
+            assert!(
+                !ok && stderr.contains("never assigns or changes elevated groups"),
+                "{manifest}\n{stderr}"
             );
-            drop(api.delete(&name, &DeleteParams::default()).await);
+        }
+
+        // RBAC: no delete, nothing but users.
+        for args in [
+            vec!["-n", &ns, "delete", "gkuser", "ana", &as_tool],
+            vec!["-n", &ns, "get", "gkcred", &as_tool],
+            vec!["-n", &ns, "get", "gkinvite", &as_tool],
+            vec!["-n", &ns, "get", "secrets", &as_tool],
+        ] {
+            let (ok, stderr) = kubectl(&args, "");
+            assert!(!ok && stderr.contains("Forbidden"), "{args:?}\n{stderr}");
+        }
+
+        let root = env.admin_api::<User>().get("root").await.unwrap();
+        assert!(!root.spec.disabled);
+        let ana = env.admin_api::<User>().get("ana").await.unwrap();
+        assert_eq!(ana.spec.groups, ["dev"]);
+        assert_eq!(ana.spec.elevated_groups, ["admins"]);
+
+        for kind in [
+            "validatingadmissionpolicybinding",
+            "validatingadmissionpolicy",
+        ] {
+            kubectl(&["delete", kind, &policy], "");
         }
         env.cleanup().await;
     }

@@ -2,7 +2,7 @@
 //!
 //! Startup order: Kubernetes mode binds the internal port first, failing immediately if it is
 //! unavailable. Signing keys are then reconciled once, background tasks start (key rotation,
-//! garbage collection, optional mailer, internal TLS), and the public port is bound.
+//! garbage collection, internal TLS), and the public port is bound.
 //! With the Kubernetes store, if the API server becomes unreachable, Genkan keeps serving the
 //! last published keys; logins and refreshes that need a write fail closed, and the background
 //! tasks retry.
@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use axum::serve::Listener as _;
 use genkan_core::clock::SystemClock;
-use genkan_core::crypto::{Sealer, hash_secret};
+use genkan_core::crypto::Sealer;
 use genkan_k8s::crd::grant::Grant;
 use genkan_k8s::crd::invitation::Invitation;
 use genkan_k8s::credentials::KubeCredentialStore;
@@ -22,20 +22,16 @@ use genkan_k8s::gc;
 use genkan_k8s::grants::KubeGrantStore;
 use genkan_k8s::keys::SecretKeyStore;
 use genkan_k8s::setup::KubeSetupStore;
-use genkan_k8s::users::KubeUserAdmin;
 use genkan_keys::manager::{KeyManager, ManagerError};
 use genkan_keys::store::{KeyStore, MemoryKeyStore};
-use genkan_mail::Mailer;
 use genkan_oauth::discovery::ProviderMetadata;
 use genkan_oauth::metadata::{AppState, router};
 use genkan_oauth::{AuthorizationServer, OneTimeIds, endpoints};
-use genkan_scim::Scim;
 use genkan_signin::passkeys::Passkeys;
 use genkan_signin::upstream::http::HyperClient;
 use genkan_signin::upstream::provider::{Endpoints, Kind, Provider};
 use genkan_signin::upstream::{self, Upstream};
 use genkan_signin::{SignIn, pages};
-use genkan_store::scim::{MemoryUserAdmin, UserAdmin};
 use genkan_store::{
     CredentialStore, Directory, GrantStore, MemoryCredentialStore, MemoryDirectory,
     MemoryGrantStore, MemorySetupStore, SetupStore,
@@ -49,7 +45,7 @@ use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-use crate::config::{MailConfig, ServeConfig, Store};
+use crate::config::{ServeConfig, Store};
 use crate::internal::{self, InternalConfig};
 
 /// How often signing keys are reconciled. Rotation timings are hours to days, so a minute of
@@ -105,8 +101,7 @@ pub async fn serve(config: ServeConfig) -> Result<(), ServeError> {
                 MemoryCredentialStore::default(),
                 MemorySetupStore::default(),
             );
-            let scim = scim_router(&config, MemoryUserAdmin::default())?;
-            run(&config, stores, Vec::new(), None, scim, shutdown_tx).await
+            run(&config, stores, Vec::new(), None, shutdown_tx).await
         }
         Store::Kubernetes {
             namespace,
@@ -143,23 +138,8 @@ pub async fn serve(config: ServeConfig) -> Result<(), ServeError> {
                         gc::run::<Invitation, _>(client, &namespace, SystemClock, shutdown).await;
                     }
                 }));
-                if let Some(mail) = &config.mail {
-                    let mailer = mailer(mail)?;
-                    tracing::info!(?mailer, "mailing invitation links");
-                    background.push(tokio::spawn(crate::mailer::run_mailer(
-                        Api::namespaced(client.clone(), &namespace),
-                        mailer,
-                        config.issuer.clone(),
-                        SystemClock,
-                        shutdown_rx.clone(),
-                    )));
-                }
             }
             let internal_secrets = Api::namespaced(client.clone(), &namespace);
-            let scim = scim_router(
-                &config,
-                KubeUserAdmin::new(Api::namespaced(client.clone(), &namespace)),
-            )?;
             let gc = tokio::spawn({
                 let shutdown = shutdown_rx.clone();
                 async move { gc::run::<Grant, _>(client, &namespace, SystemClock, shutdown).await }
@@ -169,37 +149,11 @@ pub async fn serve(config: ServeConfig) -> Result<(), ServeError> {
                 (keys, directory, grants, credentials, setup),
                 background.into_iter().chain([gc]).collect(),
                 Some((internal_listener, resolver, internal_secrets)),
-                scim,
                 shutdown_tx,
             )
             .await
         }
     }
-}
-
-/// The SCIM routes, if SCIM is enabled: reads the token file and keeps only its hash.
-fn scim_router<A: UserAdmin>(
-    config: &ServeConfig,
-    users: A,
-) -> Result<Option<axum::Router>, ServeError> {
-    let Some(scim) = &config.scim else {
-        return Ok(None);
-    };
-    let token = std::fs::read_to_string(&scim.token_file)
-        .map_err(|error| ServeError::Config(format!("{}: {error}", scim.token_file.display())))?;
-    let token = token.trim();
-    if token.len() < 32 {
-        return Err(ServeError::Config(
-            "the SCIM token must be at least 32 characters".to_owned(),
-        ));
-    }
-    tracing::info!(groups = ?scim.groups, "SCIM provisioning enabled");
-    Ok(Some(genkan_scim::router(Arc::new(Scim {
-        users,
-        token_hash: hash_secret(token.as_bytes()),
-        groups: scim.groups.clone(),
-        base: config.issuer.join(genkan_scim::BASE_PATH),
-    }))))
 }
 
 /// The configured upstream providers, with their client secrets read from files.
@@ -231,23 +185,6 @@ fn upstream_providers(config: &ServeConfig) -> Result<Vec<Provider>, ServeError>
         .collect()
 }
 
-/// Builds the mailer: reads the password file and the trusted CAs.
-fn mailer(config: &MailConfig) -> Result<Mailer, ServeError> {
-    let password = config
-        .password_file
-        .as_ref()
-        .map(|path| {
-            std::fs::read_to_string(path)
-                .map(|p| p.trim_end_matches(['\r', '\n']).to_owned())
-                .map_err(|error| ServeError::Config(format!("{}: {error}", path.display())))
-        })
-        .transpose()?;
-    let roots = genkan_tls::trust::roots(config.ca_file.as_deref())
-        .map_err(|error| ServeError::Config(error.to_string()))?;
-    Mailer::new(&config.url, password, &config.from, roots)
-        .map_err(|error| ServeError::Config(error.to_string()))
-}
-
 /// Request limits applied to every route.
 fn limits(router: axum::Router) -> axum::Router {
     router
@@ -264,7 +201,6 @@ async fn run<S: KeyStore, D: Directory, G: GrantStore, K: CredentialStore, T: Se
     (keys, directory, grants, credentials, setup): (S, D, G, K, T),
     mut background: Vec<JoinHandle<()>>,
     internal_listener: Option<(TlsListener, Arc<Resolver>, Api<Secret>)>,
-    scim: Option<axum::Router>,
     shutdown_tx: watch::Sender<bool>,
 ) -> Result<(), ServeError> {
     let manager = Arc::new(KeyManager::new(keys, SystemClock, config.rotation));
@@ -340,9 +276,6 @@ async fn run<S: KeyStore, D: Directory, G: GrantStore, K: CredentialStore, T: Se
             http,
             used_states: OneTimeIds::default(),
         })));
-    }
-    if let Some(scim) = scim {
-        app = app.merge(scim);
     }
     let app = limits(app);
     let listener = TcpListener::bind(config.listen).await?;

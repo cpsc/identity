@@ -1,0 +1,42 @@
+[package]
+name = "genkan"
+description = "Passkey-first OpenID Connect issuer for Kubernetes: the server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+genkan-core.workspace = true
+genkan-keys.workspace = true
+genkan-store.workspace = true
+genkan-ui.workspace = true
+genkan-tls.workspace = true
+genkan-oauth.workspace = true
+genkan-signin.workspace = true
+genkan-mail.workspace = true
+genkan-scim.workspace = true
+genkan-k8s.workspace = true
+axum.workspace = true
+bytes.workspace = true
+clap.workspace = true
+k8s-openapi.workspace = true
+kube.workspace = true
+rustls.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+k8s-openapi.workspace = true
+rustls.workspace = true
+serde_json.workspace = true
+base64.workspace = true
+tokio-rustls.workspace = true

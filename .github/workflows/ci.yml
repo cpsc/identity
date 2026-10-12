@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTDOCFLAGS: -D warnings
+
+jobs:
+  check:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-26.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: format
+            run: cargo fmt --all --check && nixfmt --check flake.nix && shellcheck scripts/*.sh && actionlint
+          - name: clippy
+            run: cargo lint
+          - name: docs
+            run: cargo doc --workspace --no-deps --document-private-items --locked
+          - name: test
+            run: cargo nextest run --workspace --all-features --locked --no-tests=warn
+          - name: cargo-deny
+            run: cargo deny --locked check
+          - name: unsafe-report
+            run: ./scripts/unsafe-report.sh
+          # Sign-in page assets: committed output must match the sources, typecheck, and fit the budget.
+          - name: ui
+            run: ./scripts/build-ui.sh && git diff --exit-code -- crates/genkan-ui/assets && tsc -p ui && ./scripts/ui-budget.sh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@d0c908e6cbe9f89f36ed8205a3ab6f092636916a # v3.23.1
+      # rust-cache keys on `rustc -vV`: put the pinned toolchain from the dev shell on PATH first,
+      # otherwise it fails ("Command failed: rustc -vV") or keys on the image's rustc.
+      - run: dirname "$(nix develop --command bash -c 'command -v rustc')" >> "$GITHUB_PATH"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ${{ matrix.name }}
+      - run: nix develop --command bash -c '${{ matrix.run }}'
+      # act's artifact server (0.2.89) rejects upload-artifact v7 requests ("unknown field mime_type").
+      - if: matrix.name == 'unsafe-report' && always() && !env.ACT
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsafe-report
+          path: target/unsafe-report.md
+
+  kubernetes:
+    name: kubernetes (k3s ${{ matrix.k3s }})
+    runs-on: ubuntu-26.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        k3s: [v1.36.5-k3s1]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@d0c908e6cbe9f89f36ed8205a3ab6f092636916a # v3.23.1
+      # rust-cache keys on `rustc -vV`: put the pinned toolchain from the dev shell on PATH first,
+      # otherwise it fails ("Command failed: rustc -vV") or keys on the image's rustc.
+      - run: dirname "$(nix develop --command bash -c 'command -v rustc')" >> "$GITHUB_PATH"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: kubernetes
+      # kube-apiserver reads its AuthenticationConfiguration from a host directory, so the
+      # end-to-end test can install Genkan's (and remove it afterwards). It starts with no issuer.
+      - name: Start k3s
+        run: |
+          mkdir -p "$RUNNER_TEMP/authn"
+          printf 'apiVersion: apiserver.config.k8s.io/v1\nkind: AuthenticationConfiguration\nanonymous:\n  enabled: false\njwt: []\n' > "$RUNNER_TEMP/authn/authn.yaml"
+          nix develop --command k3d cluster create genkan --image "rancher/k3s:${{ matrix.k3s }}" --no-lb --wait --timeout 300s \
+            --volume "$RUNNER_TEMP/authn:/etc/rancher/k3s/genkan@server:0" \
+            --k3s-arg "--kube-apiserver-arg=authentication-config=/etc/rancher/k3s/genkan/authn.yaml@server:0"
+      - name: Integration tests
+        run: nix develop --command cargo nextest run --locked --run-ignored only -E 'binary(kubernetes)'
+      - name: Build the image
+        run: |
+          nix develop --command ./scripts/build-image.sh genkan:e2e
+          nix develop --command k3d image import genkan:e2e --cluster genkan
+      - name: End-to-end test (passkey sign-in, kubectl auth whoami)
+        env:
+          GENKAN_E2E_IMAGE: genkan:e2e
+          GENKAN_E2E_AUTHN_DIR: ${{ runner.temp }}/authn
+          GENKAN_E2E_MEASUREMENTS: ${{ runner.temp }}/measurements.json
+        run: nix develop --command cargo nextest run --locked --run-ignored only -E 'binary(e2e)'
+      - name: Report image size and memory
+        if: always()
+        run: |
+          {
+            echo "### Image size and memory (k3s ${{ matrix.k3s }})"
+            echo "| Measure | Bytes |"
+            echo "|---|---|"
+            echo "| Image \`genkan:e2e\` | $(docker image inspect --format '{{.Size}}' genkan:e2e 2>/dev/null || echo n/a) |"
+            echo "| Pod working set after a sign-in | $(jq -r .pod_working_set_bytes "$RUNNER_TEMP/measurements.json" 2>/dev/null || echo n/a) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  dco:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-26.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: ./scripts/check-dco.sh "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"

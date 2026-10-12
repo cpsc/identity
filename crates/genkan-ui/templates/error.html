@@ -1,0 +1,12 @@
+{%- extends "base.html" -%}
+{%- import "ui.html" as ui -%}
+{%- import "icons.html" as icons -%}
+{%- block title %}{{ m.error_title }}{% endblock -%}
+{%- block content %}
+{% call ui::card("w-full max-w-sm") %}
+  {{ ui::card_header(m.error_title, m.error_body) }}
+  {% call ui::card_content() %}
+  {% call ui::alert(m.error_detail_label, "destructive", "WarningCircle", live = "") %}<code class="break-words">{{ detail }}</code>{% endcall %}
+  {% endcall %}
+{% endcall %}
+{%- endblock %}

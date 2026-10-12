@@ -1,0 +1,19 @@
+[package]
+name = "genkan-store"
+description = "Genkan: storage interfaces (ports) for clients, users, grants, credentials and enrolment tokens, with in-memory adapters"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+
+[lints]
+workspace = true
+
+[dependencies]
+genkan-core.workspace = true
+genkan-keys.workspace = true
+schemars.workspace = true
+serde.workspace = true
+thiserror.workspace = true

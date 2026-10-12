@@ -1,0 +1,22 @@
+[package]
+name = "genkan-core"
+description = "Genkan: time, cryptographic helpers and configuration primitives shared by every crate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+
+[lints]
+workspace = true
+
+[dependencies]
+aws-lc-rs.workspace = true
+base64.workspace = true
+http.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

@@ -1,0 +1,14 @@
+{#- "Continue with GitHub/Google" buttons, shown only for configured providers. The page script
+    starts the flow (POST /upstream/<id>/start) and follows the returned URL. -#}
+{%- import "ui.html" as ui -%}
+{%- import "icons.html" as icons -%}
+{%- macro buttons(providers, m) -%}
+{%- if !providers.is_empty() %}
+{{ ui::field_separator(m.upstream_or) }}
+<div id="upstream" class="flex flex-col gap-2">
+  {%- for p in providers %}
+  <button type="button" data-provider="{{ p.id }}" class="{{ ui::button_cls("outline", "lg") }} w-full">{{ icons::icon(p.icon) }}{{ m.continue_with }} {{ p.label }}</button>
+  {%- endfor %}
+</div>
+{%- endif %}
+{%- endmacro -%}

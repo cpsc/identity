@@ -1,0 +1,772 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "apiextensions.k8s.io/v1",
+      "kind": "CustomResourceDefinition",
+      "metadata": {
+        "name": "users.genkan.engawahq.dev"
+      },
+      "spec": {
+        "group": "genkan.engawahq.dev",
+        "names": {
+          "categories": [
+            "genkan"
+          ],
+          "kind": "User",
+          "plural": "users",
+          "shortNames": [
+            "gkuser"
+          ],
+          "singular": "user"
+        },
+        "scope": "Namespaced",
+        "versions": [
+          {
+            "additionalPrinterColumns": [
+              {
+                "jsonPath": ".spec.username",
+                "name": "Username",
+                "type": "string"
+              },
+              {
+                "jsonPath": ".spec.disabled",
+                "name": "Disabled",
+                "type": "boolean"
+              },
+              {
+                "jsonPath": ".metadata.creationTimestamp",
+                "name": "Age",
+                "type": "date"
+              }
+            ],
+            "name": "v1alpha1",
+            "schema": {
+              "openAPIV3Schema": {
+                "description": "A person who can sign in to Genkan.",
+                "properties": {
+                  "spec": {
+                    "description": "A person who can sign in. The admin (or GitOps) owns `spec`; Genkan writes only `status`.\n\nKubernetes sees the user as `genkan:<username>` with groups `genkan:<group>`.",
+                    "properties": {
+                      "disabled": {
+                        "default": false,
+                        "description": "A disabled user cannot sign in, and refresh tokens stop working at their next use.",
+                        "type": "boolean"
+                      },
+                      "displayName": {
+                        "description": "Name shown in the UI.",
+                        "maxLength": 128,
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "elevatedGroups": {
+                        "description": "Groups the user can take on for a few minutes after a fresh passkey sign-in that asks for\nthe `elevate` scope, when elevation is enabled. Kubernetes sees each as\n`genkan:elevated:<group>`; bind powerful roles only to those names.",
+                        "items": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "pattern": "^[a-z0-9]([-a-z0-9._/]{0,126}[a-z0-9])?$",
+                          "type": "string"
+                        },
+                        "maxItems": 16,
+                        "type": "array"
+                      },
+                      "groups": {
+                        "description": "Groups. Kubernetes sees each as `genkan:<group>`. The characters exclude ':', so a group\ncan never spell a reserved or elevated name.",
+                        "items": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "pattern": "^[a-z0-9]([-a-z0-9._/]{0,126}[a-z0-9])?$",
+                          "type": "string"
+                        },
+                        "maxItems": 64,
+                        "type": "array"
+                      },
+                      "username": {
+                        "description": "Login name, lowercase; may be an email address. Kubernetes sees `genkan:<username>`.\nImmutable, because RBAC bindings and audit logs refer to it.",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "pattern": "^[a-z0-9]([-a-z0-9._@+]{0,126}[a-z0-9])?$",
+                        "type": "string",
+                        "x-kubernetes-validations": [
+                          {
+                            "message": "username is immutable",
+                            "rule": "self == oldSelf"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "username"
+                    ],
+                    "type": "object"
+                  },
+                  "status": {
+                    "description": "Runtime state written by Genkan through the status subresource.",
+                    "nullable": true,
+                    "properties": {
+                      "lastSignInAt": {
+                        "description": "When the user last signed in, in Unix seconds.",
+                        "format": "int64",
+                        "minimum": 0.0,
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "recoveryEpoch": {
+                        "default": 0,
+                        "description": "Incremented when a recovery or enrollment link is used, which invalidates every other\noutstanding link.",
+                        "format": "int64",
+                        "minimum": 0.0,
+                        "type": "integer"
+                      },
+                      "sessionEpoch": {
+                        "default": 0,
+                        "description": "Incremented to sign the user out of every browser session.",
+                        "format": "int64",
+                        "minimum": 0.0,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "spec"
+                ],
+                "title": "User",
+                "type": "object"
+              }
+            },
+            "selectableFields": [
+              {
+                "jsonPath": ".spec.username"
+              }
+            ],
+            "served": true,
+            "storage": true,
+            "subresources": {
+              "status": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "apiextensions.k8s.io/v1",
+      "kind": "CustomResourceDefinition",
+      "metadata": {
+        "name": "credentials.genkan.engawahq.dev"
+      },
+      "spec": {
+        "group": "genkan.engawahq.dev",
+        "names": {
+          "categories": [
+            "genkan"
+          ],
+          "kind": "Credential",
+          "plural": "credentials",
+          "shortNames": [
+            "gkcred"
+          ],
+          "singular": "credential"
+        },
+        "scope": "Namespaced",
+        "versions": [
+          {
+            "additionalPrinterColumns": [
+              {
+                "jsonPath": ".spec.user",
+                "name": "User",
+                "type": "string"
+              },
+              {
+                "jsonPath": ".spec.type",
+                "name": "Type",
+                "type": "string"
+              },
+              {
+                "jsonPath": ".metadata.creationTimestamp",
+                "name": "Age",
+                "type": "date"
+              }
+            ],
+            "name": "v1alpha1",
+            "schema": {
+              "openAPIV3Schema": {
+                "description": "A passkey or linked upstream identity of a Genkan user.",
+                "properties": {
+                  "spec": {
+                    "description": "A way for a `User` to sign in.\n\nThe object name is derived from the credential's unique key (`c-` + hex SHA-256 of the\npasskey credential ID, or of the upstream issuer and subject), so creating a duplicate fails\nwith `409 AlreadyExists`. That is the uniqueness check WebAuthn Level 3 §7.1 asks for, and\nit holds across replicas. The spec is immutable; revoking is deleting.",
+                    "properties": {
+                      "external": {
+                        "description": "Upstream identity, when `type` is `GitHub` or `Google`.",
+                        "nullable": true,
+                        "properties": {
+                          "issuer": {
+                            "description": "Upstream issuer.",
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "subject": {
+                            "description": "Upstream subject: the stable account ID, never an email address.",
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "issuer",
+                          "subject"
+                        ],
+                        "type": "object"
+                      },
+                      "passkey": {
+                        "description": "Passkey details, when `type` is `Passkey`.",
+                        "nullable": true,
+                        "properties": {
+                          "aaguid": {
+                            "description": "Authenticator model (AAGUID), when the authenticator reports one.",
+                            "nullable": true,
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                            "type": "string"
+                          },
+                          "backupEligible": {
+                            "default": false,
+                            "description": "Whether the credential may be synced to other devices (BE flag).",
+                            "type": "boolean"
+                          },
+                          "credentialId": {
+                            "description": "Credential ID, base64url.",
+                            "maxLength": 1366,
+                            "minLength": 1,
+                            "pattern": "^[A-Za-z0-9_-]+$",
+                            "type": "string"
+                          },
+                          "label": {
+                            "description": "User-chosen label, for example \"MacBook\".",
+                            "maxLength": 64,
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "record": {
+                            "description": "The relying party's stored credential record, as serialized by the WebAuthn library\n(public key, algorithm, flags). Opaque to Kubernetes.",
+                            "maxLength": 16384,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "credentialId",
+                          "record"
+                        ],
+                        "type": "object"
+                      },
+                      "type": {
+                        "description": "Kind of credential.",
+                        "enum": [
+                          "Passkey",
+                          "GitHub",
+                          "Google"
+                        ],
+                        "type": "string"
+                      },
+                      "user": {
+                        "description": "Name of the `User` object.",
+                        "maxLength": 253,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "user"
+                    ],
+                    "type": "object",
+                    "x-kubernetes-validations": [
+                      {
+                        "message": "credentials are immutable; delete and re-enrol instead",
+                        "rule": "self == oldSelf"
+                      },
+                      {
+                        "message": "passkey is set exactly when type is Passkey",
+                        "rule": "(self.type == 'Passkey') == has(self.passkey)"
+                      },
+                      {
+                        "message": "external is set exactly when type is GitHub or Google",
+                        "rule": "(self.type != 'Passkey') == has(self.external)"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "spec"
+                ],
+                "title": "Credential",
+                "type": "object"
+              }
+            },
+            "selectableFields": [
+              {
+                "jsonPath": ".spec.user"
+              }
+            ],
+            "served": true,
+            "storage": true
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "apiextensions.k8s.io/v1",
+      "kind": "CustomResourceDefinition",
+      "metadata": {
+        "name": "oauthclients.genkan.engawahq.dev"
+      },
+      "spec": {
+        "group": "genkan.engawahq.dev",
+        "names": {
+          "categories": [
+            "genkan"
+          ],
+          "kind": "OAuthClient",
+          "plural": "oauthclients",
+          "shortNames": [
+            "gkclient"
+          ],
+          "singular": "oauthclient"
+        },
+        "scope": "Namespaced",
+        "versions": [
+          {
+            "additionalPrinterColumns": [
+              {
+                "jsonPath": ".spec.type",
+                "name": "Type",
+                "type": "string"
+              },
+              {
+                "jsonPath": ".metadata.creationTimestamp",
+                "name": "Age",
+                "type": "date"
+              }
+            ],
+            "name": "v1alpha1",
+            "schema": {
+              "openAPIV3Schema": {
+                "description": "An OAuth 2.0 / OpenID Connect client registered with Genkan.",
+                "properties": {
+                  "spec": {
+                    "description": "A registered OAuth 2.0 / OpenID Connect client. The object name is the `client_id`.\n\nAdmission rules reject redirect URIs that RFC 9700 §2.1 and OAuth 2.1 forbid, so a\nmistake in a GitOps repository fails at `kubectl apply`, not at login.",
+                    "properties": {
+                      "audiences": {
+                        "description": "Audiences this client may request tokens for (RFC 8707 resource indicators), for example\nthe `audiences` entry of the cluster's AuthenticationConfiguration.",
+                        "items": {
+                          "maxLength": 256,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 16,
+                        "type": "array"
+                      },
+                      "displayName": {
+                        "description": "Name shown on the consent and login pages.",
+                        "maxLength": 128,
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "idTokenSigningAlg": {
+                        "description": "A JWS signing algorithm this issuer uses.\n\nkube-apiserver accepts only the RS, ES and PS families ([kube-apiserver OIDC]), so EdDSA is\nnot offered. ES256 is the default for every token: smaller tokens and faster signing than\nRS256, and [RFC 7518] §3.1 marks it \"Recommended+\". RS256 exists only because\n[OIDC Discovery] §3 requires it in `id_token_signing_alg_values_supported`.\n\n[kube-apiserver OIDC]: https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/plugin/pkg/authenticator/token/oidc/oidc.go\n[RFC 7518]: https://www.rfc-editor.org/rfc/rfc7518\n[OIDC Discovery]: https://openid.net/specs/openid-connect-discovery-1_0.html",
+                        "enum": [
+                          "ES256",
+                          "RS256"
+                        ],
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "redirectUris": {
+                        "description": "Redirect URIs, compared by exact string match. Each is `https://`, or\n`http://127.0.0.1` / `http://[::1]` for native apps (RFC 8252 §7.3); no fragment.",
+                        "items": {
+                          "maxLength": 2048,
+                          "pattern": "^(https://[^#\\s]+|http://(127\\.0\\.0\\.1|\\[::1\\])(:[0-9]{1,5})?/[^#\\s]*)$",
+                          "type": "string"
+                        },
+                        "maxItems": 16,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "secretHash": {
+                        "description": "SHA-256 of the client secret, as `sha256:<64 hex digits>`. The secret itself is never\nstored.",
+                        "nullable": true,
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "type": {
+                        "description": "Public clients (kubectl, native apps) cannot keep a secret; confidential clients can.",
+                        "enum": [
+                          "Public",
+                          "Confidential"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "redirectUris",
+                      "type"
+                    ],
+                    "type": "object",
+                    "x-kubernetes-validations": [
+                      {
+                        "message": "secretHash is required for confidential clients and forbidden for public clients",
+                        "rule": "(self.type == 'Confidential') == has(self.secretHash)"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "spec"
+                ],
+                "title": "OAuthClient",
+                "type": "object"
+              }
+            },
+            "served": true,
+            "storage": true
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "apiextensions.k8s.io/v1",
+      "kind": "CustomResourceDefinition",
+      "metadata": {
+        "name": "grants.genkan.engawahq.dev"
+      },
+      "spec": {
+        "group": "genkan.engawahq.dev",
+        "names": {
+          "categories": [
+            "genkan"
+          ],
+          "kind": "Grant",
+          "plural": "grants",
+          "shortNames": [
+            "gkgrant"
+          ],
+          "singular": "grant"
+        },
+        "scope": "Namespaced",
+        "versions": [
+          {
+            "additionalPrinterColumns": [
+              {
+                "jsonPath": ".spec.user",
+                "name": "User",
+                "type": "string"
+              },
+              {
+                "jsonPath": ".spec.client",
+                "name": "Client",
+                "type": "string"
+              },
+              {
+                "jsonPath": ".status.rotation",
+                "name": "Rotations",
+                "type": "integer"
+              },
+              {
+                "jsonPath": ".metadata.creationTimestamp",
+                "name": "Age",
+                "type": "date"
+              }
+            ],
+            "name": "v1alpha1",
+            "schema": {
+              "openAPIV3Schema": {
+                "description": "A refresh-token family issued by Genkan.",
+                "properties": {
+                  "spec": {
+                    "description": "One login's refresh-token family.\n\nCreated when an authorization code is redeemed; every refresh rotates the token with one\ncompare-and-swap on `status`; reuse of an old token deletes the object, which revokes the\nwhole family. Deleting it by hand is how an admin revokes a session\n(`kubectl delete grant`, or `-l genkan.engawahq.dev/user=<user>` for all of a user's).\nOnly hashes are stored.",
+                    "properties": {
+                      "amr": {
+                        "description": "Authentication methods (RFC 8176 values).",
+                        "items": {
+                          "maxLength": 32,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 8,
+                        "type": "array"
+                      },
+                      "audience": {
+                        "description": "Audience of the tokens issued from this grant.",
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "authTime": {
+                        "description": "When the user authenticated, in Unix seconds (OIDC `auth_time`).",
+                        "format": "int64",
+                        "minimum": 0.0,
+                        "type": "integer"
+                      },
+                      "client": {
+                        "description": "Name of the `OAuthClient` object (the `client_id`).",
+                        "maxLength": 253,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "expiresAt": {
+                        "description": "Absolute expiry, in Unix seconds. The family cannot be refreshed after this.",
+                        "format": "int64",
+                        "minimum": 0.0,
+                        "type": "integer"
+                      },
+                      "initialHash": {
+                        "description": "`sha256:<hex>` of the first refresh token. Valid until the first rotation writes `status`,\nso creating a family is one write.",
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "initialIdleExpiresAt": {
+                        "description": "Idle expiry until the first rotation writes `status`, in Unix seconds.",
+                        "format": "int64",
+                        "minimum": 0.0,
+                        "type": "integer"
+                      },
+                      "scopes": {
+                        "description": "Granted scopes.",
+                        "items": {
+                          "maxLength": 64,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 16,
+                        "type": "array"
+                      },
+                      "user": {
+                        "description": "Name of the `User` object.",
+                        "maxLength": 253,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "audience",
+                      "authTime",
+                      "client",
+                      "expiresAt",
+                      "initialHash",
+                      "initialIdleExpiresAt",
+                      "user"
+                    ],
+                    "type": "object",
+                    "x-kubernetes-validations": [
+                      {
+                        "message": "a grant's spec is immutable",
+                        "rule": "self == oldSelf"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "description": "Rotation state, changed only through compare-and-swap.",
+                    "nullable": true,
+                    "properties": {
+                      "currentHash": {
+                        "description": "`sha256:<hex>` of the refresh token that is currently valid.",
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "idleExpiresAt": {
+                        "default": 0,
+                        "description": "Idle expiry, in Unix seconds; pushed forward by each rotation.",
+                        "format": "int64",
+                        "minimum": 0.0,
+                        "type": "integer"
+                      },
+                      "previousHash": {
+                        "description": "`sha256:<hex>` of the previous token, kept to tell a replay from a forgery.",
+                        "nullable": true,
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "rotation": {
+                        "default": 0,
+                        "description": "Number of rotations so far.",
+                        "format": "int64",
+                        "minimum": 0.0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "currentHash"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "spec"
+                ],
+                "title": "Grant",
+                "type": "object"
+              }
+            },
+            "selectableFields": [
+              {
+                "jsonPath": ".spec.user"
+              }
+            ],
+            "served": true,
+            "storage": true,
+            "subresources": {
+              "status": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "apiextensions.k8s.io/v1",
+      "kind": "CustomResourceDefinition",
+      "metadata": {
+        "name": "invitations.genkan.engawahq.dev"
+      },
+      "spec": {
+        "group": "genkan.engawahq.dev",
+        "names": {
+          "categories": [
+            "genkan"
+          ],
+          "kind": "Invitation",
+          "plural": "invitations",
+          "shortNames": [
+            "gkinvite"
+          ],
+          "singular": "invitation"
+        },
+        "scope": "Namespaced",
+        "versions": [
+          {
+            "additionalPrinterColumns": [
+              {
+                "jsonPath": ".spec.user",
+                "name": "User",
+                "type": "string"
+              },
+              {
+                "jsonPath": ".spec.email",
+                "name": "Email",
+                "type": "string"
+              },
+              {
+                "jsonPath": ".metadata.creationTimestamp",
+                "name": "Age",
+                "type": "date"
+              }
+            ],
+            "name": "v1alpha1",
+            "schema": {
+              "openAPIV3Schema": {
+                "description": "A one-time passkey enrolment link for a Genkan user.",
+                "properties": {
+                  "spec": {
+                    "description": "A one-time enrolment link for a `User`, created by an admin (`genkanctl invite`).\n\nThe link carries `<invitation name>.<secret>`; only the SHA-256 of that token is stored. It\nworks once: redeeming deletes the object with UID and resourceVersion preconditions before\nthe passkey is stored, so exactly one of any number of concurrent redemptions succeeds. When\n`email` is set and Genkan can send mail, Genkan generates the token, records its hash in\n`status`, and mails the link; otherwise the admin's CLI generates it and records the hash in\n`spec`. Expired invitations are deleted by the garbage collector.",
+                    "properties": {
+                      "email": {
+                        "description": "Address Genkan mails the link to.",
+                        "maxLength": 254,
+                        "minLength": 3,
+                        "nullable": true,
+                        "pattern": "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$",
+                        "type": "string"
+                      },
+                      "expiresAt": {
+                        "description": "When the link stops working, in Unix seconds.",
+                        "format": "int64",
+                        "minimum": 0.0,
+                        "type": "integer"
+                      },
+                      "language": {
+                        "description": "Language of the email: `en`, `zh-TW` or `zh-CN`.",
+                        "nullable": true,
+                        "pattern": "^(en|zh-TW|zh-CN)$",
+                        "type": "string"
+                      },
+                      "tokenHash": {
+                        "description": "`sha256:<hex>` of the token, when the CLI generated the link.",
+                        "nullable": true,
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "user": {
+                        "description": "Name of the `User` object the invitation enrols a passkey for.",
+                        "maxLength": 253,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "expiresAt",
+                      "user"
+                    ],
+                    "type": "object",
+                    "x-kubernetes-validations": [
+                      {
+                        "message": "an invitation's spec is immutable",
+                        "rule": "self == oldSelf"
+                      },
+                      {
+                        "message": "set exactly one of email (Genkan mails the link) and tokenHash (the link was generated by the CLI)",
+                        "rule": "has(self.email) != has(self.tokenHash)"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "description": "What Genkan recorded when it mailed the link.",
+                    "nullable": true,
+                    "properties": {
+                      "sentAt": {
+                        "description": "When the mail was sent, in Unix seconds.",
+                        "format": "int64",
+                        "minimum": 0.0,
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "tokenHash": {
+                        "description": "`sha256:<hex>` of the token Genkan generated and mailed.",
+                        "nullable": true,
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object",
+                    "x-kubernetes-validations": [
+                      {
+                        "message": "a recorded token hash cannot change",
+                        "rule": "!has(oldSelf.tokenHash) || (has(self.tokenHash) && self.tokenHash == oldSelf.tokenHash)"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "spec"
+                ],
+                "title": "Invitation",
+                "type": "object"
+              }
+            },
+            "selectableFields": [
+              {
+                "jsonPath": ".spec.user"
+              }
+            ],
+            "served": true,
+            "storage": true,
+            "subresources": {
+              "status": {}
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "kind": "List"
+}

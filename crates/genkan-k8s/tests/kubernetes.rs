@@ -718,6 +718,13 @@ mod tests {
         use genkan_store::{CreateGrant, GrantStore, Rotation};
 
         let env = Env::new().await;
+        env.admin_api::<User>()
+            .create(
+                &PostParams::default(),
+                &user_object("alice", "alice", &[], false),
+            )
+            .await
+            .unwrap();
         let store = KubeGrantStore::new(env.genkan_api());
         let t0 = now();
         let idle = UnixTime::from_secs(t0 + 1800);
@@ -981,6 +988,156 @@ mod tests {
         ]))
         .await;
         assert_eq!(status, 400);
+        env.cleanup().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "needs a Kubernetes cluster (KUBECONFIG)"]
+    #[expect(clippy::too_many_lines, reason = "one User lifecycle scenario")]
+    async fn user_recreation_collects_only_the_original_users_dependents() {
+        use base64::Engine as _;
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        use genkan_core::clock::UnixTime;
+        use genkan_core::config::BaseUrl;
+        use genkan_k8s::crd::credential::Credential;
+        use genkan_k8s::crd::invitation::Invitation;
+        use genkan_k8s::credentials::KubeCredentialStore;
+        use genkan_k8s::grants::KubeGrantStore;
+        use genkan_k8s::invitations::{Invitee, invite};
+        use genkan_k8s::setup::{SETUP_SECRET, issue_setup_link};
+        use genkan_store::{
+            CredentialStore as _, CredentialType, GrantStore as _, NewExternal, NewPasskey,
+            external_credential_name, passkey_credential_name,
+        };
+
+        let env = Env::new().await;
+        let users: Api<User> = env.admin_api();
+        let credentials: Api<Credential> = env.genkan_api();
+        let grants: Api<Grant> = env.genkan_api();
+        let invitations: Api<Invitation> = env.genkan_api();
+        let secrets: Api<Secret> = env.genkan_api();
+        let credential_store = KubeCredentialStore::new(credentials.clone());
+        let grant_store = KubeGrantStore::new(grants.clone());
+        let user = user_object("alice", "alice", &[], false);
+        let pp = PostParams::default();
+        let mut uid = users.create(&pp, &user).await.unwrap().uid().unwrap();
+        let issuer = BaseUrl::parse("issuer", "https://login.example.com").unwrap();
+        let t0 = now();
+        let time = UnixTime::from_secs(t0);
+        let valid_for = Duration::from_hours(1);
+        let invitee = Invitee {
+            username: "alice".into(),
+            display_name: None,
+            groups: vec![],
+            elevated_groups: vec![],
+            email: None,
+            language: None,
+        };
+
+        // Setup precedes credentials; only GC, never reset, removes these dependents.
+        issue_setup_link(
+            env.admin.clone(),
+            &env.namespace,
+            &issuer,
+            "alice",
+            valid_for,
+            false,
+            time,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            secrets.get(SETUP_SECRET).await.unwrap().owner_references()[0].uid,
+            uid
+        );
+
+        let mut original = None;
+        for (generation, digit) in [("old", "1"), ("fresh", "2")] {
+            let passkey = NewPasskey {
+                name: passkey_credential_name(generation.as_bytes()),
+                user: "alice".into(),
+                credential_id: URL_SAFE_NO_PAD.encode(generation.as_bytes()),
+                record: "{}".into(),
+                label: None,
+            };
+            credential_store.create(&passkey).await.unwrap();
+            let external = NewExternal {
+                name: external_credential_name("https://github.com", generation),
+                user: "alice".into(),
+                kind: CredentialType::GitHub,
+                issuer: "https://github.com".into(),
+                subject: generation.into(),
+            };
+            credential_store.link(&external).await.unwrap();
+            let grant = format!("g-{}", digit.repeat(64));
+            grant_store
+                .create(&new_grant(&grant, t0), UnixTime::from_secs(t0 + 1800))
+                .await
+                .unwrap();
+            let invitation = invite(
+                env.admin.clone(),
+                &env.namespace,
+                &issuer,
+                &invitee,
+                valid_for,
+                time,
+            )
+            .await
+            .unwrap();
+            let metadata = [
+                credentials.get(&passkey.name).await.unwrap().metadata,
+                credentials.get(&external.name).await.unwrap().metadata,
+                grants.get(&grant).await.unwrap().metadata,
+                invitations.get(&invitation.name).await.unwrap().metadata,
+            ];
+            for object in metadata {
+                assert_eq!(object.owner_references.unwrap()[0].uid, uid);
+            }
+            if generation == "old" {
+                original = Some((passkey.name, external.name, grant, invitation.name));
+                users
+                    .delete("alice", &DeleteParams::background())
+                    .await
+                    .unwrap();
+                // Recreate immediately, without waiting for GC of the original dependents.
+                let replacement = users.create(&pp, &user).await.unwrap().uid().unwrap();
+                assert_ne!(replacement, uid);
+                uid = replacement;
+            } else {
+                // Wait for all old objects together; fresh ones must remain after collection.
+                let (old_passkey, old_external, old_grant, old_invitation) =
+                    original.as_ref().unwrap();
+                tokio::time::timeout(Duration::from_secs(120), async {
+                    loop {
+                        if credentials.get_opt(old_passkey).await.unwrap().is_none()
+                            && credentials.get_opt(old_external).await.unwrap().is_none()
+                            && grants.get_opt(old_grant).await.unwrap().is_none()
+                            && invitations.get_opt(old_invitation).await.unwrap().is_none()
+                            && secrets.get_opt(SETUP_SECRET).await.unwrap().is_none()
+                        {
+                            break;
+                        }
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                })
+                .await
+                .expect("the original User's dependents were not garbage-collected");
+                assert_eq!(users.get("alice").await.unwrap().uid().unwrap(), uid);
+                assert_eq!(
+                    credentials.get(&passkey.name).await.unwrap().spec.user,
+                    "alice"
+                );
+                assert_eq!(
+                    credentials.get(&external.name).await.unwrap().spec.user,
+                    "alice"
+                );
+                assert_eq!(grants.get(&grant).await.unwrap().spec.user, "alice");
+                assert_eq!(
+                    invitations.get(&invitation.name).await.unwrap().spec.user,
+                    "alice"
+                );
+            }
+        }
         env.cleanup().await;
     }
 

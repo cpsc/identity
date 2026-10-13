@@ -102,7 +102,7 @@ fn render(status: StatusCode, page: &impl Template) -> Response {
     let mut response = match page.render() {
         Ok(html) => (status, Html(html)).into_response(),
         Err(error) => {
-            tracing::error!(%error, "rendering a page failed");
+            tracing::error!(%error, reason = "page_render_failed", "rendering a page failed");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     };

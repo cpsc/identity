@@ -45,7 +45,7 @@ async fn login<D: Directory, G: GrantStore, C: Clock>(
             Ok(Some(client)) => Some(client.display_name.unwrap_or(client.id)),
             Ok(None) => None,
             Err(error) => {
-                tracing::error!(%error, "client lookup failed");
+                tracing::error!(reason = "client_lookup_failed", %error, "client lookup failed");
                 None
             }
         },

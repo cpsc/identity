@@ -54,8 +54,79 @@ Nothing depends on it.
   kube-apiserver cannot revoke them; elevated tokens at most 15 minutes. Signing keys stay
   published longer than the longest token, and the JWK set's `max-age` is shorter than the
   publish-ahead time.
-- **Logs** are JSON on stderr; `GENKAN_LOG` takes `target=level` directives. SIGTERM drains
-  in-flight requests and stops background tasks before exit.
+- **Logs** mix authentication/security events and operational/dependency diagnostics on
+  stdout. SIGTERM drains in-flight requests and stops background tasks before exit.
+
+## Logging
+
+The server defaults to native tracing JSON: one object per line with `timestamp`, `level`,
+`target` and nested `fields`. JSON omits current span and span-list fields. This is not OTLP
+JSON, syslog, ECS or OCSF. `--log-format text` (or `GENKAN_LOG_FORMAT=text`) explicitly selects
+operator-facing text; ANSI is disabled in both formats. Native text can render enclosing span
+context and does not provide the JSON span-omission contract. Use JSON for structured audit
+ingestion. Owned spans must not carry credential material; inherited dependency span context
+is outside the audit event-field guarantee. Clap help, version and syntax diagnostics and
+`genkanctl` machine-readable stdout are unchanged.
+
+Without `GENKAN_LOG`, the native `Targets` filter is `warn,genkan=info`: Genkan INFO and
+dependency WARN/ERROR. A supplied value replaces the **complete** filter, including an empty
+value; it is not merged with defaults. `rustls=debug` does not preserve Genkan INFO or unrelated
+WARN diagnostics; use `warn,genkan=info,rustls=debug` to admit both. `genkan::audit=info` selects
+audit independently of module diagnostics. Native target-prefix and target-only semantics apply.
+Invalid directives or non-UTF-8 overrides fall back to `warn,genkan=info` with `reason="invalid_filter"`, without
+echoing the supplied value or parser error. `GENKAN_LOG=off` is allowed.
+
+Authentication/security events use exactly `target="genkan::audit"` with business fields
+`event`, `outcome` (`success` or `failure`) and optional fixed `reason`. Severity is independent
+of outcome. Passkey options and upstream start describe accepted requests, not completed
+sign-ins. `auth.sign_in` succeeds only after local authorization completes;
+`auth.passkey_enrollment` has start/finish phases; `auth.account_link` succeeds after credential
+creation. Invalid pending upstream state remains `auth.upstream_callback`. OAuth code exchange,
+refresh and revocation are distinct operations, never fresh sign-ins; token issuance succeeds
+only after signing. Revocation success with reason `accepted` includes RFC 7009 no-ops and does
+not prove a token existed. Replay/client-binding events describe detection before attempted
+deletion, not successful revocation.
+
+Optional `user` is the verified local User object name; `subject` is its local UID, not an
+upstream subject; `client` is an authenticated OAuth client. Unknown identity is omitted.
+Passkey sign-in identity is recorded only after assertion verification; a known credential ID
+alone does not attribute an attempt to its owner. Pre-verification rejections, including disabled
+users, omit identity.
+Setup-token-validated names may have no subject. Method/provider/reason values are controlled.
+Audit targeting intentionally loses the original Rust module target; no duplicate module field
+is added. Operational and dependency diagnostics retain their native targets and need not have
+business fields. Audit event fields omit raw errors and credential/token material. Owned operational
+diagnostics retain categorical reasons plus complete error details for troubleshooting.
+**Operational and dependency diagnostics have no no-secrets guarantee**: error text can include
+backend response details or sensitive data, even at WARN/ERROR. DEBUG/TRACE may expose more.
+Filtering or routing to the audit target does not remove earlier exposure in the mixed stream.
+
+Select successful fresh sign-ins from a JSON stream:
+
+```sh
+jq -c 'select(.target == "genkan::audit" and .fields.event == "auth.sign_in" and .fields.outcome == "success") | {timestamp, user: .fields.user, subject: .fields.subject, method: .fields.method, provider: .fields.provider}'
+```
+
+To derive a last *observed* sign-in, compare parsed source timestamps within one configured
+identity domain. Missing records do not prove that a user never signed in.
+
+An optional downstream [Vector route] can parse the container payload as JSON and route target
+exactly `genkan::audit` to security/audit storage, and other targets to operational/dependency
+storage. Retain and monitor parse failures and unusable envelopes/targets on an error route;
+do not silently drop them. Routing needs no schema version, complete business-field validation,
+`log_kind`, or level/message heuristic. Preserve dependency fields without synthesizing
+`event`/`outcome`. Target classification is metadata, not cryptographic provenance. If a collector
+maps target to `log.logger` or an instrumentation scope, the audit scope is `genkan::audit`.
+No collector deployment or exporter is bundled.
+
+Secure access, transport, buffering and retention for the **whole** mixed stream. Collector
+redaction cannot undo earlier container-log/buffer exposure. This is best-effort event history,
+not native Kubernetes audit, durable/complete storage, delivery acknowledgement or tamper
+evidence. Filtering, crashes, retries, collection and retention can omit or duplicate records;
+it is not an always-on compliance audit facility. No trace SDK, request/flow ID, event UUID,
+hash chain or audit database is added.
+
+[Vector route]: https://vector.dev/docs/reference/configuration/transforms/route/
 
 ## References
 

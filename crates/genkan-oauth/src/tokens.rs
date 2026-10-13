@@ -98,7 +98,11 @@ fn signer(
     now: UnixTime,
 ) -> Result<std::sync::Arc<genkan_keys::signing::SigningKey>, OAuthError> {
     keys.signer(alg, now).ok_or_else(|| {
-        tracing::error!(alg = alg.as_str(), "no active signing key");
+        tracing::error!(
+            reason = "no_active_signer",
+            alg = alg.as_str(),
+            "no active signing key"
+        );
         OAuthError::server()
     })
 }
@@ -130,7 +134,11 @@ pub fn access_token(
     };
     let key = signer(keys, Algorithm::Es256, now)?;
     sign_compact(&key, "at+jwt", &claims).map_err(|error| {
-        tracing::error!(%error, "signing an access token failed");
+        tracing::error!(
+            %error,
+            reason = "signing_failed",
+            "signing an access token failed"
+        );
         OAuthError::server()
     })
 }
@@ -171,7 +179,7 @@ pub fn id_token(
     };
     let key = signer(keys, subject.client.id_token_alg, now)?;
     sign_compact(&key, "JWT", &claims).map_err(|error| {
-        tracing::error!(%error, "signing an ID token failed");
+        tracing::error!(%error, reason = "signing_failed", "signing an ID token failed");
         OAuthError::server()
     })
 }

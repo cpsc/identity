@@ -183,7 +183,7 @@ pub(crate) fn json<T: Serialize>(status: StatusCode, body: &T) -> Response {
 }
 
 pub(crate) fn internal(error: impl std::fmt::Display) -> Problem {
-    tracing::error!(%error, "sign-in failed");
+    tracing::error!(reason = "internal_error", %error, "sign-in failed");
     Problem::internal()
 }
 
@@ -284,24 +284,58 @@ where
     K: CredentialStore,
     S: SetupStore,
 {
+    let mut identity = None;
     let result: Result<Response, Problem> = async {
         check_request(&headers, service.oauth.issuer.as_str())?;
         let request: SetupOptionsRequest = parse(&body)?;
         let now = service.oauth.now();
         let token = valid_setup_token(&service.setup, &request.token, now).await?;
-        let user = service.oauth.directory.user(&token.user).await.map_err(internal)?.ok_or_else(|| {
-            tracing::error!(user = %token.user, "the setup token names a user that does not exist");
-            SETUP_INVALID
-        })?;
+        let user = service
+            .oauth
+            .directory
+            .user(&token.user)
+            .await
+            .map_err(internal)?
+            .ok_or_else(|| {
+                tracing::error!(
+                    reason = "user_unavailable",
+                    "the setup token names a user that does not exist"
+                );
+                SETUP_INVALID
+            })?;
+        identity = Some(user);
+        let user = identity.as_ref().ok_or(SETUP_INVALID)?;
         let handle = Uuid::parse_str(&user.subject).map_err(internal)?;
         let display = user.display_name.as_deref().unwrap_or(&user.username);
-        let (options, state) = service.passkeys.begin_registration(handle, &user.username, display).map_err(internal)?;
-        let sealed = seal::<PasskeyRegistration, _, _, _>(&service.oauth, REGISTRATION_PURPOSE, state, Some(user.name), now)?;
+        let (options, state) = service
+            .passkeys
+            .begin_registration(handle, &user.username, display)
+            .map_err(internal)?;
+        let sealed = seal::<PasskeyRegistration, _, _, _>(
+            &service.oauth,
+            REGISTRATION_PURPOSE,
+            state,
+            Some(user.name.clone()),
+            now,
+        )?;
         let mut response = json(StatusCode::OK, &options);
-        set_cookie(&mut response, CEREMONY_COOKIE, &sealed, CEREMONY_LIFETIME.as_secs());
+        set_cookie(
+            &mut response,
+            CEREMONY_COOKIE,
+            &sealed,
+            CEREMONY_LIFETIME.as_secs(),
+        );
         Ok(response)
     }
     .await;
+    match &result {
+        Ok(_) => {
+            tracing::info!(target: "genkan::audit", event = "auth.passkey_enrollment", phase = "start", outcome = "success", method = "passkey", user = identity.as_ref().map(|u| u.name.as_str()), subject = identity.as_ref().map(|u| u.subject.as_str()), "passkey enrollment started");
+        }
+        Err(problem) => {
+            tracing::warn!(target: "genkan::audit", event = "auth.passkey_enrollment", phase = "start", outcome = "failure", method = "passkey", reason = problem.kind, user = identity.as_ref().map(|u| u.name.as_str()), subject = identity.as_ref().map(|u| u.subject.as_str()), "passkey enrollment failed");
+        }
+    }
     result.unwrap_or_else(IntoResponse::into_response)
 }
 
@@ -317,6 +351,7 @@ where
     K: CredentialStore,
     S: SetupStore,
 {
+    let mut user = None;
     let result: Result<Response, Problem> = async {
         check_request(&headers, service.oauth.issuer.as_str())?;
         let request: SetupRequest = parse(&body)?;
@@ -324,6 +359,7 @@ where
         let ceremony: Ceremony<PasskeyRegistration> =
             open(&service.oauth, &headers, REGISTRATION_PURPOSE, now)?;
         let token = valid_setup_token(&service.setup, &request.token, now).await?;
+        user = Some(token.user.clone());
         // The ceremony must have been started with this token's user.
         if ceremony.user.as_deref() != Some(token.user.as_str()) {
             return Err(SETUP_INVALID);
@@ -332,7 +368,7 @@ where
             .passkeys
             .finish_registration(&request.credential, &ceremony.state)
             .map_err(|error| {
-                tracing::info!(%error, "passkey registration did not verify");
+                tracing::warn!(reason = PASSKEY_FAILED.kind, %error, "passkey registration verification failed");
                 PASSKEY_FAILED
             })?;
         if service
@@ -373,7 +409,6 @@ where
                 ));
             }
         }
-        tracing::info!(user = %token.user, "passkey enrolled with a setup link");
         let mut response = json(
             StatusCode::CREATED,
             &SetupResponse {
@@ -384,6 +419,14 @@ where
         Ok(response)
     }
     .await;
+    match &result {
+        Ok(_) => {
+            tracing::info!(target: "genkan::audit", event = "auth.passkey_enrollment", phase = "finish", outcome = "success", method = "passkey", user = user.as_deref(), "passkey enrolled");
+        }
+        Err(problem) => {
+            tracing::warn!(target: "genkan::audit", event = "auth.passkey_enrollment", phase = "finish", outcome = "failure", method = "passkey", reason = problem.kind, user = user.as_deref(), "passkey enrollment failed");
+        }
+    }
     result.unwrap_or_else(IntoResponse::into_response)
 }
 
@@ -428,6 +471,14 @@ where
         );
         Ok(response)
     })();
+    match &result {
+        Ok(_) => {
+            tracing::info!(target: "genkan::audit", event = "auth.passkey_options", outcome = "success", method = "passkey", "passkey options accepted");
+        }
+        Err(problem) => {
+            tracing::warn!(target: "genkan::audit", event = "auth.passkey_options", outcome = "failure", method = "passkey", reason = problem.kind, "passkey options failed");
+        }
+    }
     result.unwrap_or_else(IntoResponse::into_response)
 }
 
@@ -443,6 +494,7 @@ where
     K: CredentialStore,
     S: SetupStore,
 {
+    let mut identity = None;
     let result: Result<Response, Problem> = async {
         check_request(&headers, service.oauth.issuer.as_str())?;
         let request: SignInRequest = parse(&body)?;
@@ -456,7 +508,10 @@ where
         let (handle, credential_id) = service
             .passkeys
             .identify(&request.credential)
-            .map_err(|_unknown| PASSKEY_FAILED)?;
+            .map_err(|error| {
+                tracing::warn!(reason = PASSKEY_FAILED.kind, %error, "passkey identification failed");
+                PASSKEY_FAILED
+            })?;
         let stored = service
             .credentials
             .get(&credential_name(&credential_id))
@@ -479,9 +534,11 @@ where
             .passkeys
             .finish_sign_in(&request.credential, ceremony.state, &passkey)
             .map_err(|error| {
-                tracing::info!(%error, "passkey assertion did not verify");
+                tracing::warn!(reason = PASSKEY_FAILED.kind, %error, "passkey sign-in verification failed");
                 PASSKEY_FAILED
             })?;
+        // A credential lookup alone does not authenticate the submitted assertion.
+        let user = identity.insert(user);
         // The challenge is single-use once it has produced a successful assertion.
         if service
             .used_ceremonies
@@ -496,15 +553,11 @@ where
             auth_time: now,
             amr: PASSKEY_AMR.iter().map(|m| (*m).to_owned()).collect(),
         };
-        let location =
-            complete_authorization(&service.oauth, &flow, authentication).map_err(|error| {
-                tracing::info!(
-                    error = error.error_description,
-                    "the pending sign-in could not be completed"
-                );
+        let location = complete_authorization(&service.oauth, &flow, authentication)
+            .map_err(|error| {
+                tracing::warn!(reason = NO_REQUEST.kind, ?error, "passkey authorization failed");
                 NO_REQUEST
             })?;
-        tracing::info!(user = %user.name, "signed in with a passkey");
         let mut response = json(
             StatusCode::OK,
             &SignInResponse {
@@ -516,6 +569,14 @@ where
         Ok(response)
     }
     .await;
+    match &result {
+        Ok(_) => {
+            tracing::info!(target: "genkan::audit", event = "auth.sign_in", outcome = "success", method = "passkey", user = identity.as_ref().map(|u| u.name.as_str()), subject = identity.as_ref().map(|u| u.subject.as_str()), "signed in with a passkey");
+        }
+        Err(problem) => {
+            tracing::warn!(target: "genkan::audit", event = "auth.sign_in", outcome = "failure", method = "passkey", reason = problem.kind, user = identity.as_ref().map(|u| u.name.as_str()), subject = identity.as_ref().map(|u| u.subject.as_str()), "passkey sign-in failed");
+        }
+    }
     result.unwrap_or_else(IntoResponse::into_response)
 }
 

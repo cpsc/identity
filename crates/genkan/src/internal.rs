@@ -69,14 +69,18 @@ pub async fn run<C: Clock>(
             Ok(Some(secret)) => match internal_tls::parse(&secret) {
                 Ok(material) => material,
                 Err(error) => {
-                    tracing::error!(%error, secret = internal_tls::SECRET, "internal listener: unusable certificate");
+                    tracing::error!(
+                        reason = "invalid_certificate",
+                        %error,
+                        "internal listener: unusable certificate"
+                    );
                     continue;
                 }
             },
             Ok(None) => {
                 if !reported_missing {
                     tracing::info!(
-                        secret = internal_tls::SECRET,
+                        reason = "certificate_unavailable",
                         "internal listener waits for its certificate; run `genkanctl kube-config`"
                     );
                     reported_missing = true;
@@ -84,13 +88,17 @@ pub async fn run<C: Clock>(
                 continue;
             }
             Err(error) => {
-                tracing::warn!(%error, "internal listener: reading the certificate failed");
+                tracing::warn!(
+                    reason = "certificate_read_failed",
+                    %error,
+                    "internal listener: reading the certificate failed"
+                );
                 continue;
             }
         };
         let Some(url) = config.url.clone().or_else(|| material.url.clone()) else {
             tracing::error!(
-                annotation = internal_tls::URL_ANNOTATION,
+                reason = "certificate_url_missing",
                 "internal listener: the certificate Secret does not say where kube-apiserver reaches it"
             );
             continue;
@@ -108,7 +116,7 @@ pub async fn run<C: Clock>(
         resolver.set(Arc::clone(&material.key));
     }
     if let Err(error) = server.await {
-        tracing::error!(%error, "internal listener failed");
+        tracing::error!(%error, reason = "internal_task_failed", "internal listener failed");
     }
 }
 
@@ -140,7 +148,7 @@ fn start(
             .with_graceful_shutdown(stopped)
             .await
         {
-            tracing::error!(%error, "internal listener stopped");
+            tracing::error!(%error, reason = "http_failed", "internal listener stopped");
         }
     })
 }

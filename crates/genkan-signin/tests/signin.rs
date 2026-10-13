@@ -9,6 +9,8 @@ mod tests {
     use axum::Router;
     use axum::body::Body;
     use axum::http::{HeaderMap, Method, Request, StatusCode, header};
+    use base64::Engine as _;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use genkan_core::clock::{Clock, UnixTime};
     use genkan_core::config::BaseUrl;
     use genkan_core::crypto::{Sealer, hash_secret};
@@ -24,6 +26,7 @@ mod tests {
         Client, ClientType, MemoryCredentialStore, MemoryDirectory, MemoryGrantStore,
         MemorySetupStore, User,
     };
+    use genkan_test_support::logging::Capture;
     use genkan_test_support::{Device, device};
     use http_body_util::BodyExt as _;
     use passkey::authenticator::{Authenticator, UiHint, UserCheck, UserValidationMethod};
@@ -33,6 +36,7 @@ mod tests {
     use serde_json::{Value, json};
     use tokio::sync::Barrier;
     use tower::ServiceExt as _;
+    use tracing::instrument::WithSubscriber as _;
     use url::Url;
 
     const ISSUER: &str = "https://login.example.com";
@@ -175,6 +179,8 @@ mod tests {
         status: StatusCode,
         headers: HeaderMap,
         body: Value,
+        audit: Option<Value>,
+        diagnostics: Vec<Value>,
     }
 
     impl Reply {
@@ -201,6 +207,8 @@ mod tests {
         cookies: &[(&str, &str)],
         origin: Option<&str>,
     ) -> Reply {
+        let capture = Capture::new();
+        let submitted = body.clone();
         let mut request = Request::builder().method(method).uri(path);
         if let Some(origin) = origin {
             request = request.header(header::ORIGIN, origin);
@@ -220,14 +228,114 @@ mod tests {
         let response = app
             .clone()
             .oneshot(request.body(body).unwrap())
+            .with_subscriber(capture.dispatch())
             .await
             .unwrap();
         let (parts, body) = response.into_parts();
         let bytes = body.collect().await.unwrap().to_bytes();
+        let response_body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+        let records = capture.records();
+        let audit: Vec<_> = records
+            .iter()
+            .filter(|r| r["target"] == "genkan::audit")
+            .collect();
+        let operation = match path {
+            "/setup/options" => Some(("auth.passkey_enrollment", Some("start"))),
+            "/setup" => Some(("auth.passkey_enrollment", Some("finish"))),
+            "/login/options" => Some(("auth.passkey_options", None)),
+            "/login" => Some(("auth.sign_in", None)),
+            _ => None,
+        };
+        if let Some((event, phase)) = operation {
+            assert_eq!(audit.len(), 1, "{records:?}");
+            let fields = &audit[0]["fields"];
+            assert_eq!(fields["event"], event);
+            assert_eq!(fields["method"], "passkey");
+            assert_eq!(
+                fields["outcome"],
+                if parts.status.is_success() {
+                    "success"
+                } else {
+                    "failure"
+                }
+            );
+            if let Some(phase) = phase {
+                assert_eq!(fields["phase"], phase);
+            }
+            if !parts.status.is_success() {
+                assert_eq!(
+                    fields["reason"],
+                    response_body["type"]
+                        .as_str()
+                        .unwrap()
+                        .strip_prefix("urn:genkan:problem:")
+                        .unwrap()
+                );
+            }
+            assert!(fields.get("client").is_none());
+        }
+        let serialized = serde_json::to_string(&audit).unwrap();
+        for (_, secret) in cookies {
+            assert!(!serialized.contains(secret), "cookie leaked");
+        }
+        if let Some(submitted) = &submitted {
+            assert_secret_values_absent(&serialized, submitted);
+        }
+        assert_secret_values_absent(&serialized, &response_body);
+        for value in parts.headers.get_all(header::SET_COOKIE) {
+            let cookie = value.to_str().unwrap().split(';').next().unwrap();
+            let secret = cookie.split_once('=').unwrap().1;
+            if !secret.is_empty() {
+                assert!(!serialized.contains(secret), "response cookie leaked");
+            }
+        }
         Reply {
             status: parts.status,
             headers: parts.headers,
-            body: serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+            body: response_body,
+            audit: audit.first().map(|r| (*r).clone()),
+            diagnostics: records
+                .into_iter()
+                .filter(|record| record["target"] == "genkan_signin")
+                .collect(),
+        }
+    }
+
+    fn assert_secret_values_absent(records: &str, value: &Value) {
+        if let Value::Object(fields) = value {
+            for (key, value) in fields {
+                if matches!(
+                    key.as_str(),
+                    "token"
+                        | "id"
+                        | "rawId"
+                        | "clientDataJSON"
+                        | "authenticatorData"
+                        | "signature"
+                        | "attestationObject"
+                        | "userHandle"
+                        | "challenge"
+                        | "access_token"
+                        | "id_token"
+                        | "refresh_token"
+                ) && let Some(secret) = value.as_str().filter(|s| !s.is_empty())
+                {
+                    assert!(!records.contains(secret), "{key} leaked");
+                }
+                assert_secret_values_absent(records, value);
+            }
+        }
+        if let Some(location) = value.get("redirect_to").and_then(Value::as_str)
+            && let Some((_, query)) = location.split_once('?')
+        {
+            for (key, secret) in form_urlencoded::parse(query.as_bytes()) {
+                if key == "code" {
+                    assert!(
+                        !records.contains(secret.as_ref()),
+                        "authorization code leaked"
+                    );
+                }
+            }
         }
     }
 
@@ -244,6 +352,13 @@ mod tests {
     async fn start_enrolment(h: &Harness, device: &mut Device, token: &str) -> (Value, String) {
         let reply = post(&h.app, "/setup/options", json!({ "token": token }), &[]).await;
         assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+        let (user, subject) = if token == INVITATION {
+            ("dana", DANA_UID)
+        } else {
+            ("admin", ADMIN_UID)
+        };
+        assert_eq!(reply.audit.as_ref().unwrap()["fields"]["user"], user);
+        assert_eq!(reply.audit.as_ref().unwrap()["fields"]["subject"], subject);
         let options: CredentialCreationOptions =
             serde_json::from_value(reply.body.clone()).unwrap();
         let credential = device
@@ -266,6 +381,12 @@ mod tests {
         )
         .await;
         assert_eq!(reply.status, StatusCode::CREATED, "{}", reply.body);
+        assert_eq!(reply.audit.as_ref().unwrap()["fields"]["user"], "admin");
+        assert!(
+            reply.audit.as_ref().unwrap()["fields"]
+                .get("subject")
+                .is_none()
+        );
         assert_eq!(reply.body["username"], "admin");
     }
 
@@ -301,6 +422,11 @@ mod tests {
 
         let reply = sign_in(&h, &mut device).await;
         assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+        assert_eq!(reply.audit.as_ref().unwrap()["fields"]["user"], "admin");
+        assert_eq!(
+            reply.audit.as_ref().unwrap()["fields"]["subject"],
+            ADMIN_UID
+        );
         assert!(
             reply
                 .headers
@@ -340,11 +466,8 @@ mod tests {
             .split('.')
             .nth(1)
             .unwrap();
-        let claims: Value = serde_json::from_slice(
-            &base64::Engine::decode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, payload)
-                .unwrap(),
-        )
-        .unwrap();
+        let claims: Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(payload).unwrap()).unwrap();
         assert_eq!(claims["sub"], ADMIN_UID);
         assert_eq!(claims["groups"], json!(["admins"]));
         assert_eq!(claims["amr"], json!(["swk", "mfa"]));
@@ -557,6 +680,19 @@ mod tests {
             (FLOW_COOKIE, flow.as_str()),
             (CEREMONY_COOKIE, ceremony.as_str()),
         ];
+        // Knowing an enrolled credential ID and handle is not proof of possession.
+        let mut forged = assertion.clone();
+        forged["response"]["signature"] = json!(URL_SAFE_NO_PAD.encode([0_u8; 64]));
+        let rejected = post(&h.app, "/login", json!({ "credential": forged }), &cookies).await;
+        assert_eq!(rejected.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(rejected.kind(), "urn:genkan:problem:passkey-failed");
+        let fields = &rejected.audit.as_ref().unwrap()["fields"];
+        assert!(fields.get("user").is_none());
+        assert!(fields.get("subject").is_none());
+        assert!(fields.get("error").is_none());
+        let diagnostic = rejected.diagnostics.first().unwrap();
+        assert_eq!(diagnostic["fields"]["reason"], "passkey-failed");
+        // Failed signature verification does not consume the valid ceremony.
         assert_eq!(
             post(
                 &h.app,
@@ -589,6 +725,16 @@ mod tests {
         let reply = sign_in(&h, &mut stranger).await;
         assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
         assert_eq!(reply.kind(), "urn:genkan:problem:passkey-failed");
+        assert!(
+            reply.audit.as_ref().unwrap()["fields"]
+                .get("user")
+                .is_none()
+        );
+        assert!(
+            reply.audit.as_ref().unwrap()["fields"]
+                .get("subject")
+                .is_none()
+        );
 
         let mut device = device();
         enrol(&h, &mut device).await;
@@ -604,6 +750,10 @@ mod tests {
         h.service.oauth.directory.put_user(admin);
         let reply = sign_in(&h, &mut device).await;
         assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
+        // Disabled users are rejected before signature verification, so no identity is asserted.
+        let fields = &reply.audit.as_ref().unwrap()["fields"];
+        assert!(fields.get("user").is_none());
+        assert!(fields.get("subject").is_none());
     }
 
     #[tokio::test]
@@ -670,5 +820,89 @@ mod tests {
         )
         .await;
         assert_eq!(reply.status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn verified_passkey_does_not_succeed_with_invalid_or_expired_authorization() {
+        for expired in [false, true] {
+            let h = harness().await;
+            let mut device = device();
+            enrol(&h, &mut device).await;
+            let authorize = format!(
+                "/authorize?client_id=kubectl&redirect_uri=http%3A%2F%2F127.0.0.1%3A8000%2F&response_type=code&code_challenge={CHALLENGE}&code_challenge_method=S256"
+            );
+            let flow = call(&h.app, Method::GET, &authorize, None, &[], None)
+                .await
+                .cookie(FLOW_COOKIE)
+                .unwrap();
+            let rejected_flow = if expired {
+                h.clock
+                    .0
+                    .fetch_add(h.service.oauth.lifetimes.flow.as_secs(), Ordering::SeqCst);
+                flow
+            } else {
+                "secret-forged-authorization-flow".to_owned()
+            };
+            // Start a fresh ceremony after the flow expires, so the assertion itself verifies.
+            let options = post(&h.app, "/login/options", json!({}), &[]).await;
+            let ceremony = options.cookie(CEREMONY_COOKIE).unwrap();
+            let assertion = device
+                .authenticate(
+                    &origin(),
+                    serde_json::from_value(options.body).unwrap(),
+                    DefaultClientData,
+                )
+                .await
+                .unwrap();
+            let reply = post(
+                &h.app,
+                "/login",
+                json!({ "credential": assertion }),
+                &[(FLOW_COOKIE, &rejected_flow), (CEREMONY_COOKIE, &ceremony)],
+            )
+            .await;
+            assert_eq!(reply.status, StatusCode::BAD_REQUEST);
+            assert_eq!(reply.kind(), "urn:genkan:problem:no-request");
+            let fields = &reply.audit.as_ref().unwrap()["fields"];
+            assert_eq!(fields["outcome"], "failure");
+            assert_eq!(fields["user"], "admin");
+            assert_eq!(fields["subject"], ADMIN_UID);
+            assert!(fields.get("error").is_none());
+            let diagnostic = reply.diagnostics.first().unwrap();
+            assert_eq!(diagnostic["fields"]["reason"], "no-request");
+            let error = diagnostic["fields"]["error"].as_str().unwrap();
+            assert!(error.contains("InvalidRequest"));
+            assert!(error.contains(if expired {
+                "the sign-in request expired; start again"
+            } else {
+                "the sign-in request is missing or invalid"
+            }));
+            assert!(!serde_json::to_string(fields).unwrap().contains(error));
+            // A rejected authorization still consumed the verified passkey ceremony.
+            let second_attempt = post(
+                &h.app,
+                "/login",
+                json!({ "credential": assertion }),
+                &[(FLOW_COOKIE, &rejected_flow), (CEREMONY_COOKIE, &ceremony)],
+            )
+            .await;
+            assert_eq!(second_attempt.kind(), "urn:genkan:problem:ceremony-expired");
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_setup_user_is_not_an_authenticated_identity() {
+        let h = harness().await;
+        let token = "secret-setup-for-unknown-local-user";
+        h.service.setup.put(
+            "missing-secret-user",
+            &hash_secret(token.as_bytes()),
+            UnixTime::from_secs(START + 3600),
+        );
+        let reply = post(&h.app, "/setup/options", json!({ "token": token }), &[]).await;
+        assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
+        let fields = &reply.audit.as_ref().unwrap()["fields"];
+        assert!(fields.get("user").is_none());
+        assert!(fields.get("subject").is_none());
     }
 }

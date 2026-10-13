@@ -168,6 +168,7 @@ async fn run_index<K>(
                 tracing::warn!(
                     event = "kubernetes_directory_watch",
                     resource,
+                    reason = "watch_failed",
                     %error,
                     "directory metadata watch error; retrying with backoff"
                 );

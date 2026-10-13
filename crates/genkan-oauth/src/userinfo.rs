@@ -117,7 +117,7 @@ pub async fn userinfo<D: Directory, G: GrantStore, C: Clock>(
         Ok(Some(user)) if user.subject == claims.sub && !user.disabled => user,
         Ok(_) => return invalid(),
         Err(error) => {
-            tracing::error!(%error, "user lookup failed");
+            tracing::error!(%error, reason = "storage_failed", "user lookup failed");
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };

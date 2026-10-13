@@ -42,7 +42,7 @@ and restarting a deployment is refused with 403 until you ask for admin rights.*
     </picture></td>
     <td width="33%"><picture>
       <source media="(prefers-color-scheme: dark)" srcset="docs/images/sign-in-elevated-dark.avif">
-      <img alt="Sign-in page for admin access, with the passkey button only" src="docs/images/sign-in-elevated-light.avif">
+      <img alt="Sign-in page for admin access: an elevated access notice for kubectl, valid for 5 minutes, and the passkey button only" src="docs/images/sign-in-elevated-light.avif">
     </picture></td>
     <td width="33%"><picture>
       <source media="(prefers-color-scheme: dark)" srcset="docs/images/setup-dark.avif">
@@ -51,7 +51,7 @@ and restarting a deployment is refused with 403 until you ask for admin rights.*
   </tr>
   <tr>
     <td align="center"><b>Everyday sign-in</b><br>passkey or GitHub</td>
-    <td align="center"><b>Admin access</b><br>passkey only, 5 minutes</td>
+    <td align="center"><b>Admin access</b><br>clearly flagged, passkey only, 5 minutes</td>
     <td align="center"><b>Joining</b><br>a one-time invitation link</td>
   </tr>
 </table>
@@ -68,16 +68,17 @@ rights, then back to read-only.
 
 ## Get started
 
-The [step-by-step guide](docs/get-started.md) builds a k3s cluster in a VM, installs Genkan and
-signs `kubectl` in with a passkey from your Mac, in about half an hour.
+The [step-by-step guide](docs/get-started.md) installs k3s on an Ubuntu server (a VPS, a
+homelab box or a VM), installs Genkan, and signs `kubectl` in with a passkey from your own
+computer (macOS, Linux or Windows), in about half an hour.
 
-On a cluster you already run, the shape of it is:
+On a cluster you already run, the shape of it is below. Every `genkanctl` subcommand that needs
+an issuer reads `GENKAN_ISSUER`, so these examples do not repeat `--issuer`.
 
 ```sh
 export GENKAN_ISSUER=https://login.example.com
-genkanctl crds | kubectl apply -f -
-# --invitations lets the server redeem the links `genkanctl invite` prints.
-genkanctl manifests --image <image> --serve-arg=--invitations | kubectl apply -f -
+genkanctl crds | kubectl apply --server-side -f -
+genkanctl manifests --image <image> --serve-arg=--invitations | kubectl apply --server-side -f -
 # Prints kube-apiserver's configuration and how to install it for your distribution:
 genkanctl kube-config --distro k3s > authn.yaml
 # A one-time link: open it and create your passkey.
@@ -88,7 +89,7 @@ There is no published image yet; the guide shows how to build one.
 
 Then:
 
-- [Sign in with GitHub](docs/github-sign-in.md) for teammates who prefer it.
+- Sign in with [GitHub](docs/github-sign-in.md) or [Google](docs/google-sign-in.md).
 - [Register clients](docs/clients.md) such as Grafana or Argo CD, with
   `genkanctl client create`.
 - [Manage users](docs/managing-users.md): groups, admin rights, lost passkeys, removing people;

@@ -237,6 +237,74 @@ Check from the Mac with the system `curl` (Nix's `curl` does not read the macOS 
 With a real domain, use a cert-manager `ClusterIssuer` (ACME) and a `Certificate` for the
 Secret instead of mkcert.
 
+### Limit unauthenticated traffic at the ingress
+
+Apply per-source-IP rate limits to `/authorize`, `/token`, `/par`, `/revoke`, `/login*`,
+`/setup*` and `/upstream/*` before exposing Genkan publicly. Genkan normally sees the ingress address,
+not the browser's address; it does not trust arbitrary forwarded headers or implement
+in-process per-IP limiting. At the ingress, preserve the source IP and, when another proxy
+is in front, configure forwarded-header trust only for that proxy's addresses. Otherwise
+all users may share a bucket, or forged headers may bypass it.
+
+For the Traefik Gateway above, enable its Kubernetes CRD provider and install its Middleware
+CRDs, then apply this additional route. Its specific paths take precedence over the
+catch-all route; discovery and keys remain outside the rate limit.
+
+```yaml
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: {name: genkan-rate-limit, namespace: genkan-system}
+spec:
+  rateLimit:
+    average: 10
+    period: 1s
+    burst: 20
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: {name: genkan-rate-limited, namespace: genkan-system}
+spec:
+  parentRefs: [{name: genkan}]
+  hostnames: [genkan-k3s.shared]
+  rules:
+  - matches:
+    - path: {type: Exact, value: /authorize}
+    - path: {type: Exact, value: /token}
+    - path: {type: Exact, value: /par}
+    - path: {type: Exact, value: /revoke}
+    - path: {type: PathPrefix, value: /login}
+    - path: {type: PathPrefix, value: /setup}
+    - path: {type: PathPrefix, value: /upstream}
+    filters:
+    - type: ExtensionRef
+      extensionRef: {group: traefik.io, kind: Middleware, name: genkan-rate-limit}
+    backendRefs: [{name: genkan, port: 80}]
+```
+
+These are starting values, not a security guarantee: tune for users sharing NAT and expected
+sign-in bursts. Traefik's default bucket key is the remote address; each Traefik replica has
+its own buckets unless distributed rate limiting is configured. See the
+[RateLimit options](https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/ratelimit/)
+and [Gateway middleware prerequisites](https://doc.traefik.io/traefik/reference/routing-configuration/kubernetes/gateway-api/#extensionref-filters).
+
+Genkan additionally limits each business route/method service to 64 concurrent requests.
+Full services immediately return `503` with `Retry-After: 1`, without queuing ahead of the
+ten-second handler timeout. Health/readiness probes and discovery/keys do not share those
+slots. These are per-process concurrency limits, not per-IP rate limits. Overload events are
+logged at DEBUG, not WARN, and directory GETs do not emit per-request INFO logs. Enabling
+DEBUG during a flood can generate substantial log traffic; keep the normal INFO level for
+production incident handling.
+
+Kubernetes directory metadata is watched before the public listener starts. Unknown client
+names are rejected locally, including a flood of distinct random IDs; known clients still
+use a direct GET so secret, redirect URI and audience changes take effect on the next request.
+UserInfo resolves `sub` from watched user metadata and directly reads the user to verify its
+UID and enabled state. Access-token claims do not change. New client names and UserInfo subjects
+become visible after their watch events arrive; watch lag can delay those lookups, never authorize
+stale client/user data. Unknown entries in these indexes never fall back to per-ID API reads.
+Name-based user lookups used by setup, sign-in and refresh remain uncached direct GETs after
+initial synchronization, including absent names; they do not await individual user watch events.
+
 ## 6. Let kube-apiserver trust Genkan
 
 `genkanctl kube-config` issues the certificate of Genkan's internal listener, which

@@ -87,31 +87,14 @@ pub trait Directory: Send + Sync + 'static {
     fn client(&self, id: &str) -> impl Future<Output = Result<Option<Client>, StoreError>> + Send;
     /// Looks up a user by object name.
     fn user(&self, name: &str) -> impl Future<Output = Result<Option<User>, StoreError>> + Send;
-    /// Looks up a user by subject (the object UID).
+    /// Looks up a user by immutable subject (the object UID), with current authorization data.
+    ///
+    /// Adapters may use a metadata index to locate the object, but must verify the UID of the
+    /// directly read user. Ambiguous subjects fail closed.
     fn user_by_subject(
         &self,
         subject: &str,
     ) -> impl Future<Output = Result<Option<User>, StoreError>> + Send;
-}
-
-/// The single user matching `predicate` among `users`; an error if several match (a subject is
-/// a UID and cannot repeat, so that would mean a broken backend).
-///
-/// # Errors
-///
-/// Returns [`StoreError`] if more than one user matches.
-pub fn unique_user<'a>(
-    users: impl IntoIterator<Item = &'a User>,
-    predicate: impl Fn(&User) -> bool,
-) -> Result<Option<User>, StoreError> {
-    let mut matches = users.into_iter().filter(|user| predicate(user));
-    match (matches.next(), matches.next()) {
-        (None, _) => Ok(None),
-        (Some(user), None) => Ok(Some(user.clone())),
-        (Some(_), Some(_)) => Err(StoreError(
-            "a subject matches more than one user".to_owned(),
-        )),
-    }
 }
 
 /// A refresh-token family to create.
@@ -308,7 +291,15 @@ impl Directory for MemoryDirectory {
         subject: &str,
     ) -> impl Future<Output = Result<Option<User>, StoreError>> + Send {
         let users = self.users.lock().unwrap_or_else(PoisonError::into_inner);
-        future::ready(unique_user(users.values(), |u| u.subject == subject))
+        let mut matches = users.values().filter(|user| user.subject == subject);
+        let user = matches.next().cloned();
+        let result = if matches.next().is_some() {
+            Err(StoreError("ambiguous user subject".to_owned()))
+        } else {
+            Ok(user)
+        };
+        drop(users);
+        future::ready(result)
     }
 }
 

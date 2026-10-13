@@ -13,6 +13,14 @@
 //! - A token without the `openid` scope gets `403 insufficient_scope`; a missing token gets a bare
 //!   `Bearer` challenge, and a bad one `invalid_token` (RFC 6750 §3).
 //! - Responses carry `Cache-Control: no-store`.
+//!
+//! The directory resolves the immutable `sub` UID through metadata, then directly reads the
+//! current user and verifies that UID before returning claims. Neither a renamed/recreated
+//! object nor stale index metadata can substitute another identity. No additional access-token
+//! claim is required, so previously issued tokens remain usable. The response subject follows
+//! [OIDC Core §5.3.2]'s requirement and client-side substitution check.
+//!
+//! [OIDC Core §5.3.2]: https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
 
 use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
@@ -106,7 +114,7 @@ pub async fn userinfo<D: Directory, G: GrantStore, C: Clock>(
         return challenge(StatusCode::FORBIDDEN, Some("insufficient_scope"));
     }
     let user = match server.directory.user_by_subject(&claims.sub).await {
-        Ok(Some(user)) if !user.disabled => user,
+        Ok(Some(user)) if user.subject == claims.sub && !user.disabled => user,
         Ok(_) => return invalid(),
         Err(error) => {
             tracing::error!(%error, "user lookup failed");

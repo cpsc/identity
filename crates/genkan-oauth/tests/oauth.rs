@@ -1229,6 +1229,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn userinfo_rejects_deleted_and_recreated_users() {
+        let h = harness().await;
+        let code = sign_in(&h, "alice", &kubectl_authorize(&[])).await;
+        let tokens = exchange(&h, &code).await.json();
+        let access = tokens["access_token"].as_str().unwrap();
+        assert_eq!(userinfo(&h, Some(access)).await.status, StatusCode::OK);
+
+        h.server.directory.remove_user("alice");
+        assert_eq!(
+            userinfo(&h, Some(access)).await.status,
+            StatusCode::UNAUTHORIZED
+        );
+
+        // Reusing the original name for a different UID must not expose its claims.
+        h.server.directory.put_user(User {
+            name: "alice".into(),
+            subject: "uid-recreated".into(),
+            username: "replacement".into(),
+            ..User::default()
+        });
+        let reply = userinfo(&h, Some(access)).await;
+        assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(reply.body.as_slice(), b"");
+    }
+
+    #[tokio::test]
+    async fn userinfo_rejects_unknown_and_ambiguous_subjects() {
+        let h = harness().await;
+        let code = sign_in(&h, "alice", &kubectl_authorize(&[])).await;
+        let tokens = exchange(&h, &code).await.json();
+        let access = tokens["access_token"].as_str().unwrap();
+        let (_, mut claims) = verify(&h, access, "kubernetes");
+        let keys = h.server.keys.borrow().clone().unwrap();
+        let key = keys.signer(Algorithm::Es256, h.clock.now()).unwrap();
+
+        // An otherwise valid signed token for an absent subject never yields claims.
+        claims["sub"] = serde_json::json!("uid-unknown");
+        let unknown = genkan_keys::jws::sign_compact(&key, "at+jwt", &claims).unwrap();
+        let reply = userinfo(&h, Some(&unknown)).await;
+        assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(reply.body.as_slice(), b"");
+
+        // Ambiguous backend answers fail closed rather than choosing an arbitrary user.
+        h.server.directory.put_user(User {
+            name: "duplicate".into(),
+            subject: "uid-alice".into(),
+            username: "private-duplicate-username".into(),
+            ..User::default()
+        });
+        let reply = userinfo(&h, Some(access)).await;
+        assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(reply.body.as_slice(), b"");
+    }
+
+    #[tokio::test]
     async fn token_endpoint_rejects_malformed_requests() {
         let h = harness().await;
         let reply = post(

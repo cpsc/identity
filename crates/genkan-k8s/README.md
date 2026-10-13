@@ -33,6 +33,18 @@ server, the `genkanctl` admin CLI and the `genkan-e2e` tests.
   redemption, one per refresh and one when a grant ends, so anonymous traffic cannot fill etcd
   (the failure mode of storing a request object per unauthenticated `/authorize`, seen in
   [Dex]).
+- **Current authorization data, metadata-indexed misses.** Metadata-only watches maintain client
+  existence and user UID indexes, shared by directory clones. The asynchronous constructor
+  waits for both initial snapshots within 30 seconds; the last clone dropping stops the watches.
+  Relists replace each index atomically. Arbitrarily many unknown client IDs or user
+  subjects cause no per-request API reads, and new objects become visible when their watch events
+  arrive. Known clients and users are read directly on every request: secrets, permissions and
+  disabled flags are never cached. A subject lookup verifies the directly read user's UID, so
+  deleting and recreating an object under the same name cannot substitute a different user.
+  All-namespaces indexes use each object's metadata namespace for direct reads; duplicate client
+  names across namespaces fail closed rather than selecting an arbitrary client.
+  Watch errors are logged and retry with backoff, never a per-ID GET fallback. Directory GETs
+  do not emit per-request INFO logs or maintain custom telemetry counters.
 - **Single use is decided by the API server.** Create with a deterministic name, update with
   `resourceVersion`, delete with `uid` and `resourceVersion` preconditions ([API concepts],
   [DeleteOptions]). Ambiguous answers fail closed. The integration tests race 64 concurrent

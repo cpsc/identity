@@ -932,10 +932,13 @@ mod tests {
             RotationPolicy::DEFAULT,
         );
         manager.reconcile().await.unwrap();
+        let directory = KubeDirectory::new(env.genkan_api(), env.genkan_api())
+            .await
+            .unwrap();
         let server = Arc::new(AuthorizationServer {
             issuer: BaseUrl::parse("issuer", "https://login.example.com").unwrap(),
             lifetimes: Lifetimes::DEFAULT,
-            directory: KubeDirectory::new(env.genkan_api(), env.genkan_api()),
+            directory,
             grants: KubeGrantStore::new(env.genkan_api()),
             clock: SystemClock,
             keys: manager.subscribe(),
@@ -1052,6 +1055,8 @@ mod tests {
         ]))
         .await;
         assert_eq!(status, 400);
+        drop(app);
+        drop(server);
         env.cleanup().await;
     }
 

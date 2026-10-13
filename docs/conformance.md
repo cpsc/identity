@@ -138,6 +138,7 @@ Tests are in `genkan-oauth/tests/oauth.rs` unless noted.
 | OIDC Core §3.1.2.1 | GET and POST; `prompt=none` without a session fails | MUST | `endpoints.rs`, `authorize.rs` | `authorization_endpoint_accepts_post`, `authorization_endpoint_errors` | Met |
 | OIDC Core §3.1.2.1 | `ui_locales` | OPTIONAL | error page | `genkan-signin/tests/pages.rs: untrusted_authorization_requests_show_an_error_page` | Partial: the sign-in page does not use it |
 | OIDC Core §5.3; RFC 6750 §2.1, §3 | UserInfo with bearer access tokens; challenges with error codes; current claims by scope | MUST | `userinfo.rs` | `userinfo_returns_current_claims_for_access_tokens_only` | Met |
+| OIDC Core §5.3.2 | Always return the grant's `sub`; resolve metadata by UID and verify the directly read user's UID and enabled state | MUST; binding policy | `userinfo.rs`, `genkan-k8s/src/directory.rs` | `userinfo_returns_current_claims_for_access_tokens_only`, `userinfo_rejects_deleted_and_recreated_users`, `userinfo_rejects_unknown_and_ambiguous_subjects` | Met (client-side ID token subject comparison remains the client's responsibility) |
 | OIDC Core §12.2 | Refreshed ID token keeps `auth_time`, no nonce | MUST | `endpoints.rs` | `refresh_rotates_and_reuse_revokes_the_family` | Met |
 | OIDC Core §15.1 | `max_age`, `prompt=login` | MUST | every sign-in is a fresh ceremony (no sessions) | `genkan-signin/tests/signin.rs: setup_link_then_passkey_sign_in_issues_tokens` | Met while there are no sessions |
 

@@ -1373,6 +1373,7 @@ dependencies = [
  "tokio-rustls",
  "tower",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -1507,6 +1508,7 @@ dependencies = [
  "clap",
  "genkan-core",
  "genkan-k8s",
+ "genkan-keys",
  "kube",
  "serde_json",
  "tokio",

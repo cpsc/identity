@@ -9,6 +9,10 @@ on:
         description: 'Candidate version (must match Cargo.toml); rehearsal never publishes'
         required: true
         default: v0.0.1
+      verify_only:
+        description: 'Verify existing signed release assets without rebuilding or publishing'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -23,6 +27,7 @@ env:
 jobs:
   # Re-run the entire CI suite on THIS commit, including Kubernetes and UI checks.
   checks:
+    if: ${{ !inputs.verify_only }}
     uses: ./.github/workflows/ci.yml
 
   prepare:
@@ -32,6 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.verify_only && format('refs/tags/{0}', inputs.version) || github.ref }}
           fetch-depth: 0
           persist-credentials: false
       - uses: DeterminateSystems/determinate-nix-action@d0c908e6cbe9f89f36ed8205a3ab6f092636916a # v3.23.1
@@ -39,17 +45,19 @@ jobs:
         name: Validate release commit and version
         env:
           VERSION: ${{ inputs.version || github.ref_name }}
+          VERIFY_ONLY: ${{ inputs.verify_only }}
         run: |
           [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           actual=$(nix develop -c cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "genkanctl") | .version')
           test "$VERSION" = "v$actual"
-          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
-            git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          if [[ "$GITHUB_EVENT_NAME" == push || "$VERIFY_ONLY" == true ]]; then
+            git merge-base --is-ancestor HEAD origin/main
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   build:
     needs: [prepare, checks]
+    if: ${{ !inputs.verify_only }}
     strategy:
       fail-fast: false
       matrix:
@@ -111,7 +119,14 @@ jobs:
         run: nix develop -c bash scripts/release-publish.sh "$VERSION" candidates
 
   rehearse:
+    if: >-
+      ${{ !cancelled() && needs.prepare.result == 'success' &&
+          (needs.publish.result == 'success' ||
+           (github.event_name == 'workflow_dispatch' && inputs.verify_only)) }}
     needs: [prepare, publish]
+    # GitHub draft releases are visible only to tokens with push access.
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -124,6 +139,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.verify_only && format('refs/tags/{0}', inputs.version) || github.ref }}
           persist-credentials: false
       - uses: DeterminateSystems/determinate-nix-action@d0c908e6cbe9f89f36ed8205a3ab6f092636916a # v3.23.1
       - name: Download draft assets, verify and execute
@@ -133,6 +149,9 @@ jobs:
           ARCH: ${{ matrix.arch }}
           IMAGE: ${{ needs.publish.outputs.image }}
         run: |
-          nix develop -c gh release download "$VERSION" --dir downloaded
+          nix develop -c gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" --dir downloaded
+          if [[ -z "$IMAGE" ]]; then
+            IMAGE=$(awk '$1 == "index" { print $2 }' downloaded/image-digests.txt)
+          fi
           nix develop -c bash scripts/release-verify.sh "$VERSION" "$ARCH" downloaded "$IMAGE" \
             "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/tags/$VERSION"

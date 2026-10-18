@@ -118,16 +118,33 @@ The tag must match the Cargo version, and the commit must be on `main`. The work
 CI, builds both platforms using the pinned Rust/Nix toolchain and locked dependencies, and
 tests the CLI archives and images it will publish. It then signs and uploads the artifacts,
 downloads them on fresh runners, and verifies and runs them while the release stays a draft.
-Signing uses GitHub's short-lived identity token through Sigstore. Workflow write permissions
-are limited to the publication job; making the release public is a separate maintainer action.
+Signing uses GitHub's short-lived identity token through Sigstore. The publication job has
+contents/package write and identity-token permissions. The download verification job also needs
+`contents: write`: GitHub exposes draft releases only to tokens with push access, even in a
+public repository. It does not publish or edit the release; making it public remains a separate
+maintainer action.
 
 Image tags are public while the GitHub release is still a draft. Do not treat an image tag or
 a successful build as installation acceptance. Use the digest in the release notes when pinning
 a deployment.
 
-If a run fails, check its Actions logs and draft release. Fix the cause, such as a private
-GHCR package, then delete that failed draft before rerunning publication. Keep published
-version tags unchanged.
+If publication succeeds but download verification fails, preserve the draft, tag and signed
+artifacts. Fix the verification workflow on `main`, then run **Release → Run workflow** from
+`main` with the existing version and `verify_only` enabled:
+
+```sh
+gh workflow run release.yml --ref main -f version=v0.0.1 -F verify_only=true
+```
+
+This mode skips CI/build/publication, checks out the existing version tag, and reruns native
+amd64/arm64 signature, checksum and Kubernetes smoke verification against the existing assets.
+It reads the image digest from release metadata; the verification script authenticates that
+metadata and binds the image to it before pulling. It does not rebuild, re-sign, overwrite or
+publish anything. Rerunning the original failed run would reuse its old workflow permissions,
+so use a new dispatch of the corrected workflow instead.
+
+If publication itself fails, inspect the logs and any partial draft or registry uploads before
+deciding how to recover. Do not blindly rerun publication or move an existing version tag.
 
 ## Try the artifacts on a test machine
 

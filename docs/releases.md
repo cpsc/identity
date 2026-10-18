@@ -136,8 +136,10 @@ artifacts. Fix the verification workflow on `main`, then run **Release → Run w
 gh workflow run release.yml --ref main -f version=v0.0.1 -F verify_only=true
 ```
 
-This mode skips CI/build/publication, checks out the existing version tag, and reruns native
-amd64/arm64 signature, checksum and Kubernetes smoke verification against the existing assets.
+This mode skips CI/build/publication and uses the existing tag's pinned Nix environment with
+verification scripts from the workflow commit. It reruns native amd64/arm64 signature, checksum
+and Kubernetes smoke verification against the existing assets, allowing verification-tool
+fixes without changing the release tag or artifacts.
 It reads the image digest from release metadata; the verification script authenticates that
 metadata and binds the image to it before pulling. It does not rebuild, re-sign, overwrite or
 publish anything. Rerunning the original failed run would reuse its old workflow permissions,
@@ -148,9 +150,9 @@ deciding how to recover. Do not blindly rerun publication or move an existing ve
 
 ## Try the artifacts on a test machine
 
-On a disposable Linux machine matching the chosen architecture, install Docker, check out
-the release source and enter `nix develop`. With the variables and `downloaded` directory
-from the examples above, run:
+On a disposable Linux machine matching the chosen architecture, install Docker 28 or later
+(API 1.48+, required for single-platform image export), check out the release source and
+enter `nix develop`. With the variables and `downloaded` directory from the examples above, run:
 
 ```sh
 bash scripts/release-verify.sh "$version" "$arch" downloaded "$image" "$identity"

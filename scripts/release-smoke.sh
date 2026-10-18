@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run inside pinned `nix develop` on native Linux with a working Docker daemon.
+# Run inside pinned `nix develop` on native Linux with Docker 28+ (API 1.48+).
 # Requires k3d, kubectl, curl and jq. Creates/deletes its own disposable k3s cluster;
 # downloads rancher/k3s:v1.36.5-k3s1 and k3d's helper image if absent. Never rebuilds.
 set -euo pipefail
@@ -93,13 +93,16 @@ if [[ "$platform" != "linux/$arch" ]]; then
 fi
 docker tag "$image_id" "$local_image"
 image_tagged=true
+# A registry pull can retain a multi-platform index with only native content.
+# Export only that platform so containerd does not require absent sibling manifests.
+docker image save --platform "linux/$arch" --output "$work/image.tar" "$local_image"
 # Disable kubeconfig side effects: this script must not change the caller's context.
 cluster_started=true
 k3d cluster create "$cluster" --image rancher/k3s:v1.36.5-k3s1 --no-lb --wait --timeout 180s \
   --kubeconfig-update-default=false --kubeconfig-switch-context=false \
   --k3s-arg '--disable=traefik@server:0' --k3s-arg '--disable=servicelb@server:0'
 k3d kubeconfig get "$cluster" > "$KUBECONFIG"
-k3d image import "$local_image" --cluster "$cluster"
+k3d image import "$work/image.tar" --cluster "$cluster"
 kubectl apply -f "$work/crds.json"
 kubectl wait --for=condition=Established --timeout=90s -f "$work/crds.json"
 kubectl apply -f "$work/rbac.json"

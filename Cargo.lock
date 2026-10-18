@@ -1285,7 +1285,7 @@ dependencies = [
 
 [[package]]
 name = "genkan"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "axum",
  "bytes",
@@ -1312,7 +1312,7 @@ dependencies = [
 
 [[package]]
 name = "genkan-core"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
@@ -1324,7 +1324,7 @@ dependencies = [
 
 [[package]]
 name = "genkan-e2e"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "axum",
  "form_urlencoded",
@@ -1346,7 +1346,7 @@ dependencies = [
 
 [[package]]
 name = "genkan-k8s"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "aws-lc-rs",
  "axum",
@@ -1378,7 +1378,7 @@ dependencies = [
 
 [[package]]
 name = "genkan-keys"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
@@ -1396,7 +1396,7 @@ dependencies = [
 
 [[package]]
 name = "genkan-oauth"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1420,7 +1420,7 @@ dependencies = [
 
 [[package]]
 name = "genkan-signin"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -1453,7 +1453,7 @@ dependencies = [
 
 [[package]]
 name = "genkan-store"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "genkan-core",
  "genkan-keys",
@@ -1464,7 +1464,7 @@ dependencies = [
 
 [[package]]
 name = "genkan-test-support"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "async-trait",
  "passkey",
@@ -1476,7 +1476,7 @@ dependencies = [
 
 [[package]]
 name = "genkan-tls"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "axum",
  "genkan-core",
@@ -1492,7 +1492,7 @@ dependencies = [
 
 [[package]]
 name = "genkan-ui"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "askama",
  "axum",
@@ -1503,7 +1503,7 @@ dependencies = [
 
 [[package]]
 name = "genkanctl"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "clap",
  "genkan-core",

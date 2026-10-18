@@ -8,7 +8,7 @@ on:
       version:
         description: 'Candidate version (must match Cargo.toml); rehearsal never publishes'
         required: true
-        default: v0.0.0
+        default: v0.0.1
 
 permissions:
   contents: read
@@ -136,16 +136,3 @@ jobs:
           nix develop -c gh release download "$VERSION" --dir downloaded
           nix develop -c bash scripts/release-verify.sh "$VERSION" "$ARCH" downloaded "$IMAGE" \
             "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/tags/$VERSION"
-
-  finalize:
-    needs: [prepare, rehearse]
-    runs-on: ubuntu-26.04-arm
-    permissions:
-      contents: write
-    steps:
-      - name: Make verified release public
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          VERSION: ${{ needs.prepare.outputs.version }}
-        run: gh release edit "$VERSION" --draft=false --prerelease

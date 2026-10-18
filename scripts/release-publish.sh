@@ -9,6 +9,16 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 export DOCKER_CONFIG="$work/docker"
 mkdir -p "$DOCKER_CONFIG" "$work/assets"
+# Extract this version's changelog before any registry writes.
+if ! awk -v heading="## $version" '
+  $0 == heading { found = 1; print; next }
+  found && /^## / { exit }
+  found { print }
+  END { if (!found) exit 1 }
+' "$(dirname "$0")/../CHANGELOG.md" > "$work/notes.md"; then
+  echo "Missing changelog section for $version" >&2
+  exit 1
+fi
 printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "${GITHUB_ACTOR:?}" --password-stdin
 # Refuse overwriting a release (including a previous failed draft). Recovery is manual.
 if gh release view "$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -52,13 +62,12 @@ jq -n --arg commit "$GITHUB_SHA" --arg repository "https://github.com/$GITHUB_RE
   cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
 )
 {
-  printf '# Genkan %s (alpha)\n\n' "$version"
-  printf 'Source commit: %s\n\n' "$GITHUB_SHA"
+  printf '\nSource commit: %s\n\n' "$GITHUB_SHA"
   printf 'Linux amd64 and arm64 static CLI archives and container image.\n\n'
   printf '## Image digests\n\n```text\n'
   cat "$work/assets/image-digests.txt"
   printf '```\n\nVerify signatures, checksums and SBOMs using [the release instructions](https://github.com/%s/blob/%s/docs/releases.md).\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA"
-} > "$work/notes.md"
+} >> "$work/notes.md"
 gh release create "$version" "$work/assets/"* --repo "$GITHUB_REPOSITORY" --verify-tag \
   --target "$GITHUB_SHA" --draft --prerelease --title "Genkan $version" --notes-file "$work/notes.md"
 printf 'image=%s\n' "$ref" >> "${GITHUB_OUTPUT:?}"

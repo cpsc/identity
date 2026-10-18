@@ -70,7 +70,10 @@ which records the source commit and build run.
 ## Publish a release
 
 1. Update the workspace version in `Cargo.toml` and update `Cargo.lock`. For the first release,
-   use `0.0.1`. Merge the release commit to `main`.
+   use `0.0.1`. Add a `## v<VERSION>` section to `CHANGELOG.md` with the alpha status,
+   platform scope and known limitations. Use level-three headings within each version;
+   the publication script includes only the matching version section in the GitHub release notes.
+   Merge the release commit to `main`.
 2. In GitHub Actions, select **Release → Run workflow**, choose that commit's branch and enter
    the matching version, such as `v0.0.1`. This runs CI and tries both platform builds without
    publishing.
@@ -78,6 +81,8 @@ which records the source commit and build run.
    can write to it. If the package is new, the first publishing run creates it; change its
    visibility before the download checks run. Set repository rulesets to protect `main` and
    restrict release-tag changes to maintainers.
+   Enable GitHub private vulnerability reporting and confirm the reporting link in `SECURITY.md`
+   works before making the release public.
 4. Tag the release commit and push the tag. Replace `YOUR_RELEASE_COMMIT` with its commit hash:
 
    ```sh
@@ -85,17 +90,40 @@ which records the source commit and build run.
    git push origin v0.0.1
    ```
 
-5. Watch the **Release** run in GitHub Actions. Once it succeeds, the GitHub prerelease is public.
+5. Watch the **Release** run in GitHub Actions. A successful run leaves a **draft prerelease**;
+   it never makes the GitHub release public automatically.
+6. Download the draft assets with a maintainer's authenticated GitHub CLI:
+
+   ```sh
+   gh release download v0.0.1 --repo engawahq/genkan --dir downloaded
+   ```
+
+   Draft assets are not anonymously downloadable. For the download step in
+   [Get started](get-started.md), transfer these exact assets to the clean test server and
+   perform the same signature and checksum verification; do not rebuild the CLI or image.
+   Complete the [installation checklist](release-installation.md) on Linux amd64 and arm64.
+   Record the release commit, CLI checksums, image digests, cluster versions and observed
+   outcomes in [#43](https://github.com/engawahq/genkan/issues/43). Keep acceptance failures
+   visible; a green release workflow is not a substitute for this checklist.
+7. Only after the workflow and installation acceptance pass, make the prerelease public:
+
+   ```sh
+   gh release edit v0.0.1 --repo engawahq/genkan --draft=false --prerelease
+   ```
+
+   Repeat the guide's unauthenticated downloads and signature/checksum verification against
+   the public URLs. Announce the release only after those checks succeed.
 
 The tag must match the Cargo version, and the commit must be on `main`. The workflow reruns
 CI, builds both platforms using the pinned Rust/Nix toolchain and locked dependencies, and
 tests the CLI archives and images it will publish. It then signs and uploads the artifacts,
-downloads them on fresh runners, and verifies and runs them before publishing the draft release.
-Signing uses GitHub's short-lived identity token through Sigstore. Write permissions are
-limited to the publication and finalization jobs.
+downloads them on fresh runners, and verifies and runs them while the release stays a draft.
+Signing uses GitHub's short-lived identity token through Sigstore. Workflow write permissions
+are limited to the publication job; making the release public is a separate maintainer action.
 
-Image tags appear while the GitHub release is still a draft. Use a release after its workflow
-succeeds, and use the digest in its release notes when pinning a deployment.
+Image tags are public while the GitHub release is still a draft. Do not treat an image tag or
+a successful build as installation acceptance. Use the digest in the release notes when pinning
+a deployment.
 
 If a run fails, check its Actions logs and draft release. Fix the cause, such as a private
 GHCR package, then delete that failed draft before rerunning publication. Keep published

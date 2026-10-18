@@ -20,7 +20,7 @@ its container image.
 | RFC 8414 OAuth 2.0 Authorization Server Metadata | RFC | Met |
 | RFC 7515 JWS, RFC 7517 JWK, RFC 7518 JWA, RFC 7638 thumbprints | RFC | Met |
 | RFC 7519 JWT, RFC 8725 JWT BCP, RFC 9068 JWT access tokens | RFC | Met |
-| KEP-3331 Structured Authentication Configuration (`apiserver.config.k8s.io/v1`) | GA in Kubernetes 1.34 | Met (k3s, k0s with a worker on each controller, kubeadm; KubeSolo cannot pass the flag) |
+| KEP-3331 Structured Authentication Configuration (`apiserver.config.k8s.io/v1`) | GA in Kubernetes 1.34 | Met on k3s; k0s and kubeadm configuration generation implemented, clean release installations unverified; KubeSolo cannot pass the flag |
 | RFC 6749 OAuth 2.0 (authorization code, refresh) | RFC | Met |
 | RFC 7636 PKCE | RFC | Met (S256 only) |
 | RFC 9700 OAuth 2.0 Security BCP | BCP 240 | Partial: sender-constrained tokens (DPoP) not implemented |
@@ -58,7 +58,7 @@ its container image.
 | Image: static binary, non-root, no shell | `Containerfile`, `genkan-k8s/src/deployment.rs` | `genkan-k8s: deployment::tests::deployment_is_locked_down`; *(e2e)* | Met |
 | Image size and idle memory measured in CI | `scripts/build-image.sh`, e2e measurement | CI `kubernetes` job summary | Met (about 20 MB; pod working set within the 30 MiB budget) |
 | Image signing (Sigstore) and SBOM | `.github/workflows/release.yml`, `scripts/release-{build,publish,verify}.sh` | Exact-digest signature/SBOM verification and public pull in both native release rehearsal jobs | Partial: pipeline implemented; public OIDC publication evidence requires a successful tag-triggered run ([release procedure](releases.md)) |
-| Versioned CLI archives, checksums, signed provenance and SBOMs | Same workflow; `scripts/release-smoke.sh` | Signed checksum manifest; downloaded archive execution and Kubernetes-backed container startup on Linux amd64/arm64 before draft finalization | Partial: pipeline implemented; local smoke is not evidence of a published release |
+| Versioned CLI archives, checksums, signed provenance and SBOMs | Same workflow; `scripts/release-smoke.sh` | Signed checksum manifest; downloaded archive execution and Kubernetes-backed container startup on Linux amd64/arm64 while release stays draft; separate maintainer publication after installation acceptance | Partial: pipeline implemented; local smoke is not evidence of a published release; [#43](https://github.com/engawahq/genkan/issues/43) remains unverified |
 
 ## OpenID Connect Discovery 1.0 and RFC 8414
 
@@ -95,7 +95,7 @@ its container image.
 | `validation.go` | `discoveryURL` https and different from `url` | internal TLS listener at the Service's ClusterIP | *(e2e)* | Met |
 | `oidc.go` | Internal discovery keeps `issuer`; `jwks_uri` from that document | `genkan-oauth/src/discovery.rs` | `genkan-oauth: discovery::tests::internal_variant_changes_only_the_jwks_uri`; *(e2e)* | Met |
 | AuthenticationConfiguration | Prefixed usernames and groups; no `system:`; access tokens only (`has(claims.client_id)`); lifetime bound; elevated groups only in short, fresh tokens | `genkan-k8s/src/kube_config.rs` | `genkan-k8s: kube_config::tests::*`; *(e2e)* `passkey_sign_in_then_kubectl_auth_whoami` | Met |
-| Distributions | `anonymous` per distribution; install steps for k3s, k0s, kubeadm; KubeSolo refused | `kube_config.rs` | `genkan-k8s: kube_config::tests::anonymous_section_follows_the_distribution` | Met |
+| Distributions | `anonymous` per distribution; install steps for k3s, k0s, kubeadm; KubeSolo refused | `kube_config.rs` | `genkan-k8s: kube_config::tests::anonymous_section_follows_the_distribution` | Partial: configuration generation tested; cluster E2E covers k3s only, k0s/kubeadm release installation unverified |
 | Project requirement | `kubectl auth whoami` on k3s | — | *(e2e)* | Met |
 
 ## Kubernetes storage

@@ -12,7 +12,8 @@ every laptop, and cannot be revoked. Genkan (玄関, the entrance of a Japanese 
 with a passkey: `kubectl` opens your browser, you touch your fingerprint reader, and you get a
 token that lasts minutes, not years.
 
-> **Status: alpha.** Expect breaking changes.
+> **Status: v0.0.1 alpha.** Expect breaking changes; no upgrade or rollback guarantees.
+> See the [release notes](CHANGELOG.md#v001) and [support policy](SECURITY.md).
 
 https://github.com/user-attachments/assets/4c6e29f2-341c-4622-8cc5-4337e13e53b5
 
@@ -29,8 +30,8 @@ and restarting a deployment is refused with 403 until you ask for admin rights.*
   admin tokens cannot be renewed at all. Revoke a person's sessions and their access ends when
   the token in hand expires, within ten minutes.
 - **Runs inside the cluster it protects.** One small pod (about 20 MB), no database, no extra
-  servers. Works with k3s, k0s and kubeadm, and with any OpenID Connect app such as Argo CD or
-  Grafana.
+  servers. Tested in CI on k3s; k0s and kubeadm configuration is available but installation is
+  unverified. OpenID Connect apps such as Argo CD or Grafana can use the same issuer.
 
 ## What it looks like
 

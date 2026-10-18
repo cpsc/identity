@@ -4,6 +4,11 @@ Use this checklist when preparing a release. Start with a fresh Ubuntu server or
 follow [Get started](get-started.md), using the release CLI and image. Run it on Linux amd64
 and arm64, with a browser on a separate computer.
 
+For a draft candidate, use a maintainer's authenticated `gh release download` as described in
+[Publish a release](releases.md#publish-a-release), then transfer those exact assets to the
+test server and run the guide's verification commands. Draft download URLs are not public.
+Repeat the public download and verification steps after publication, before announcing the release.
+
 ## Record the setup
 
 Keep a short record with:

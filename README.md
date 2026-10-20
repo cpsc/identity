@@ -1,6 +1,6 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/cover-dark.avif">
-  <img alt="Zeabur Identity: cross out admin.conf, log in to Kubernetes with a passkey" src="docs/images/cover-light.avif">
+  <img alt="Zeabur Identity: admin.conf crossed out; sign in to Kubernetes with a passkey" src="docs/images/cover-light.avif">
 </picture>
 
 # Zeabur Identity

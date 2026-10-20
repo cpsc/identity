@@ -1,5 +1,3 @@
-/* ── Base styles ── the page's ground, text, focus, selection and scrollbars, on the tokens. */
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -12,8 +10,6 @@
   }
 }
 
-/* Respect a request for less motion everywhere, including component animations (spinners,
-   collapsible panels), not only where a class says `motion-reduce:`. */
 @media (prefers-reduced-motion: reduce) {
   *,
   ::before,
@@ -25,7 +21,6 @@
   }
 }
 
-/* Geist at 13px on 20px. */
 body {
   font-size: var(--text-body);
   line-height: var(--text-body--line-height);
@@ -33,19 +28,14 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Every figure lines up: tables, counts and times. */
 html {
   font-variant-numeric: tabular-nums;
 }
 
-/* Zeabur's selection: a violet wash. */
 ::selection {
   background: var(--selection);
 }
 
-/* Keyboard focus is a solid 2px violet outline outside the control (`--focus-ring`, 3:1 or more
-   against what is around it; the dashboard's 40% ring was about 2.3:1). Fields show focus by
-   their edge instead (their own `focus:` classes), so they draw no ring. */
 :focus {
   outline: none;
 }
@@ -53,14 +43,13 @@ html {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
+/* Fields show focus by their edge instead. */
 :is(input, textarea, select, [contenteditable]):focus-visible,
 [data-slot="input"]:focus-visible,
 [role="combobox"]:focus-visible {
   outline: none;
 }
 
-/* Zeabur's scrollbars: a transparent track and a round thumb 6px wide. `scrollbar-none` still
-   hides one. */
 @supports selector(::-webkit-scrollbar) {
   ::-webkit-scrollbar {
     width: 6px;
@@ -89,7 +78,6 @@ html {
   }
 }
 
-/* A page in the app frame (AppFrame) never moves as a whole: only its scrolling regions do. */
 html:has([data-slot="app-frame"]) {
   overscroll-behavior: none;
 }

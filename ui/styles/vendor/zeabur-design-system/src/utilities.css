@@ -1,41 +1,28 @@
-/* ── Utilities ── the type roles, Zeabur's button surfaces and navigation rows (for pages that are
-   not React too), motion, patterns and the brand marks. Values come from src/tokens.css. */
-
-/* The type roles: each sets its `--text-<role>` size, line height, and weight and tracking where
-   the role has them (src/tokens.css). Components and apps write these rather than `text-<role>`,
-   which `cn` would take for a colour. */
-
-/* A page's heading: 24px at 600. */
+/* `type-<role>`, not `text-<role>`: `cn` takes an unknown `text-*` for a colour and drops it. */
 @utility type-title {
   font-size: var(--text-title);
   line-height: var(--text-title--line-height);
   font-weight: var(--text-title--font-weight);
   letter-spacing: var(--text-title--letter-spacing);
 }
-/* An object's name at the head of its page (a project, a service): 20px at 500. */
 @utility type-name {
   font-size: var(--text-name);
   line-height: var(--text-name--line-height);
   font-weight: var(--text-name--font-weight);
 }
-/* A dialog's, a card's or a section's heading: 16px at 600. */
 @utility type-heading {
   font-size: var(--text-heading);
   line-height: var(--text-heading--line-height);
   font-weight: var(--text-heading--font-weight);
 }
-/* Body text and navigation: 13px on 20. */
 @utility type-body {
   font-size: var(--text-body);
   line-height: var(--text-body--line-height);
 }
-/* Descriptions, meta, a table's heading: 12px. */
 @utility type-meta {
   font-size: var(--text-meta);
   line-height: var(--text-meta--line-height);
 }
-/* A section label over a group of rows (the sidebar's, a settings page's): 11px, uppercase, wide
-   tracking, in the tertiary colour. */
 @utility type-label {
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
@@ -44,37 +31,29 @@
   letter-spacing: var(--text-label--letter-spacing);
   color: var(--text-tertiary);
 }
-/* Hints, counts, a person's email under their name: 11px. */
 @utility type-micro {
   font-size: var(--text-micro);
   line-height: var(--text-micro--line-height);
 }
-/* The smallest text: a badge, counts in a tab's bubble, chart axes. Never a sentence. */
 @utility type-nano {
   font-size: var(--text-nano);
   line-height: var(--text-nano--line-height);
 }
-/* A key cap's keys (Kbd): 10px on 15, 500. */
 @utility type-kbd {
   font-size: var(--text-kbd);
   line-height: var(--text-kbd--line-height);
   font-weight: var(--text-kbd--font-weight);
 }
-/* A key figure (Stat): 20px at 500. */
 @utility type-figure {
   font-size: var(--text-figure);
   line-height: var(--text-figure--line-height);
   font-weight: var(--text-figure--font-weight);
 }
-/* Machine values only: names, images, hosts, keys. Never labels. Keeps the line height around it. */
 @utility type-mono {
   font-family: var(--font-mono);
   font-size: var(--text-mono);
 }
 
-/* Zeabur's button surfaces: a vertical gradient, a light inner edge (2px, its bottom side clear)
-   and a one-pixel outline drawn as a shadow. The Button component uses them; a page without React
-   puts one on a <button> with its own size (`h-9 rounded-md px-4 text-sm font-medium`). */
 @utility button-primary {
   color: var(--on-primary);
   background-image: linear-gradient(to bottom, var(--primary-from), var(--primary-to));
@@ -139,8 +118,6 @@
   }
 }
 
-/* The raised white pill of the current navigation row (the sidebar's), and of a segmented
-   control's chosen item: a faint gradient, a white edge and soft shadows to both sides. */
 @utility nav-active {
   border-color: var(--nav-pill-edge);
   background-image: linear-gradient(to bottom, var(--nav-pill-from), var(--nav-pill-to));
@@ -150,8 +127,6 @@
     -2px 0 5px -1px var(--nav-pill-side),
     2px 0 5px -1px var(--nav-pill-side);
 }
-/* The current child of a folding menu: the same pill without the side shadows, which would spill
-   over the tree rail (the dashboard's sub-item). */
 @utility nav-active-sub {
   border-color: var(--nav-pill-edge);
   background-image: linear-gradient(to bottom, var(--nav-pill-from), var(--nav-pill-to));
@@ -159,7 +134,6 @@
     0 2px 4px var(--nav-pill-drop),
     0 0 0 1px var(--nav-pill-ring);
 }
-/* The 3px violet bar of the current row in a tree (a folding menu's child). */
 @utility nav-accent-bar {
   display: block;
   width: 3px;
@@ -169,9 +143,7 @@
   background-image: linear-gradient(to bottom, var(--primary-from), var(--primary-to));
 }
 
-/* A 1.5px ring, between `ring-1` and `ring-2`: the outline of an idle marker (a scheduled job, an
-   unused claim) with `ring-idle ring-inset`. Built like Tailwind's `ring-<n>`, so a focus ring
-   still replaces it. Not called `ring-*`: `cn` would take that for a ring colour. */
+/* Not named `ring-*`: `cn` would take that for a ring colour. */
 @utility hairline-ring {
   --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1.5px + var(--tw-ring-offset-width))
     var(--tw-ring-color, currentcolor);
@@ -180,9 +152,6 @@
     var(--tw-ring-shadow), var(--tw-shadow);
 }
 
-/* Small-item motion: an active marker that slides to the new item (segmented controls, the tabs'
-   pill and underline, a rail). The marker moves by `translate`, so nothing reflows. Only when the
-   person has not asked for less motion. */
 @utility slide {
   @media (prefers-reduced-motion: no-preference) {
     transition:
@@ -192,8 +161,6 @@
   }
 }
 
-/* A panel's entrance: it slides in a little from the right and fades, from `@starting-style`, so
-   it needs no script. Off under reduced motion. */
 @utility enter-from-right {
   @media (prefers-reduced-motion: no-preference) {
     transition:
@@ -206,14 +173,12 @@
   }
 }
 
-/* A canvas's dotted ground. */
 @utility bg-dots {
   background-color: var(--canvas);
   background-image: radial-gradient(var(--canvas-dot) 1px, transparent 1.2px);
   background-size: 20px 20px;
 }
 
-/* Diagonal hatching for "no data" areas and starting pods (colour from `currentColor`). */
 @utility bg-hatch {
   background-image: repeating-linear-gradient(
     135deg,
@@ -229,10 +194,8 @@
   }
 }
 
-/* The Zeabur logo and mark (vendor/zeabur, inlined as data: URLs so that the stylesheet needs no
-   file beside it; src/brand.test.ts checks they match), in one colour, from `currentColor` by a
-   mask: for a page without React, or where the logo must take the text colour. The Brand component draws them
-   in the brand's colours. Size them by height or width. */
+/* Inlined as data: URLs so the stylesheet needs no file beside it; src/brand.test.ts checks them
+   against vendor/zeabur. */
 @utility brand-logo {
   display: inline-block;
   aspect-ratio: 563 / 107;
@@ -248,8 +211,6 @@
     no-repeat center / contain;
 }
 
-/* The sidebar toggle's inner bar: a filled block while the sidebar is open, a thin line once it is
-   closed, moving with the sidebar. */
 @utility sidebar-icon-bar {
   d: path("M6 7H8V13H6Z");
   @media (prefers-reduced-motion: no-preference) {
@@ -260,8 +221,6 @@
   }
 }
 
-/* Zeabur's loading dots: a 5 × 5 matrix whose columns light one after another (LoadingDots,
-   Spinner). Each dot reads its column's delay from `--dot-delay`. */
 @theme {
   --animate-dot-wave: dot-wave 600ms step-end infinite;
   @keyframes dot-wave {
@@ -279,8 +238,6 @@
   animation-delay: var(--dot-delay, 0ms);
 }
 
-/* Zeabur's frosted surface for tooltips and dropdown lists: translucent white (zGray-900 on dark)
-   over a blur, a light edge and a soft shadow. */
 @utility surface-glass {
   border: 1px solid var(--glass-edge);
   background-color: var(--glass);
@@ -289,7 +246,6 @@
   -webkit-backdrop-filter: blur(16px) saturate(1.5);
 }
 
-/* Skeleton's breathing. */
 @keyframes skeleton-pulse {
   0%,
   100% {
@@ -300,13 +256,10 @@
   }
 }
 
-/* A white icon on a tile fading towards its foot. */
 @utility mask-fade-down {
   mask-image: linear-gradient(to bottom, black, transparent);
 }
 
-/* SegmentedBar's cells: the bar's colours (`--bar`, one gradient with hard stops) cut into cells by
-   a repeating mask, each `--cell` wide with a gap as wide. */
 @utility segmented-cells {
   background-image: var(--bar);
   mask-image: repeating-linear-gradient(
@@ -316,13 +269,11 @@
   );
 }
 
-/* A chart tooltip's dashed indicator: a 1.5px dashed edge. */
 @utility indicator-dashed {
   border-width: 1.5px;
   border-style: dashed;
 }
 
-/* Card's inner padding, which its parts read as `px-(--card-px)`: 20px, 16px at `size="sm"`. */
 @utility card-padding {
   --card-px: --spacing(5);
   &[data-size="sm"] {
@@ -330,10 +281,8 @@
   }
 }
 
-/* A ToggleGroup's gap, from the `--gap` its `spacing` prop sets (in spacing steps). */
 @utility toggle-gap {
   gap: --spacing(var(--gap));
 }
 
-/* Inside vertical Tabs: its list is a column of the dashboard's sidebar rows. */
 @custom-variant tabs-vertical (&:is(:where(.group\/tabs):where([data-orientation="vertical"]) *));

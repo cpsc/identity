@@ -1,18 +1,3 @@
-/* ── Zeabur's tokens ─────────────────────────────────────────────────────────────────────────────
-   One file for every value: Zeabur's palettes (zGray, zViolet, zOrangered), its semantic tokens
-   (text-main, border-main, surface-page, the v2 borders and surfaces …), status colours, the
-   shadcn/ui theme variables mapped onto them, the type scale, motion and shadows, and the Tailwind
-   theme that turns them into classes.
-
-   Light and dark: every themed value is written once as `light-dark(<light>, <dark>)`, so the theme
-   follows `color-scheme`: light by default, dark under a `.dark` class (on <html>, as the React app
-   and Storybook set it). A server-rendered page can follow the operating system instead with
-   `:root { color-scheme: light dark }` (README, "Server-rendered pages"). Zeabur's own products
-   default to dark.
-
-   No @custom-variant here: index.css makes `dark:` follow the `.dark` class; a page that follows the
-   system defines its own (`@media (prefers-color-scheme: dark)`). */
-
 :root {
   color-scheme: light;
 }
@@ -23,9 +8,6 @@
   color-scheme: dark;
 }
 
-/* ── Palettes ── Zeabur's, as RGB triplets (`rgb(var(--zGray-500))`, `rgba(var(--zViolet-500), .2)`),
-   the same in both themes. Tailwind colours of the same names follow (`bg-zGray-900`,
-   `text-zViolet-500/60`). */
 :root {
   --white: 255, 255, 255;
   --black: 0, 0, 0;
@@ -71,85 +53,53 @@
   --zOrangered-950: 78, 16, 2;
 }
 
-/* ── Zeabur's semantic tokens ── the dashboard's names. */
 :root {
-  /* Text: the main colour, secondary (descriptions, idle navigation), tertiary (placeholders,
-     section labels, hints) and the colour on an inverted surface. */
   --text-main: light-dark(rgb(var(--black)), rgb(var(--white)));
   --text-secondary: light-dark(rgb(var(--zGray-600)), rgb(var(--zGray-300)));
   --text-tertiary: light-dark(rgb(var(--zGray-400)), rgb(var(--zGray-500)));
   --text-inverse: light-dark(rgb(var(--white)), rgb(var(--zGray-900)));
-  /* The firmer edge: the sidebar's, a Container's, a table's. */
   --border-main: light-dark(rgb(var(--zGray-150)), rgb(var(--zGray-800)));
-  /* Surfaces: the page (and the sidebar on light), and the grey frame of a Container's title strip
-     and the tab switcher's track. */
   --surface-page: light-dark(rgb(247, 247, 247), rgb(var(--zGray-950)));
   --surface-frame: light-dark(rgb(239, 239, 239), rgb(35, 33, 40));
-  /* The v2 tokens: softer edges and surfaces for cards, fields, menus and rows. */
   --v2-border: light-dark(rgb(236, 235, 238), rgb(45, 43, 50));
   --v2-separator: light-dark(rgb(240, 239, 242), rgb(40, 38, 45));
   --v2-surface-hover: light-dark(rgb(246, 245, 248), rgb(35, 33, 40));
   --v2-surface-active: light-dark(rgb(240, 239, 242), rgb(40, 38, 45));
-  /* The brand violet for text and icons: the brand's 500 on light, lifted on dark. */
   --violet-accent: light-dark(rgb(var(--zViolet-500)), rgb(164, 105, 255));
-  /* Signals. */
   --success: #22d180;
   --error: #ff4400;
-  /* A deployment's state, as its dot shows it. */
   --deployment-running: #22d180;
   --deployment-error: #d44b36;
   --deployment-progress: #590df5;
   --deployment-normal: #373737;
-  /* Resource usage: normal, near a limit, past it (usage bars, SegmentedBar, Meter). */
   --usage-normal: #6899e6;
   --usage-warning: #f0bd2b;
   --usage-severe: #f09862;
-  /* Surfaces of what sits on the page and what floats: white on light, zGray-900 on dark. */
   --surface: light-dark(rgb(var(--white)), rgb(var(--zGray-900)));
-  /* The sidebar: the page's grey on light, a step above the page on dark. */
   --chrome: light-dark(rgb(247, 247, 247), rgb(var(--zGray-900)));
 }
 
-/* ── Component tokens ── every colour a component draws that is not one of the tokens above, by
-   what it is for. Components use these (as Tailwind colours, shadows and utilities), never the
-   palettes or a hex value. */
 :root {
-  /* Surfaces. The white pill raised over a track (the tab switcher's and a segmented control's
-     chosen item); the track itself and its edge. */
   --surface-raised: light-dark(rgb(var(--white)), rgb(var(--zGray-800)));
   --segmented-track: light-dark(#efefef, rgb(35, 33, 40));
   --segmented-border: light-dark(#e8e8e8, rgb(45, 43, 50));
-  /* The drawer's search row, on a faint white (zGray-850 at half on dark). */
   --sidebar-search: light-dark(rgb(255 255 255 / 0.6), rgb(33 32 35 / 0.5));
-  /* A table's heading band and footer (`ruled`), and a row under the pointer. */
   --table-head: light-dark(rgb(var(--zGray-50)), rgb(var(--zGray-800)));
   --table-row-hover: light-dark(rgb(245 244 245 / 0.6), rgb(var(--zGray-850)));
-  /* A row of the frosted list (Select) under the pointer, and the chosen one. */
   --glass-hover: light-dark(rgb(0 0 0 / 0.04), rgb(255 255 255 / 0.06));
   --glass-selected: light-dark(rgb(0 0 0 / 0.06), rgb(255 255 255 / 0.08));
-  /* The frosted surface (`surface-glass`): its fill and its light edge. */
   --glass: light-dark(rgb(255 255 255 / 0.65), rgb(25 24 27 / 0.65));
   --glass-edge: light-dark(rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.06));
-  /* A toast's buttons. */
   --toast-action: light-dark(rgb(var(--zGray-150)), rgb(var(--zGray-800)));
-  /* What dims the page under a dialog. */
   --overlay: rgb(0 0 0 / 0.5);
 
-  /* Tracks and placeholders: the empty part of a bar (Meter, SegmentedBar), a skeleton, an unlit
-     dot of an Illustration. `--usage-reserved` fills a bar with what is reserved rather than used;
-     `--hatch-line` draws an unbounded track's hatching. */
   --track: light-dark(rgb(var(--zGray-200)), rgb(var(--zGray-800)));
   --usage-reserved: light-dark(rgb(var(--zGray-400)), rgb(var(--zGray-600)));
   --hatch-line: rgb(var(--zGray-400));
-  /* An avatar without a picture. */
   --avatar: light-dark(rgb(var(--zGray-200)), rgb(var(--zGray-700)));
 
-  /* Navigation. The tree rail a folding menu's children hang on; the current row's label (the
-     dashboard's #161616, zGray-50 on dark). */
   --rail: light-dark(rgb(var(--zGray-200)), rgb(var(--zGray-700)));
   --nav-current: light-dark(#161616, rgb(var(--zGray-50)));
-  /* The raised pill of the current row (`nav-active`, `nav-active-sub`): a faint gradient, a
-     white edge, a soft drop and a hairline ring; the side shadows of a top-level row. */
   --nav-pill-from: light-dark(#fefefe, rgb(var(--zGray-800)));
   --nav-pill-to: light-dark(#f8f8f8, rgb(var(--zGray-850)));
   --nav-pill-edge: light-dark(#ffffff, rgb(255 255 255 / 0.1));
@@ -157,27 +107,18 @@
   --nav-pill-ring: light-dark(rgb(0 0 0 / 0.04), rgb(255 255 255 / 0.06));
   --nav-pill-side: light-dark(rgb(0 0 0 / 0.045), rgb(0 0 0 / 0.32));
 
-  /* Text and marks on the violet (a primary button, a checked box, the icon tile). */
   --on-primary: rgb(var(--white));
-  /* The primary violet under the pointer (a checked box, a chosen pill). */
   --primary-hover: rgb(var(--zViolet-600));
-  /* A violet note's words (Alert `info`, Banner `default`). */
   --info-strong: light-dark(rgb(var(--zViolet-700)), rgb(var(--zViolet-300)));
-  /* Orange-red at full strength in both themes: an error's icon, the quiet destructive button's
-     words, and the same under the pointer. */
   --danger: rgb(var(--zOrangered-500));
   --danger-hover: rgb(var(--zOrangered-600));
 
-  /* The primary gradient (the primary button, the tree's accent bar) and its hover; the inner edge
-     and outline of the solid buttons. */
   --primary-from: #8340ff;
   --primary-to: #7327ff;
   --primary-hover-from: #7a33ff;
   --primary-hover-to: #6820f0;
   --button-edge: rgb(255 255 255 / 0.3);
   --button-outline: rgb(0 0 0 / 0.13);
-  /* The secondary button (white, dark grey on dark), its hover, edge and outline; the quiet
-     destructive button's hover wash. */
   --secondary-from: light-dark(#ffffff, #2c2c30);
   --secondary-to: light-dark(#f5f5f5, #222225);
   --secondary-hover-from: light-dark(#f5f5f5, #34343a);
@@ -186,14 +127,11 @@
   --secondary-outline: light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.5));
   --secondary-danger-from: light-dark(#fef2f2, #3a2626);
   --secondary-danger-to: light-dark(#fee2e2, #2d1e1e);
-  /* The destructive button's red gradient and its hover. */
   --destructive-from: #ff5b5b;
   --destructive-to: #e5484d;
   --destructive-hover-from: #f04749;
   --destructive-hover-to: #d83a3e;
 
-  /* The switch: its recessed track (off), the violet gradient and deep edge when on, and the
-     raised white knob. */
   --switch-track: light-dark(#d9d9d9, rgb(var(--zGray-800)));
   --switch-track-border: light-dark(#c8c8c8, rgb(var(--zGray-700)));
   --switch-on-from: #6300ff;
@@ -203,7 +141,6 @@
   --switch-thumb-to: #f0f0f0;
   --switch-thumb-border: rgb(var(--white));
 
-  /* The icon tile (IconBox, Empty's `icon` media): a two-stop gradient per tone. */
   --tile-violet-from: #a469ff;
   --tile-violet-to: #6300ff;
   --tile-orangered-from: #ff7b33;
@@ -211,18 +148,13 @@
   --tile-green-from: #48c794;
   --tile-green-to: #1fa86a;
 
-  /* The logo's own colours (Brand): the mark's violet and orange-red blocks. */
   --logo-violet: #6300ff;
   --logo-orangered: #ff4400;
   --mark-orangered: #ee430e;
 
-  /* Selected text: a violet wash. */
   --selection: color-mix(in srgb, rgb(var(--zViolet-500)) 22%, transparent);
 }
 
-/* ── shadcn/ui's theme variables ── the names shadcn/ui's components (and these) read, on Zeabur's
-   tokens, so shadcn-style class names (`bg-background`, `text-muted-foreground`, `border-input` …)
-   keep working. Primary is Zeabur violet #6300FF. */
 :root {
   --background: var(--surface-page);
   --foreground: var(--text-main);
@@ -236,21 +168,14 @@
   --secondary-foreground: var(--text-main);
   --muted: light-dark(rgb(var(--zGray-50)), rgb(var(--zGray-850)));
   --muted-foreground: var(--text-secondary);
-  /* A highlighted row (menus, lists). */
   --accent: var(--v2-surface-hover);
   --accent-foreground: var(--text-main);
   --destructive: light-dark(rgb(var(--zOrangered-500)), rgb(var(--zOrangered-400)));
   --border: var(--v2-border);
-  /* A control's edge (fields, checkboxes, radios): zGray-500, at least 3:1 against the card and
-     the page in both themes (WCAG 1.4.11); the v2 border is about 1.2:1. */
+  /* At least 3:1 against the card and the page in both themes (WCAG 1.4.11). */
   --input: rgb(var(--zGray-500));
-  /* A field's edge while it has focus, and focus rings. */
   --ring: var(--violet-accent);
-  /* The keyboard focus outline (src/base.css): the ring colour, solid, at least 3:1 in both
-     themes. */
   --focus-ring: var(--ring);
-  /* Chart series, in order, never cycled: violet, sky, the text's grey, green; 5 is the faint
-     grey of what was replaced. Away from the orange-red of errors. */
   --chart-1: var(--violet-accent);
   --chart-2: light-dark(#2f8fe8, #5bb1ff);
   --chart-3: light-dark(rgb(var(--zGray-700)), rgb(var(--zGray-200)));
@@ -267,23 +192,13 @@
   --sidebar-ring: var(--ring);
 }
 
-/* ── The design system's own roles ── names shared with the apps' components (engawa's design
-   system had the same ones), on Zeabur's values.
-   Brand: Zeabur violet. `--brand` is its colour for text and marks, `--brand-soft` a violet wash
-   (selected text, an empty state's tile), `--brand-strong` violet that reads on any ground (a check,
-   a link). Never a status.
-   Status: green, violet, amber, orange-red and grey, each as a glyph colour for dots (`ok` …), a
-   soft pill fill (`-soft`) and a pill text that reads on it (`-strong`). */
 :root {
   --brand: var(--violet-accent);
   --brand-foreground: rgb(var(--white));
-  /* Plain colours, not color-mix(): Lightning CSS's light-dark() fallback drops a color-mix()
-     argument. */
+  /* Not color-mix(): Lightning CSS drops a color-mix() argument from its light-dark() fallback. */
   --brand-soft: light-dark(rgb(99 0 255 / 0.1), rgb(164 105 255 / 0.2));
   --brand-strong: var(--violet-accent);
 
-  /* Illustration hues, the same in both themes (Illustration's tiles). The older names are kept
-     for the apps that read them: lime is Zeabur's lavender, persimmon its orange-red. */
   --violet: rgb(var(--zViolet-500));
   --lavender: #a469ff;
   --orangered: #ff4400;
@@ -315,28 +230,18 @@
   --idle-soft: light-dark(rgb(var(--zGray-100)), rgb(var(--zGray-850)));
   --idle-strong: light-dark(rgb(var(--zGray-600)), rgb(var(--zGray-300)));
 
-  /* The weakest text: placeholders, times, a caret beside a label. Never a sentence. */
   --subtle: var(--text-tertiary);
-  /* A field's or a control's edge on hover. */
   --border-strong: light-dark(rgb(var(--zGray-200)), rgb(var(--zGray-700)));
-  /* The edge of what floats: menus, tooltips, dialogs, toasts. */
   --border-popover: var(--v2-border);
-  /* Lines between rows. */
   --rule: var(--v2-separator);
-  /* The ground of things laid out in space: a segmented control's track, a skeleton. */
   --plane: var(--surface-frame);
-  /* The ground of a canvas (an architecture view) and its dots. */
   --canvas: light-dark(rgb(var(--zGray-50)), rgb(var(--zGray-950)));
   --canvas-dot: light-dark(rgb(0 0 0 / 0.14), rgb(255 255 255 / 0.1));
-  /* Fills: hover, a selected row, press. */
   --hover: var(--v2-surface-hover);
   --selected: var(--v2-surface-active);
   --press: light-dark(rgb(var(--zGray-100)), rgb(45, 43, 50));
 
-  /* Zeabur's easing, for everything that moves. */
   --ease-site: cubic-bezier(0.22, 1, 0.36, 1);
-  /* Shadows: what sits on the page (a field, a pill), what floats (menus, popovers, toasts) and
-     dialogs. Cards have none; their edge is `border-v2-border`. */
   --shadow-raised: 0 1px 2px light-dark(rgb(0 0 0 / 0.06), rgb(0 0 0 / 0.4));
   --shadow-float:
     0 10px 15px -3px light-dark(rgb(0 0 0 / 0.08), rgb(0 0 0 / 0.4)),
@@ -344,19 +249,14 @@
   --shadow-dialog:
     0 20px 25px -5px light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.5)),
     0 8px 10px -6px light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.5));
-  /* The frosted surface (`surface-glass`): a hairline ring, then the shadow of what floats. */
   --shadow-glass:
     0 0 0 1px light-dark(rgb(0 0 0 / 0.04), rgb(255 255 255 / 0.04)),
     0 10px 15px -3px light-dark(rgb(0 0 0 / 0.08), rgb(0 0 0 / 0.4)),
     0 4px 6px -4px light-dark(rgb(0 0 0 / 0.08), rgb(0 0 0 / 0.4));
-  /* Scrollbars (src/base.css). */
   --scrollbar: light-dark(rgb(var(--zGray-200)), rgb(53, 53, 53));
   --scrollbar-hover: light-dark(rgb(var(--zGray-250)), rgb(var(--zGray-700)));
 }
 
-/* ── Type ── the type scale is in the Tailwind theme below (`--text-<role>`); the older
-   `--type-<role>` and `--type-<role>-leading` names stay as aliases for pages that read them; then
-   the families. */
 :root {
   --type-title: var(--text-title);
   --type-title-leading: var(--text-title--line-height);
@@ -377,8 +277,6 @@
   --type-figure: var(--text-figure);
   --type-figure-leading: var(--text-figure--line-height);
   --type-mono: var(--text-mono);
-  /* Geist for Latin (src/fonts.css); Han and other scripts in the system's face (macOS PingFang,
-     Windows Microsoft JhengHei or YaHei, Linux Noto Sans CJK). */
   --font-stack-sans:
     "Geist", "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC",
     "PingFang SC", "Microsoft JhengHei", "Microsoft YaHei", "Noto Sans CJK TC", "Noto Sans CJK SC",
@@ -402,86 +300,56 @@
   text-autospace: ideograph-alpha ideograph-numeric;
 }
 
-/* ── The Tailwind theme ── */
 @theme {
-  /* Zeabur's borders are one pixel. */
   --default-border-width: 1px;
   --default-ring-width: 1px;
 }
 
-/* ── The type scale ── each role a size with its line height (and weight and tracking where the
-   role has them), as Tailwind theme variables: `var(--text-body)`, `var(--text-body--line-height)`.
-   Components write the `type-<role>` utilities (src/utilities.css), which read these: `cn` takes
-   an unknown `text-<role>` for a colour and would drop it beside `text-main`. `static`, so every
-   variable is in the stylesheet even when no class uses it. */
+/* `static` keeps every variable in the output even when no class uses it. */
 @theme static {
-  /* A page's heading: 24px on 32, 600. */
   --text-title: 1.5rem;
   --text-title--line-height: 2rem;
   --text-title--font-weight: 600;
   --text-title--letter-spacing: -0.01em;
-  /* An object's name at the head of its page: 20px on 28, 500. */
   --text-name: 1.25rem;
   --text-name--line-height: 1.75rem;
   --text-name--font-weight: 500;
-  /* A dialog's, a card's or a section's heading: 16px on 24, 600. */
   --text-heading: 1rem;
   --text-heading--line-height: 1.5rem;
   --text-heading--font-weight: 600;
-  /* Body text and navigation rows: 13px on 20. */
   --text-body: 0.8125rem;
   --text-body--line-height: 1.25rem;
-  /* Descriptions, meta, a table's heading: 12px on 16. */
   --text-meta: 0.75rem;
   --text-meta--line-height: 1rem;
-  /* A section label: 11px on 16, 500, uppercase, wide tracking. */
   --text-label: 0.6875rem;
   --text-label--line-height: 1rem;
   --text-label--font-weight: 500;
   --text-label--letter-spacing: 0.05em;
-  /* Hints and counts: 11px on 16. */
   --text-micro: 0.6875rem;
   --text-micro--line-height: 1rem;
-  /* The smallest text (a badge, a tab's count, chart axes): 10px on 14. */
   --text-nano: 0.625rem;
   --text-nano--line-height: 0.875rem;
-  /* A key cap (Kbd): 10px on 15 (the dashboard's line height of 1.5), 500. */
   --text-kbd: 0.625rem;
   --text-kbd--line-height: 0.9375rem;
   --text-kbd--font-weight: 500;
-  /* A key figure (Stat): 20px on 28, 500. */
   --text-figure: 1.25rem;
   --text-figure--line-height: 1.75rem;
   --text-figure--font-weight: 500;
-  /* Machine values in Geist Mono: 12px. `type-mono` keeps the line height around it (a field's,
-     a cell's); `text-mono` sets this one. */
   --text-mono: 0.75rem;
   --text-mono--line-height: 1rem;
 }
 
-/* ── Shape, depth, motion and named sizes ── the Tailwind theme variables behind the classes the
-   components write, so no component carries an arbitrary value. */
 @theme {
-  /* Radii, Tailwind's scale as Zeabur uses it: 2px (`rounded-xs`) for a chart's swatch, 4px
-     (`rounded`, `rounded-sm`) for checkboxes, chips and key caps, 6px (`rounded-md`) for buttons,
-     fields and menus, 8px (`rounded-lg`) for navigation rows, banners and containers, 12px
-     (`rounded-xl`) for cards. */
   --radius-xs: 0.125rem;
   --radius-sm: 0.25rem;
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
 
-  /* Layers: what is raised inside a control (a tab's label over its pill, the tree's bar over the
-     rail), what floats (menus, popovers, selects, dialogs) and tooltips over all of it. */
   --z-index-raised: 10;
   --z-index-popup: 50;
   --z-index-tooltip: 60;
 
-  /* What moves together: `transition-popup` (a popup's fade and growth), `transition-sheet` (a
-     sheet sliding in), `transition-listbox` (a select's list, which also drops a little),
-     `transition-field` and `transition-input` (a field's edge, ring and fill), and the single
-     properties of the sidebar's fold and a caret's turn. */
   --transition-property-popup: opacity, scale;
   --transition-property-sheet: opacity, translate;
   --transition-property-listbox: opacity, scale, translate;
@@ -491,24 +359,15 @@
   --transition-property-rotate: rotate;
   --transition-property-width: width;
   --transition-property-visibility: visibility;
-  /* A popup's entrance: fast, then settling (menus, popovers, selects). */
   --ease-popup: cubic-bezier(0.16, 1, 0.3, 1);
-  /* Skeleton's breathing: between half and full opacity, 1.4s a cycle. */
   --animate-skeleton: skeleton-pulse 1.4s ease-in-out infinite;
 
-  /* Shadows of single parts: the chosen pill on a segmented track, the switch's recessed track and
-     its knob, the icon tile's violet glow, a white icon's haze on a tile. */
   --shadow-segmented: 0 1px 2px rgb(0 0 0 / 0.06);
   --shadow-switch-track: inset 0 1px 3px rgb(0 0 0 / 0.35);
   --shadow-switch-thumb: 0 1px 2px rgb(0 0 0 / 0.35);
   --shadow-tile: 0 2px 6px -2px rgb(99 0 255 / 0.5), 0 1px 2px rgb(164 105 255 / 0.25);
   --drop-shadow-tile-icon: 0 0 4px rgb(0 0 0 / 0.25);
 
-  /* Named sizes. Controls (buttons, fields, toggles, selects) are 28, 32, 36 or 40px tall
-     (`h-control-xs` … `h-control-lg`, `size-control-*` for a square one); the drawer is 224px
-     (`w-sidebar`); the phone's navigation sheet 16rem or 88% of the window (`w-sheet`); a centred
-     dialog leaves 1rem around it (`w-dialog`, `max-h-dialog`). A folding menu's child is indented
-     to its tree rail (`pl-tree-indent`); an illustration's matrix is inset 16%. */
   --spacing-control-xs: 1.75rem;
   --spacing-control-sm: 2rem;
   --spacing-control-md: 2.25rem;
@@ -519,10 +378,7 @@
   --width-sheet: min(16rem, 88vw);
   --width-dialog: calc(100% - 2rem);
   --max-height-dialog: calc(100svh - 2rem);
-  /* The logo's proportions. */
   --aspect-logo: 563 / 107;
-  /* Grids: an icon beside its text (Alert), a heading and its action (CardHeader) over its
-     description, a row of key figures (StatGroup), a tree row's bar column and its body. */
   --grid-template-columns-icon: auto 1fr;
   --grid-template-columns-action: 1fr auto;
   --grid-template-rows-header: auto auto;
@@ -530,10 +386,6 @@
   --grid-template-columns-tree: 3px minmax(0, 1fr);
 }
 
-/* ── The palettes as Tailwind colours ── `bg-zGray-900`, `text-zViolet-500`,
-   `border-zOrangered-500/30`, for apps written against them; the design system's own components
-   use the semantic tokens instead (lint/zeabur.js). `static`, so `var(--color-zGray-500)` is there
-   for a page that shows the palette. */
 @theme static {
   --color-zGray-50: rgb(var(--zGray-50));
   --color-zGray-100: rgb(var(--zGray-100));
@@ -579,7 +431,6 @@
   --font-mono: var(--font-stack-mono);
   --font-heading: var(--font-stack-sans);
 
-  /* shadcn/ui */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -614,11 +465,6 @@
 
   --color-zViolet-accent: var(--violet-accent);
 
-  /* Zeabur's semantic tokens, with the dashboard's class names: `text-main`, `text-secondary`,
-     `text-tertiary`, `text-inverse`, `border-main`, `bg-surface-page`, `bg-surface-frame`, and
-     `*-v2-border`, `*-v2-separator`, `*-v2-surface-hover`, `*-v2-surface-active` for any colour
-     utility. `text-secondary` is the secondary text colour (shadcn/ui's `bg-secondary` stays the
-     secondary fill). */
   --text-color-main: var(--text-main);
   --text-color-secondary: var(--text-secondary);
   --text-color-tertiary: var(--text-tertiary);
@@ -643,7 +489,6 @@
   --color-usage-warning: var(--usage-warning);
   --color-usage-severe: var(--usage-severe);
 
-  /* The roles. */
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
   --color-brand-soft: var(--brand-soft);
@@ -690,12 +535,6 @@
   --color-selected: var(--selected);
   --color-press: var(--press);
 
-  /* Radii are Tailwind's own scale: 4px (`rounded`) for checkboxes and small chips, 6px
-     (`rounded-md`) for buttons, fields and menus, 8px (`rounded-lg`) for navigation rows, banners
-     and containers, 12px (`rounded-xl`) for cards. */
-
-  /* `shadow-xs` and `shadow-sm` raise what sits on the page; `shadow-md` and `shadow-lg` are what
-     floats; `shadow-xl` and up, dialogs. */
   --shadow-2xs: var(--shadow-raised);
   --shadow-xs: var(--shadow-raised);
   --shadow-sm: var(--shadow-raised);
@@ -704,10 +543,8 @@
   --shadow-xl: var(--shadow-dialog);
   --shadow-2xl: var(--shadow-dialog);
 
-  /* Zeabur's easing (`ease-emphasized`). */
   --ease-emphasized: var(--ease-site);
 
-  /* The component tokens as Tailwind colours. */
   --color-surface-raised: var(--surface-raised);
   --color-segmented-track: var(--segmented-track);
   --color-segmented-border: var(--segmented-border);
@@ -743,8 +580,7 @@
   --color-logo-orangered: var(--logo-orangered);
   --color-mark-orangered: var(--mark-orangered);
 
-  /* Values read where the class is used (Base UI's `--available-height`, IconBox's `--from` and
-     `--to`), so they are inlined rather than set on :root. */
+  /* Inlined: they read variables set where the class is used. */
   --max-height-listbox: min(var(--available-height), 15rem);
   --shadow-icon-box:
     0 2px 6px -2px color-mix(in srgb, var(--to) 50%, transparent),

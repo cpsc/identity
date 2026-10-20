@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
     kind = "Grant",
     namespaced,
     status = "GrantStatus",
-    shortname = "gkgrant",
+    shortname = "zbgrant",
     category = "zeabur-identity",
     selectable = ".spec.user",
     printcolumn(name = "User", type_ = "string", json_path = ".spec.user"),

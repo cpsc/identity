@@ -179,7 +179,7 @@ fail:
 ```sh
 as=(--as=system:serviceaccount:zeabur-identity:user-sync)
 # Refused: touches a user the tool did not create.
-kubectl -n zeabur-identity patch gkuser admin "${as[@]}" --type=merge -p '{"spec":{"disabled":true}}'
+kubectl -n zeabur-identity patch zbuser admin "${as[@]}" --type=merge -p '{"spec":{"disabled":true}}'
 # Refused: elevated group.
 kubectl -n zeabur-identity apply "${as[@]}" -f - <<'EOF'
 apiVersion: identity.zeabur.com/v1alpha1
@@ -260,7 +260,7 @@ Before applying, a real tool should also:
 - Refuse to change the directory-ID annotation of an existing user, so a renamed or recycled
   account in the directory cannot inherit someone else's `User`.
 - Disable managed users that are no longer in the export
-  (`kubectl get gkuser -l identity.zeabur.com/source=directory`).
+  (`kubectl get zbuser -l identity.zeabur.com/source=directory`).
 - Lowercase usernames and check them against the [username rules](#username-rules) before
   writing.
 

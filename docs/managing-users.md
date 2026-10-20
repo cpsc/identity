@@ -21,10 +21,10 @@ export ZEABUR_IDENTITY_ISSUER=https://identity.example.test
 
 | Object | Short name | What it is | Who creates it |
 |---|---|---|---|
-| `User` | `gkuser` | a person: username, display name, groups | you |
-| `Credential` | `gkcred` | one passkey, or one linked GitHub or Google account | Zeabur Identity, when someone uses a link |
-| `Invitation` | `gkinvite` | a pending one-time link | `zeabur-identityctl invite`; Zeabur Identity deletes it once used or expired |
-| `Grant` | `gkgrant` | one signed-in session | Zeabur Identity, at each sign-in |
+| `User` | `zbuser` | a person: username, display name, groups | you |
+| `Credential` | `zbcred` | one passkey, or one linked GitHub or Google account | Zeabur Identity, when someone uses a link |
+| `Invitation` | `zbinvite` | a pending one-time link | `zeabur-identityctl invite`; Zeabur Identity deletes it once used or expired |
+| `Grant` | `zbgrant` | one signed-in session | Zeabur Identity, at each sign-in |
 
 Credentials, invitations and grants carry the label `identity.zeabur.com/user=<username>`, so
 `-l identity.zeabur.com/user=alice` selects everything that belongs to `alice`.
@@ -92,7 +92,7 @@ kubectl -n zeabur-identity rollout status deploy/zeabur-identity
 Edit the `User`:
 
 ```sh
-kubectl -n zeabur-identity patch gkuser alice --type=merge -p '{"spec":{"groups":["dev","oncall"]}}'
+kubectl -n zeabur-identity patch zbuser alice --type=merge -p '{"spec":{"groups":["dev","oncall"]}}'
 ```
 
 The change shows up in the next token Zeabur Identity issues. Tokens already issued keep the old groups
@@ -110,7 +110,7 @@ Everyday tokens can only do what the user's ordinary groups allow. For powerful 
 the user an **elevated group**:
 
 ```sh
-kubectl -n zeabur-identity patch gkuser alice --type=merge -p '{"spec":{"elevatedGroups":["admins"]}}'
+kubectl -n zeabur-identity patch zbuser alice --type=merge -p '{"spec":{"elevatedGroups":["admins"]}}'
 ```
 
 Alice gets the elevated group only when she asks for it, for example through the admin
@@ -129,7 +129,7 @@ error. Turn it on for the client you administer the cluster with, such as `kubec
 [Get started](get-started.md), and leave it off for web applications that only sign people in:
 
 ```sh
-kubectl -n zeabur-identity patch gkclient kubectl --type=merge -p '{"spec":{"allowElevation":true}}'
+kubectl -n zeabur-identity patch zbclient kubectl --type=merge -p '{"spec":{"allowElevation":true}}'
 ```
 
 Turning it off takes effect at once, even for sign-ins in progress. When an application asks
@@ -149,8 +149,8 @@ zeabur-identityctl invite --username alice
 ## Remove a passkey or linked account
 
 ```sh
-kubectl -n zeabur-identity get gkcred -l identity.zeabur.com/user=alice
-kubectl -n zeabur-identity delete gkcred <name>
+kubectl -n zeabur-identity get zbcred -l identity.zeabur.com/user=alice
+kubectl -n zeabur-identity delete zbcred <name>
 ```
 
 The deleted credential cannot sign in again. Sessions it already started keep working until you
@@ -161,8 +161,8 @@ The deleted credential cannot sign in again. Sessions it already started keep wo
 Each signed-in session is a `Grant`. Delete it to end the session:
 
 ```sh
-kubectl -n zeabur-identity get gkgrant -l identity.zeabur.com/user=alice
-kubectl -n zeabur-identity delete gkgrant -l identity.zeabur.com/user=alice
+kubectl -n zeabur-identity get zbgrant -l identity.zeabur.com/user=alice
+kubectl -n zeabur-identity delete zbgrant -l identity.zeabur.com/user=alice
 ```
 
 The session cannot renew its token any more. The token already in hand still works until it
@@ -184,17 +184,17 @@ opens the link becomes Alice, so confirm you are talking to her before you send 
 deleted, so you can undo it:
 
 ```sh
-kubectl -n zeabur-identity patch gkuser alice --type=merge -p '{"spec":{"disabled":true}}'
+kubectl -n zeabur-identity patch zbuser alice --type=merge -p '{"spec":{"disabled":true}}'
 ```
 
 **To remove someone for good**, delete their credentials, sessions and invitations first, then
 the `User`:
 
 ```sh
-for kind in gkcred gkgrant gkinvite; do
+for kind in zbcred zbgrant zbinvite; do
   kubectl -n zeabur-identity delete "$kind" -l identity.zeabur.com/user=alice
 done
-kubectl -n zeabur-identity delete gkuser alice
+kubectl -n zeabur-identity delete zbuser alice
 ```
 
 > [!WARNING]

@@ -1763,7 +1763,7 @@ mod tests {
                 refused = Some(stderr);
                 break;
             }
-            kubectl(&["-n", &ns, "delete", "gkuser", "mallory"], "");
+            kubectl(&["-n", &ns, "delete", "zbuser", "mallory"], "");
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
         let refused = refused.expect("the policy never took effect");
@@ -1809,7 +1809,7 @@ mod tests {
                 "-n",
                 &ns,
                 "patch",
-                "gkuser",
+                "zbuser",
                 "root",
                 &as_tool,
                 "--type=merge",
@@ -1827,7 +1827,7 @@ mod tests {
                 "-n",
                 &ns,
                 "patch",
-                "gkuser",
+                "zbuser",
                 "ana",
                 &as_tool,
                 "--type=merge",
@@ -1848,7 +1848,7 @@ mod tests {
                 "-n",
                 &ns,
                 "patch",
-                "gkuser",
+                "zbuser",
                 "ana",
                 "--type=merge",
                 "-p",
@@ -1877,9 +1877,9 @@ mod tests {
 
         // RBAC: no delete, nothing but users.
         for args in [
-            vec!["-n", &ns, "delete", "gkuser", "ana", &as_tool],
-            vec!["-n", &ns, "get", "gkcred", &as_tool],
-            vec!["-n", &ns, "get", "gkinvite", &as_tool],
+            vec!["-n", &ns, "delete", "zbuser", "ana", &as_tool],
+            vec!["-n", &ns, "get", "zbcred", &as_tool],
+            vec!["-n", &ns, "get", "zbinvite", &as_tool],
             vec!["-n", &ns, "get", "secrets", &as_tool],
         ] {
             let (ok, stderr) = kubectl(&args, "");

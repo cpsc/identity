@@ -26,7 +26,7 @@ pub use zeabur_identity_store::CredentialType;
     version = "v1alpha1",
     kind = "Credential",
     namespaced,
-    shortname = "gkcred",
+    shortname = "zbcred",
     category = "zeabur-identity",
     selectable = ".spec.user",
     printcolumn(name = "User", type_ = "string", json_path = ".spec.user"),

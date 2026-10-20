@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
     version = "v1alpha1",
     kind = "Invitation",
     namespaced,
-    shortname = "gkinvite",
+    shortname = "zbinvite",
     category = "zeabur-identity",
     selectable = ".spec.user",
     printcolumn(name = "User", type_ = "string", json_path = ".spec.user"),

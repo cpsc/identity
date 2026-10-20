@@ -111,7 +111,7 @@ Edit the object like any other (`kubectl -n zeabur-identity edit oauthclient gra
 confidential client.
 
 ```sh
-kubectl -n zeabur-identity get oauthclients                  # short name: gkclient
+kubectl -n zeabur-identity get oauthclients                  # short name: zbclient
 kubectl -n zeabur-identity delete oauthclient grafana        # nobody can sign in to it any more
 ```
 

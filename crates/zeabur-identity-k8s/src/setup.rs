@@ -22,7 +22,7 @@
 //! a count as evidence that the rest are gone. No setup Secret is written until every deletion
 //! succeeds. An enrolment that redeemed its link before the reset but stores its passkey after
 //! the credentials are deleted survives it; that window is one request long, and
-//! `kubectl get gkcred -l identity.zeabur.com/user=<name>` after the reset shows it. This
+//! `kubectl get zbcred -l identity.zeabur.com/user=<name>` after the reset shows it. This
 //! implements Zeabur Identity's account-recovery policy using the security-event refresh-token
 //! revocation permitted by [RFC 9700 §4.14.2].
 //!

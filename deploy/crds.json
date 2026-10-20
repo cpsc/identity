@@ -16,7 +16,7 @@
           "kind": "User",
           "plural": "users",
           "shortNames": [
-            "gkuser"
+            "zbuser"
           ],
           "singular": "user"
         },
@@ -134,7 +134,7 @@
           "kind": "Credential",
           "plural": "credentials",
           "shortNames": [
-            "gkcred"
+            "zbcred"
           ],
           "singular": "credential"
         },
@@ -300,7 +300,7 @@
           "kind": "OAuthClient",
           "plural": "oauthclients",
           "shortNames": [
-            "gkclient"
+            "zbclient"
           ],
           "singular": "oauthclient"
         },
@@ -428,7 +428,7 @@
           "kind": "Grant",
           "plural": "grants",
           "shortNames": [
-            "gkgrant"
+            "zbgrant"
           ],
           "singular": "grant"
         },
@@ -616,7 +616,7 @@
           "kind": "Invitation",
           "plural": "invitations",
           "shortNames": [
-            "gkinvite"
+            "zbinvite"
           ],
           "singular": "invitation"
         },

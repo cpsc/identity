@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
     version = "v1alpha1",
     kind = "User",
     namespaced,
-    shortname = "gkuser",
+    shortname = "zbuser",
     category = "zeabur-identity",
     selectable = ".spec.username",
     printcolumn(name = "Username", type_ = "string", json_path = ".spec.username"),

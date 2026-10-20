@@ -47,7 +47,7 @@ pub const SECRET_HASH_PATTERN: &str = r"^sha256:[0-9a-f]{64}$";
     version = "v1alpha1",
     kind = "OAuthClient",
     namespaced,
-    shortname = "gkclient",
+    shortname = "zbclient",
     category = "zeabur-identity",
     printcolumn(name = "Type", type_ = "string", json_path = ".spec.type"),
     printcolumn(

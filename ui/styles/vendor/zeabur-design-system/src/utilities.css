@@ -1,0 +1,291 @@
+/* ── Utilities ── the type roles, Zeabur's button surfaces and navigation rows (for pages that are
+   not React too), motion, patterns and the brand marks. Values come from src/tokens.css. */
+
+/* The type roles. */
+
+/* A page's heading: 24px at 600. */
+@utility type-title {
+  font-size: var(--type-title);
+  line-height: var(--type-title-leading);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+/* An object's name at the head of its page (a project, a service): 20px at 500. */
+@utility type-name {
+  font-size: var(--type-name);
+  line-height: var(--type-name-leading);
+  font-weight: 500;
+}
+/* A dialog's, a card's or a section's heading: 16px at 600. */
+@utility type-heading {
+  font-size: var(--type-heading);
+  line-height: var(--type-heading-leading);
+  font-weight: 600;
+}
+/* Body text and navigation: 13px. */
+@utility type-body {
+  font-size: var(--type-body);
+  line-height: var(--type-body-leading);
+}
+/* Descriptions, meta, a table's heading: 12px. */
+@utility type-meta {
+  font-size: var(--type-meta);
+  line-height: var(--type-meta-leading);
+}
+/* A section label over a group of rows (the sidebar's, a settings page's): 11px, uppercase, wide
+   tracking, in the tertiary colour. */
+@utility type-label {
+  font-size: var(--type-label);
+  line-height: var(--type-label-leading);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+}
+/* Hints, counts, a person's email under their name: 11px. */
+@utility type-micro {
+  font-size: var(--type-micro);
+  line-height: var(--type-micro-leading);
+}
+/* The smallest text: counts in a tab's bubble, chart axes, key hints. Never a sentence. */
+@utility type-nano {
+  font-size: var(--type-nano);
+  line-height: var(--type-nano-leading);
+}
+/* A key figure (Stat): 20px at 500. */
+@utility type-figure {
+  font-size: var(--type-figure);
+  line-height: var(--type-figure-leading);
+  font-weight: 500;
+}
+/* Machine values only: names, images, hosts, keys. Never labels. */
+@utility type-mono {
+  font-family: var(--font-mono);
+  font-size: var(--type-mono);
+}
+
+/* Zeabur's button surfaces: a vertical gradient, a light inner edge (2px, its bottom side clear)
+   and a one-pixel outline drawn as a shadow. The Button component uses them; a page without React
+   puts one on a <button> with its own size (`h-9 rounded-md px-4 text-sm font-medium`). */
+@utility button-primary {
+  color: #fff;
+  background-image: linear-gradient(to bottom, #8340ff, #7327ff);
+  border: 2px solid rgb(255 255 255 / 0.3);
+  border-bottom: 1px solid transparent;
+  background-origin: border-box;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.13);
+  &:hover:not(:disabled) {
+    background-image: linear-gradient(to bottom, #7a33ff, #6820f0);
+  }
+}
+@utility button-secondary {
+  color: var(--text-main);
+  background-image: linear-gradient(
+    to bottom,
+    light-dark(#ffffff, #2c2c30),
+    light-dark(#f5f5f5, #222225)
+  );
+  border: 2px solid light-dark(#ffffff, rgb(255 255 255 / 0.06));
+  border-bottom: 1px solid transparent;
+  background-origin: border-box;
+  box-shadow: 0 0 0 1px light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.5));
+  &:hover:not(:disabled),
+  &[aria-expanded="true"],
+  &[data-popup-open] {
+    background-image: linear-gradient(
+      to bottom,
+      light-dark(#f5f5f5, #34343a),
+      light-dark(#ebebec, #2a2a2e)
+    );
+  }
+}
+@utility button-destructive {
+  color: #fff;
+  background-image: linear-gradient(to bottom, #ff5b5b, #e5484d);
+  border: 2px solid rgb(255 255 255 / 0.3);
+  border-bottom: 1px solid transparent;
+  background-origin: border-box;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.13);
+  &:hover:not(:disabled) {
+    background-image: linear-gradient(to bottom, #f04749, #d83a3e);
+  }
+}
+@utility button-secondary-destructive {
+  color: rgb(var(--zOrangered-500));
+  background-image: linear-gradient(
+    to bottom,
+    light-dark(#ffffff, #2c2c30),
+    light-dark(#f5f5f5, #222225)
+  );
+  border: 2px solid light-dark(#ffffff, rgb(255 255 255 / 0.06));
+  border-bottom: 1px solid transparent;
+  background-origin: border-box;
+  box-shadow: 0 0 0 1px light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.5));
+  &:hover:not(:disabled) {
+    color: rgb(var(--zOrangered-600));
+    background-image: linear-gradient(
+      to bottom,
+      light-dark(#fef2f2, #3a2626),
+      light-dark(#fee2e2, #2d1e1e)
+    );
+  }
+}
+
+/* The raised white pill of the current navigation row (the sidebar's), and of a segmented
+   control's chosen item: a faint gradient, a white edge and soft shadows to both sides. */
+@utility nav-active {
+  border-color: light-dark(#ffffff, rgb(255 255 255 / 0.1));
+  background-image: linear-gradient(
+    to bottom,
+    light-dark(#fefefe, rgb(var(--zGray-800))),
+    light-dark(#f8f8f8, rgb(var(--zGray-850)))
+  );
+  box-shadow:
+    0 2px 4px light-dark(rgb(0 0 0 / 0.05), rgb(0 0 0 / 0.35)),
+    0 0 0 1px light-dark(rgb(0 0 0 / 0.04), rgb(255 255 255 / 0.06)),
+    -2px 0 5px -1px light-dark(rgb(0 0 0 / 0.045), rgb(0 0 0 / 0.32)),
+    2px 0 5px -1px light-dark(rgb(0 0 0 / 0.045), rgb(0 0 0 / 0.32));
+}
+/* The 3px violet bar of the current row in a tree (a folding menu's child). */
+@utility nav-accent-bar {
+  display: block;
+  width: 3px;
+  height: 1rem;
+  flex-shrink: 0;
+  border-radius: 1px;
+  background-image: linear-gradient(to bottom, #8340ff, #7327ff);
+}
+
+/* A 1.5px ring, between `ring-1` and `ring-2`: the outline of an idle marker (a scheduled job, an
+   unused claim) with `ring-idle ring-inset`. Built like Tailwind's `ring-<n>`, so a focus ring
+   still replaces it. Not called `ring-*`: `cn` would take that for a ring colour. */
+@utility hairline-ring {
+  --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1.5px + var(--tw-ring-offset-width))
+    var(--tw-ring-color, currentcolor);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+    var(--tw-ring-shadow), var(--tw-shadow);
+}
+
+/* Small-item motion: an active marker that slides to the new item (segmented controls, the tabs'
+   pill and underline, a rail). The marker moves by `translate`, so nothing reflows. Only when the
+   person has not asked for less motion. */
+@utility slide {
+  @media (prefers-reduced-motion: no-preference) {
+    transition:
+      translate 240ms var(--ease-site),
+      width 240ms var(--ease-site),
+      height 240ms var(--ease-site);
+  }
+}
+
+/* A panel's entrance: it slides in a little from the right and fades, from `@starting-style`, so
+   it needs no script. Off under reduced motion. */
+@utility enter-from-right {
+  @media (prefers-reduced-motion: no-preference) {
+    transition:
+      translate 200ms var(--ease-site),
+      opacity 150ms ease-out;
+    @starting-style {
+      translate: 0.5rem 0;
+      opacity: 0;
+    }
+  }
+}
+
+/* A canvas's dotted ground. */
+@utility bg-dots {
+  background-color: var(--canvas);
+  background-image: radial-gradient(var(--canvas-dot) 1px, transparent 1.2px);
+  background-size: 20px 20px;
+}
+
+/* Diagonal hatching for "no data" areas and starting pods (colour from `currentColor`). */
+@utility bg-hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in oklch, currentColor 35%, transparent) 0 1.5px,
+    transparent 1.5px 5px
+  );
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* The Zeabur logo and mark (vendor/zeabur, inlined as data: URLs so that the stylesheet needs no
+   file beside it; src/brand.test.ts checks they match), in one colour, from `currentColor` by a
+   mask: for a page without React, or where the logo must take the text colour. The Brand component draws them
+   in the brand's colours. Size them by height or width. */
+@utility brand-logo {
+  display: inline-block;
+  aspect-ratio: 563 / 107;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTYzIiBoZWlnaHQ9IjEwNyIgdmlld0JveD0iMCAwIDU2MyAxMDciIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxwYXRoIGQ9Ik01MC4yMSA2OS43NkgxMjkuMjRWMTA2Ljg1SDBWNjkuNzZIMzYuMzNMODYuMzUgNDIuOTZIMFY1Ljg3SDEyOS4yNFY0Mi45Nkw1MC4yMSA2OS43NloiIGZpbGw9IndoaXRlIi8+CjxwYXRoIGQ9Ik04NS45MiA1Ljg3SDBWNDIuOTZIODUuOTJWNS44N1oiIGZpbGw9IiM2MzAwRkYiLz4KPHBhdGggZD0iTTEyOS4yMyA2OS43Nkg1MC42MVYxMDYuODVIMTI5LjIzVjY5Ljc2WiIgZmlsbD0iI0ZGNDQwMCIvPgo8cGF0aCBkPSJNMTY4LjE1IDk2LjcyVjgyLjI3TDE5NC40MSA1Mi4xMkMxOTguNzIgNDcuMTkgMjAxLjkxIDQzLjcgMjAzLjk4IDQxLjYzQzIwMS44MiA0MS43NiAxOTguOTkgNDEuODUgMTk1LjQ3IDQxLjg5TDE3MC43MyA0Mi4wMlYyNi42NUgyMjguNjZWMzkuNzhMMjAxLjg3IDcwLjY2TDE5Mi40NCA4MC44OUMxOTcuNTkgODAuNTggMjAwLjc3IDgwLjQzIDIwMi4wMSA4MC40M0gyMzAuNzFWOTYuNzNIMTY4LjE3TDE2OC4xNSA5Ni43MloiIGZpbGw9IndoaXRlIi8+CjxwYXRoIGQ9Ik0yNzUuNjQgNzQuNDJMMjk0LjExIDc3LjUyQzI5MS43MyA4NC4yOSAyODcuOTkgODkuNDUgMjgyLjg2IDkyLjk5QzI3Ny43NCA5Ni41MyAyNzEuMzIgOTguMyAyNjMuNjMgOTguM0MyNTEuNDUgOTguMyAyNDIuNDMgOTQuMzIgMjM2LjU4IDg2LjM2QzIzMS45NiA3OS45OCAyMjkuNjUgNzEuOTMgMjI5LjY1IDYyLjIxQzIyOS42NSA1MC42IDIzMi42OCA0MS41IDIzOC43NSAzNC45M0MyNDQuODIgMjguMzYgMjUyLjQ5IDI1LjA3IDI2MS43OCAyNS4wN0MyNzIuMiAyNS4wNyAyODAuNDMgMjguNTEgMjg2LjQ2IDM1LjRDMjkyLjQ5IDQyLjI4IDI5NS4zNyA1Mi44MyAyOTUuMSA2Ny4wNEgyNDguNjVDMjQ4Ljc4IDcyLjU0IDI1MC4yOCA3Ni44MiAyNTMuMTQgNzkuODdDMjU2IDgyLjkzIDI1OS41NiA4NC40NiAyNjMuODMgODQuNDZDMjY2LjczIDg0LjQ2IDI2OS4xNyA4My42NyAyNzEuMTUgODIuMDhDMjczLjEzIDgwLjUgMjc0LjYyIDc3Ljk1IDI3NS42NCA3NC40M1Y3NC40MlpNMjc2LjcgNTUuNjhDMjc2LjU3IDUwLjMxIDI3NS4xOCA0Ni4yMyAyNzIuNTQgNDMuNDRDMjY5LjkgNDAuNjUgMjY2LjY5IDM5LjI1IDI2Mi45MSAzOS4yNUMyNTguODYgMzkuMjUgMjU1LjUyIDQwLjcyIDI1Mi44OCA0My42N0MyNTAuMjQgNDYuNjIgMjQ4Ljk0IDUwLjYyIDI0OC45OSA1NS42OEgyNzYuN1oiIGZpbGw9IndoaXRlIi8+CjxwYXRoIGQ9Ik0zMTUuOTYgNDguMDNMMjk5LjE0IDQ0Ljk5QzMwMS4wMyAzOC4yMiAzMDQuMjkgMzMuMiAzMDguOSAyOS45NUMzMTMuNTIgMjYuNyAzMjAuMzggMjUuMDcgMzI5LjQ4IDI1LjA3QzMzNy43NSAyNS4wNyAzNDMuOTEgMjYuMDUgMzQ3Ljk1IDI4LjAxQzM1MiAyOS45NyAzNTQuODQgMzIuNDUgMzU2LjQ5IDM1LjQ3QzM1OC4xNCAzOC40OCAzNTguOTYgNDQuMDEgMzU4Ljk2IDUyLjA2TDM1OC43NiA3My43QzM1OC43NiA3OS44NiAzNTkuMDYgODQuNCAzNTkuNjUgODcuMzJDMzYwLjI0IDkwLjI1IDM2MS4zNSA5My4zOCAzNjIuOTggOTYuNzJIMzQ0LjY0QzM0NC4xNiA5NS40OSAzNDMuNTYgOTMuNjYgMzQyLjg2IDkxLjI0QzM0Mi41NSA5MC4xNCAzNDIuMzMgODkuNDIgMzQyLjIgODkuMDZDMzM5LjAzIDkyLjE0IDMzNS42NSA5NC40NSAzMzIuMDQgOTUuOTlDMzI4LjQzIDk3LjUzIDMyNC41OCA5OC4zIDMyMC40OSA5OC4zQzMxMy4yOCA5OC4zIDMwNy41OSA5Ni4zNCAzMDMuNDQgOTIuNDNDMjk5LjI4IDg4LjUyIDI5Ny4yMSA4My41NyAyOTcuMjEgNzcuNTlDMjk3LjIxIDczLjYzIDI5OC4xNiA3MC4xIDMwMC4wNSA2N0MzMDEuOTQgNjMuOSAzMDQuNTkgNjEuNTIgMzA4IDU5Ljg4QzMxMS40MSA1OC4yMyAzMTYuMzIgNTYuNzkgMzIyLjc1IDU1LjU2QzMzMS40MSA1My45MyAzMzcuNDIgNTIuNDIgMzQwLjc2IDUxLjAxVjQ5LjE2QzM0MC43NiA0NS42IDMzOS44OCA0My4wNiAzMzguMTIgNDEuNTRDMzM2LjM2IDQwLjAyIDMzMy4wNCAzOS4yNiAzMjguMTYgMzkuMjZDMzI0Ljg2IDM5LjI2IDMyMi4yOSAzOS45MSAzMjAuNDQgNDEuMjFDMzE4LjU5IDQyLjUxIDMxNy4xIDQ0Ljc4IDMxNS45NSA0OC4wNEwzMTUuOTYgNDguMDNaTTM0MC43NyA2My4wN0MzMzguMzkgNjMuODYgMzM0LjYzIDY0LjgxIDMyOS40OSA2NS45MUMzMjQuMzUgNjcuMDEgMzIwLjk4IDY4LjA5IDMxOS40IDY5LjE0QzMxNi45OCA3MC44NSAzMTUuNzcgNzMuMDMgMzE1Ljc3IDc1LjY3QzMxNS43NyA3OC4zMSAzMTYuNzQgODAuNTEgMzE4LjY3IDgyLjRDMzIwLjYxIDg0LjI5IDMyMy4wNyA4NS4yNCAzMjYuMDYgODUuMjRDMzI5LjQgODUuMjQgMzMyLjU5IDg0LjE0IDMzNS42MyA4MS45NEMzMzcuODcgODAuMjcgMzM5LjM1IDc4LjIyIDM0MC4wNSA3NS44QzM0MC41MyA3NC4yMiAzNDAuNzggNzEuMjEgMzQwLjc4IDY2Ljc2VjYzLjA2TDM0MC43NyA2My4wN1oiIGZpbGw9IndoaXRlIi8+CjxwYXRoIGQ9Ik0zNjguMzUgOTYuNzJWMEgzODYuODlWMzQuODNDMzkyLjYxIDI4LjMyIDM5OS4zOCAyNS4wNyA0MDcuMjEgMjUuMDdDNDE1Ljc0IDI1LjA3IDQyMi44IDI4LjE2IDQyOC4zOSAzNC4zNEM0MzMuOTggNDAuNTIgNDM2Ljc3IDQ5LjM5IDQzNi43NyA2MC45NkM0MzYuNzcgNzIuNTMgNDMzLjkyIDgyLjE0IDQyOC4yMyA4OC42QzQyMi41MyA5NS4wNiA0MTUuNjIgOTguMyA0MDcuNDggOTguM0M0MDMuNDggOTguMyAzOTkuNTMgOTcuMyAzOTUuNjQgOTUuM0MzOTEuNzUgOTMuMyAzODguMzkgOTAuMzQgMzg1LjU4IDg2LjQzVjk2LjcySDM2OC4zNkgzNjguMzVaTTM4Ni43NiA2MC4xN0MzODYuNzYgNjcuNDMgMzg3LjkgNzIuNzkgMzkwLjE5IDc2LjI3QzM5My40IDgxLjIgMzk3LjY3IDgzLjY2IDQwMi45OSA4My42NkM0MDcuMDggODMuNjYgNDEwLjU3IDgxLjkxIDQxMy40NSA3OC40MUM0MTYuMzMgNzQuOTEgNDE3Ljc3IDY5LjQgNDE3Ljc3IDYxLjg4QzQxNy43NyA1My44OCA0MTYuMzIgNDguMSA0MTMuNDIgNDQuNTZDNDEwLjUyIDQxLjAyIDQwNi44IDM5LjI1IDQwMi4yNyAzOS4yNUMzOTcuNzQgMzkuMjUgMzk0LjEzIDQwLjk4IDM5MS4xOSA0NC40M0MzODguMjQgNDcuODggMzg2Ljc3IDUzLjEzIDM4Ni43NyA2MC4xN0gzODYuNzZaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNNDg5LjY5IDk2LjcyVjg2LjIzQzQ4Ny4xNCA4OS45NyA0ODMuNzkgOTIuOTIgNDc5LjYzIDk1LjA3QzQ3NS40NyA5Ny4yMyA0NzEuMDkgOTguMyA0NjYuNDcgOTguM0M0NjEuODUgOTguMyA0NTcuNTQgOTcuMjcgNDUzLjggOTUuMkM0NTAuMDYgOTMuMTMgNDQ3LjM2IDkwLjIzIDQ0NS42OCA4Ni40OUM0NDQuMDEgODIuNzUgNDQzLjE3IDc3LjU4IDQ0My4xNyA3MC45OVYyNi42NUg0NjEuNzFWNTguODVDNDYxLjcxIDY4LjcgNDYyLjA1IDc0Ljc0IDQ2Mi43MyA3Ni45NkM0NjMuNDEgNzkuMTggNDY0LjY1IDgwLjk0IDQ2Ni40NiA4Mi4yNEM0NjguMjYgODMuNTQgNDcwLjU1IDg0LjE5IDQ3My4zMiA4NC4xOUM0NzYuNDkgODQuMTkgNDc5LjMyIDgzLjMyIDQ4MS44MyA4MS41OEM0ODQuMzQgNzkuODQgNDg2LjA1IDc3LjY5IDQ4Ni45OCA3NS4xMkM0ODcuOSA3Mi41NSA0ODguMzcgNjYuMjUgNDg4LjM3IDU2LjIyVjI2LjY1SDUwNi45MVY5Ni43Mkg0ODkuNjlWOTYuNzJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNNTM1Ljc1IDk2LjcySDUxNy4yMVYyNi42NUg1MzQuNDNWMzYuNjFDNTM3LjM4IDMxLjkgNTQwLjAzIDI4LjggNTQyLjM4IDI3LjMxQzU0NC43MyAyNS44MSA1NDcuNCAyNS4wNyA1NTAuNCAyNS4wN0M1NTQuNjIgMjUuMDcgNTU4LjY5IDI2LjI0IDU2Mi42MSAyOC41N0w1NTYuODcgNDQuNzNDNTUzLjc1IDQyLjcxIDU1MC44NCA0MS42OSA1NDguMTYgNDEuNjlDNTQ1LjQ4IDQxLjY5IDU0My4zNyA0Mi40MSA1NDEuNTYgNDMuODNDNTM5Ljc2IDQ1LjI2IDUzOC4zNCA0Ny44NCA1MzcuMyA1MS41OEM1MzYuMjcgNTUuMzIgNTM1Ljc1IDYzLjE1IDUzNS43NSA3NS4wN1Y5Ni43MVY5Ni43MloiIGZpbGw9IndoaXRlIi8+Cjwvc3ZnPgo=")
+    no-repeat center / contain;
+}
+@utility brand-mark {
+  display: inline-block;
+  aspect-ratio: 1;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEzLjMyNCAxOC45ODc5SDI4VjI1Ljg3NDdINFYxOC45ODc5SDEwLjc0NjVMMjAuMDM1MyAxNC4wMTE4SDRWNy4xMjVIMjhWMTQuMDExOEwxMy4zMjQgMTguOTg3OVoiIGZpbGw9IiMxOTE4MUIiLz4KPHBhdGggZD0iTTE5Ljk1NTQgNy4xMjVINFYxNC4wMTE4SDE5Ljk1NTRWNy4xMjVaIiBmaWxsPSIjNjMwMEZGIi8+CjxwYXRoIGQ9Ik0yNy45OTgyIDE4Ljk4ODNIMTMuMzk4NFYyNS44NzUxSDI3Ljk5ODJWMTguOTg4M1oiIGZpbGw9IiNFRTQzMEUiLz4KPC9zdmc+Cg==")
+    no-repeat center / contain;
+}
+
+/* The sidebar toggle's inner bar: a filled block while the sidebar is open, a thin line once it is
+   closed, moving with the sidebar. */
+@utility sidebar-icon-bar {
+  d: path("M6 7H8V13H6Z");
+  @media (prefers-reduced-motion: no-preference) {
+    transition: d 300ms var(--ease-site);
+  }
+  [data-collapsed] & {
+    d: path("M6 7H6V13H6Z");
+  }
+}
+
+/* Zeabur's loading dots: a 5 × 5 matrix whose columns light one after another (LoadingDots,
+   Spinner). Each dot reads its column's delay from `--dot-delay`. */
+@theme {
+  --animate-dot-wave: dot-wave 600ms step-end infinite;
+  @keyframes dot-wave {
+    0% {
+      opacity: 1;
+    }
+    20% {
+      opacity: 0.25;
+    }
+  }
+}
+@utility dot-wave {
+  opacity: 0.25;
+  animation: var(--animate-dot-wave);
+  animation-delay: var(--dot-delay, 0ms);
+}
+
+/* Zeabur's frosted surface for tooltips and dropdown lists: translucent white (zGray-900 on dark)
+   over a blur, a light edge and a soft shadow. */
+@utility surface-glass {
+  border: 1px solid light-dark(rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.06));
+  background-color: light-dark(rgb(255 255 255 / 0.65), rgb(25 24 27 / 0.65));
+  box-shadow:
+    0 0 0 1px light-dark(rgb(0 0 0 / 0.04), rgb(255 255 255 / 0.04)),
+    0 10px 15px -3px light-dark(rgb(0 0 0 / 0.08), rgb(0 0 0 / 0.4)),
+    0 4px 6px -4px light-dark(rgb(0 0 0 / 0.08), rgb(0 0 0 / 0.4));
+  backdrop-filter: blur(16px) saturate(1.5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+}
+
+/* Skeleton's breathing. */
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}

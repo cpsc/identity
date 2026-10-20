@@ -1,0 +1,94 @@
+/* ── Base styles ── the page's ground, text, focus, selection and scrollbars, on the tokens. */
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* Respect a request for less motion everywhere, including component animations (spinners,
+   collapsible panels), not only where a class says `motion-reduce:`. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Geist at 13px on 20px. */
+body {
+  font-size: var(--type-body);
+  line-height: var(--type-body-leading);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Every figure lines up: tables, counts and times. */
+html {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Zeabur's selection: a violet wash. */
+::selection {
+  background: color-mix(in srgb, rgb(var(--zViolet-500)) 22%, transparent);
+}
+
+/* Keyboard focus is a soft violet ring outside the control (Zeabur's `ring-2 ring-zViolet-500/40`).
+   Fields show focus by their edge instead (their own `focus:` classes), so they draw no ring. */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ring) 40%, transparent);
+  outline-offset: 1px;
+}
+:is(input, textarea, select, [contenteditable]):focus-visible,
+[data-slot="input"]:focus-visible,
+[role="combobox"]:focus-visible {
+  outline: none;
+}
+
+/* Zeabur's scrollbars: a transparent track and a round thumb 6px wide. `scrollbar-none` still
+   hides one. */
+@supports selector(::-webkit-scrollbar) {
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+    background: transparent;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border-radius: 100vh;
+    background: var(--scrollbar);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-hover);
+  }
+  ::-webkit-scrollbar-button {
+    display: none;
+  }
+}
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar) transparent;
+  }
+}
+
+/* A page in the app frame (AppFrame) never moves as a whole: only its scrolling regions do. */
+html:has([data-slot="app-frame"]) {
+  overscroll-behavior: none;
+}

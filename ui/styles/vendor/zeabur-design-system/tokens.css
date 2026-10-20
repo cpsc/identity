@@ -1,0 +1,12 @@
+/* Zeabur's tokens, type roles, utilities and base styles, without components or fonts: the
+   stylesheet for a page that is not a React app, such as a server-rendered sign-in page compiled
+   with the Tailwind CSS v4 CLI. Import it after Tailwind:
+
+     @import "tailwindcss";
+     @import "@zeabur/design-system/tokens.css";
+
+   then pick how `dark:` and the theme switch (README, "Server-rendered pages"), and serve Geist
+   (fonts.css, or your own @font-face for vendor/geist/*.woff2). index.css imports this file too. */
+@import "./src/tokens.css";
+@import "./src/utilities.css";
+@import "./src/base.css";

@@ -1,0 +1,463 @@
+/* ── Zeabur's tokens ─────────────────────────────────────────────────────────────────────────────
+   One file for every value: Zeabur's palettes (zGray, zViolet, zOrangered), its semantic tokens
+   (text-main, border-main, surface-page, the v2 borders and surfaces …), status colours, the
+   shadcn/ui theme variables mapped onto them, the type scale, motion and shadows, and the Tailwind
+   theme that turns them into classes.
+
+   Light and dark: every themed value is written once as `light-dark(<light>, <dark>)`, so the theme
+   follows `color-scheme`: light by default, dark under a `.dark` class (on <html>, as the React app
+   and Storybook set it). A server-rendered page can follow the operating system instead with
+   `:root { color-scheme: light dark }` (README, "Server-rendered pages"). Zeabur's own products
+   default to dark.
+
+   No @custom-variant here: index.css makes `dark:` follow the `.dark` class; a page that follows the
+   system defines its own (`@media (prefers-color-scheme: dark)`). */
+
+:root {
+  color-scheme: light;
+}
+.light {
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+}
+
+/* ── Palettes ── Zeabur's, as RGB triplets (`rgb(var(--zGray-500))`, `rgba(var(--zViolet-500), .2)`),
+   the same in both themes. Tailwind colours of the same names follow (`bg-zGray-900`,
+   `text-zViolet-500/60`). */
+:root {
+  --white: 255, 255, 255;
+  --black: 0, 0, 0;
+
+  --zGray-50: 245, 244, 245;
+  --zGray-100: 234, 233, 236;
+  --zGray-150: 221, 220, 224;
+  --zGray-200: 208, 206, 212;
+  --zGray-250: 196, 193, 199;
+  --zGray-300: 183, 180, 187;
+  --zGray-400: 152, 149, 157;
+  --zGray-500: 126, 122, 133;
+  --zGray-600: 101, 97, 107;
+  --zGray-700: 76, 72, 81;
+  --zGray-750: 63, 60, 68;
+  --zGray-800: 50, 47, 55;
+  --zGray-850: 33, 32, 35;
+  --zGray-900: 25, 24, 27;
+  --zGray-950: 15, 14, 17;
+
+  --zViolet-50: 243, 244, 255;
+  --zViolet-100: 203, 203, 255;
+  --zViolet-200: 203, 203, 255;
+  --zViolet-300: 159, 155, 246;
+  --zViolet-400: 116, 93, 243;
+  --zViolet-500: 99, 0, 255;
+  --zViolet-600: 80, 30, 203;
+  --zViolet-700: 62, 20, 162;
+  --zViolet-800: 49, 17, 131;
+  --zViolet-900: 41, 18, 113;
+  --zViolet-950: 17, 2, 58;
+
+  --zOrangered-50: 254, 236, 231;
+  --zOrangered-100: 254, 229, 222;
+  --zOrangered-200: 253, 207, 195;
+  --zOrangered-300: 250, 169, 148;
+  --zOrangered-400: 244, 119, 89;
+  --zOrangered-500: 238, 67, 14;
+  --zOrangered-600: 201, 50, 0;
+  --zOrangered-700: 175, 47, 9;
+  --zOrangered-800: 139, 33, 2;
+  --zOrangered-900: 118, 31, 8;
+  --zOrangered-950: 78, 16, 2;
+}
+
+/* ── Zeabur's semantic tokens ── the dashboard's names. */
+:root {
+  /* Text: the main colour, secondary (descriptions, idle navigation), tertiary (placeholders,
+     section labels, hints) and the colour on an inverted surface. */
+  --text-main: light-dark(rgb(var(--black)), rgb(var(--white)));
+  --text-secondary: light-dark(rgb(var(--zGray-600)), rgb(var(--zGray-300)));
+  --text-tertiary: light-dark(rgb(var(--zGray-400)), rgb(var(--zGray-500)));
+  --text-inverse: light-dark(rgb(var(--white)), rgb(var(--zGray-900)));
+  /* The firmer edge: the sidebar's, a Container's, a table's. */
+  --border-main: light-dark(rgb(var(--zGray-150)), rgb(var(--zGray-800)));
+  /* Surfaces: the page (and the sidebar on light), and the grey frame of a Container's title strip
+     and the tab switcher's track. */
+  --surface-page: light-dark(rgb(247, 247, 247), rgb(var(--zGray-950)));
+  --surface-frame: light-dark(rgb(239, 239, 239), rgb(35, 33, 40));
+  /* The v2 tokens: softer edges and surfaces for cards, fields, menus and rows. */
+  --v2-border: light-dark(rgb(236, 235, 238), rgb(45, 43, 50));
+  --v2-separator: light-dark(rgb(240, 239, 242), rgb(40, 38, 45));
+  --v2-surface-hover: light-dark(rgb(246, 245, 248), rgb(35, 33, 40));
+  --v2-surface-active: light-dark(rgb(240, 239, 242), rgb(40, 38, 45));
+  /* The brand violet for text and icons: the brand's 500 on light, lifted on dark. */
+  --violet-accent: light-dark(rgb(var(--zViolet-500)), rgb(164, 105, 255));
+  /* Signals. */
+  --success: #22d180;
+  --error: #ff4400;
+  /* A deployment's state, as its dot shows it. */
+  --deployment-running: #22d180;
+  --deployment-error: #d44b36;
+  --deployment-progress: #590df5;
+  --deployment-normal: #373737;
+  /* Resource usage: normal, near a limit, past it (usage bars, SegmentedBar, Meter). */
+  --usage-normal: #6899e6;
+  --usage-warning: #f0bd2b;
+  --usage-severe: #f09862;
+  /* Surfaces of what sits on the page and what floats: white on light, zGray-900 on dark. */
+  --surface: light-dark(rgb(var(--white)), rgb(var(--zGray-900)));
+  /* The sidebar: the page's grey on light, a step above the page on dark. */
+  --chrome: light-dark(rgb(247, 247, 247), rgb(var(--zGray-900)));
+}
+
+/* ── shadcn/ui's theme variables ── the names shadcn/ui's components (and these) read, on Zeabur's
+   tokens, so shadcn-style class names (`bg-background`, `text-muted-foreground`, `border-input` …)
+   keep working. Primary is Zeabur violet #6300FF. */
+:root {
+  --background: var(--surface-page);
+  --foreground: var(--text-main);
+  --card: var(--surface);
+  --card-foreground: var(--text-main);
+  --popover: var(--surface);
+  --popover-foreground: var(--text-main);
+  --primary: rgb(var(--zViolet-500));
+  --primary-foreground: rgb(var(--white));
+  --secondary: light-dark(rgb(var(--zGray-50)), rgb(var(--zGray-850)));
+  --secondary-foreground: var(--text-main);
+  --muted: light-dark(rgb(var(--zGray-50)), rgb(var(--zGray-850)));
+  --muted-foreground: var(--text-secondary);
+  /* A highlighted row (menus, lists). */
+  --accent: var(--v2-surface-hover);
+  --accent-foreground: var(--text-main);
+  --destructive: light-dark(rgb(var(--zOrangered-500)), rgb(var(--zOrangered-400)));
+  --border: var(--v2-border);
+  --input: var(--v2-border);
+  /* A field's edge while it has focus, and focus rings. */
+  --ring: var(--violet-accent);
+  /* Chart series, in order, never cycled: violet, sky, the text's grey, green; 5 is the faint
+     grey of what was replaced. Away from the orange-red of errors. */
+  --chart-1: var(--violet-accent);
+  --chart-2: light-dark(#2f8fe8, #5bb1ff);
+  --chart-3: light-dark(rgb(var(--zGray-700)), rgb(var(--zGray-200)));
+  --chart-4: light-dark(#1fa86a, #48c794);
+  --chart-5: light-dark(rgb(var(--zGray-400)), rgb(var(--zGray-600)));
+  --radius: 0.5rem;
+  --sidebar: var(--chrome);
+  --sidebar-foreground: var(--text-main);
+  --sidebar-primary: rgb(var(--zViolet-500));
+  --sidebar-primary-foreground: rgb(var(--white));
+  --sidebar-accent: var(--v2-surface-hover);
+  --sidebar-accent-foreground: var(--text-main);
+  --sidebar-border: var(--border-main);
+  --sidebar-ring: var(--ring);
+}
+
+/* ── The design system's own roles ── names shared with the apps' components (engawa's design
+   system had the same ones), on Zeabur's values.
+   Brand: Zeabur violet. `--brand` is its colour for text and marks, `--brand-soft` a violet wash
+   (selected text, an empty state's tile), `--brand-strong` violet that reads on any ground (a check,
+   a link). Never a status.
+   Status: green, violet, amber, orange-red and grey, each as a glyph colour for dots (`ok` …), a
+   soft pill fill (`-soft`) and a pill text that reads on it (`-strong`). */
+:root {
+  --brand: var(--violet-accent);
+  --brand-foreground: rgb(var(--white));
+  /* Plain colours, not color-mix(): Lightning CSS's light-dark() fallback drops a color-mix()
+     argument. */
+  --brand-soft: light-dark(rgb(99 0 255 / 0.1), rgb(164 105 255 / 0.2));
+  --brand-strong: var(--violet-accent);
+
+  /* Illustration hues, the same in both themes (Illustration's tiles). The older names are kept
+     for the apps that read them: lime is Zeabur's lavender, persimmon its orange-red. */
+  --violet: rgb(var(--zViolet-500));
+  --lavender: #a469ff;
+  --orangered: #ff4400;
+  --peach: #faa994;
+  --mint: #22d180;
+  --lime: var(--lavender);
+  --ink-deep: rgb(var(--zViolet-950));
+  --moss: rgb(var(--zViolet-300));
+  --amber: #f0bd2b;
+  --persimmon: var(--orangered);
+  --sky: #5bb1ff;
+  --mosaic-grey-1: light-dark(rgb(var(--zGray-150)), rgb(var(--zGray-800)));
+  --mosaic-grey-2: light-dark(rgb(var(--zGray-200)), rgb(var(--zGray-750)));
+  --mosaic-grey-3: light-dark(rgb(var(--zGray-100)), rgb(var(--zGray-850)));
+
+  --ok: #22d180;
+  --ok-soft: light-dark(#e3f8ee, #173226);
+  --ok-strong: light-dark(#0b7a46, #6fe0aa);
+  --progress: var(--violet-accent);
+  --progress-soft: light-dark(rgb(var(--zViolet-50)), #241640);
+  --progress-strong: light-dark(rgb(var(--zViolet-600)), #c4a3ff);
+  --warn: #f0bd2b;
+  --warn-soft: light-dark(#fdf4dc, #33290f);
+  --warn-strong: light-dark(#8a5a00, #f5d27a);
+  --fail: var(--error);
+  --fail-soft: light-dark(rgb(var(--zOrangered-50)), #3a170b);
+  --fail-strong: light-dark(rgb(var(--zOrangered-700)), rgb(var(--zOrangered-300)));
+  --idle: rgb(var(--zGray-400));
+  --idle-soft: light-dark(rgb(var(--zGray-100)), rgb(var(--zGray-850)));
+  --idle-strong: light-dark(rgb(var(--zGray-600)), rgb(var(--zGray-300)));
+
+  /* The weakest text: placeholders, times, a caret beside a label. Never a sentence. */
+  --subtle: var(--text-tertiary);
+  /* A field's or a control's edge on hover. */
+  --border-strong: light-dark(rgb(var(--zGray-200)), rgb(var(--zGray-700)));
+  /* The edge of what floats: menus, tooltips, dialogs, toasts. */
+  --border-popover: var(--v2-border);
+  /* Lines between rows. */
+  --rule: var(--v2-separator);
+  /* The ground of things laid out in space: a segmented control's track, a skeleton. */
+  --plane: var(--surface-frame);
+  /* The ground of a canvas (an architecture view) and its dots. */
+  --canvas: light-dark(rgb(var(--zGray-50)), rgb(var(--zGray-950)));
+  --canvas-dot: light-dark(rgb(0 0 0 / 0.14), rgb(255 255 255 / 0.1));
+  /* Fills: hover, a selected row, press. */
+  --hover: var(--v2-surface-hover);
+  --selected: var(--v2-surface-active);
+  --press: light-dark(rgb(var(--zGray-100)), rgb(45, 43, 50));
+
+  /* Zeabur's easing, for everything that moves. */
+  --ease-site: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Shadows: what sits on the page (a field, a pill), what floats (menus, popovers, toasts) and
+     dialogs. Cards have none; their edge is `border-v2-border`. */
+  --shadow-raised: 0 1px 2px light-dark(rgb(0 0 0 / 0.06), rgb(0 0 0 / 0.4));
+  --shadow-float:
+    0 10px 15px -3px light-dark(rgb(0 0 0 / 0.08), rgb(0 0 0 / 0.4)),
+    0 4px 6px -4px light-dark(rgb(0 0 0 / 0.08), rgb(0 0 0 / 0.4));
+  --shadow-dialog:
+    0 20px 25px -5px light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.5)),
+    0 8px 10px -6px light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.5));
+  /* Scrollbars (src/base.css). */
+  --scrollbar: light-dark(rgb(var(--zGray-200)), rgb(53, 53, 53));
+  --scrollbar-hover: light-dark(rgb(var(--zGray-250)), rgb(var(--zGray-700)));
+}
+
+/* ── Type scale ── Zeabur's: 13px body and navigation, 12px for meta and descriptions, 11px for
+   hints and the uppercase section labels, names at 20px and 500, page headings at 24px and 600.
+   The roles are utilities (`type-title` …, src/utilities.css), not `text-*` theme sizes, so that
+   `cn` never mistakes them for colours. */
+:root {
+  --type-title: 1.5rem;
+  --type-title-leading: 2rem;
+  --type-name: 1.25rem;
+  --type-name-leading: 1.75rem;
+  --type-heading: 1rem;
+  --type-heading-leading: 1.5rem;
+  --type-body: 0.8125rem;
+  --type-body-leading: 1.25rem;
+  --type-meta: 0.75rem;
+  --type-meta-leading: 1rem;
+  --type-label: 0.6875rem;
+  --type-label-leading: 1rem;
+  --type-micro: 0.6875rem;
+  --type-micro-leading: 1rem;
+  --type-nano: 0.625rem;
+  --type-nano-leading: 0.875rem;
+  --type-figure: 1.25rem;
+  --type-figure-leading: 1.75rem;
+  --type-mono: 0.75rem;
+  /* Geist for Latin (src/fonts.css); Han and other scripts in the system's face (macOS PingFang,
+     Windows Microsoft JhengHei or YaHei, Linux Noto Sans CJK). */
+  --font-stack-sans:
+    "Geist", "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC",
+    "PingFang SC", "Microsoft JhengHei", "Microsoft YaHei", "Noto Sans CJK TC", "Noto Sans CJK SC",
+    sans-serif;
+  --font-stack-mono:
+    "Geist Mono", "Geist Mono Variable", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+    monospace;
+}
+
+:root:lang(zh-TW) {
+  --font-stack-sans:
+    "Geist", "Geist Variable", -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC",
+    "Microsoft JhengHei", sans-serif;
+}
+:root:lang(zh-CN) {
+  --font-stack-sans:
+    "Geist", "Geist Variable", -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC",
+    "Microsoft YaHei", sans-serif;
+}
+:root:lang(zh) {
+  text-autospace: ideograph-alpha ideograph-numeric;
+}
+
+/* ── The Tailwind theme ── */
+@theme {
+  /* Zeabur's borders are one pixel. */
+  --default-border-width: 1px;
+  --default-ring-width: 1px;
+}
+
+@theme inline {
+  --font-sans: var(--font-stack-sans);
+  --font-mono: var(--font-stack-mono);
+  --font-heading: var(--font-stack-sans);
+
+  /* shadcn/ui */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Zeabur's palettes (`bg-zGray-900`, `text-zViolet-500`, `border-zOrangered-500/30`). */
+  --color-zGray-50: rgb(var(--zGray-50));
+  --color-zGray-100: rgb(var(--zGray-100));
+  --color-zGray-150: rgb(var(--zGray-150));
+  --color-zGray-200: rgb(var(--zGray-200));
+  --color-zGray-250: rgb(var(--zGray-250));
+  --color-zGray-300: rgb(var(--zGray-300));
+  --color-zGray-400: rgb(var(--zGray-400));
+  --color-zGray-500: rgb(var(--zGray-500));
+  --color-zGray-600: rgb(var(--zGray-600));
+  --color-zGray-700: rgb(var(--zGray-700));
+  --color-zGray-750: rgb(var(--zGray-750));
+  --color-zGray-800: rgb(var(--zGray-800));
+  --color-zGray-850: rgb(var(--zGray-850));
+  --color-zGray-900: rgb(var(--zGray-900));
+  --color-zGray-950: rgb(var(--zGray-950));
+  --color-zViolet-50: rgb(var(--zViolet-50));
+  --color-zViolet-100: rgb(var(--zViolet-100));
+  --color-zViolet-200: rgb(var(--zViolet-200));
+  --color-zViolet-300: rgb(var(--zViolet-300));
+  --color-zViolet-400: rgb(var(--zViolet-400));
+  --color-zViolet-500: rgb(var(--zViolet-500));
+  --color-zViolet-600: rgb(var(--zViolet-600));
+  --color-zViolet-700: rgb(var(--zViolet-700));
+  --color-zViolet-800: rgb(var(--zViolet-800));
+  --color-zViolet-900: rgb(var(--zViolet-900));
+  --color-zViolet-950: rgb(var(--zViolet-950));
+  --color-zViolet-accent: var(--violet-accent);
+  --color-zOrangered-50: rgb(var(--zOrangered-50));
+  --color-zOrangered-100: rgb(var(--zOrangered-100));
+  --color-zOrangered-200: rgb(var(--zOrangered-200));
+  --color-zOrangered-300: rgb(var(--zOrangered-300));
+  --color-zOrangered-400: rgb(var(--zOrangered-400));
+  --color-zOrangered-500: rgb(var(--zOrangered-500));
+  --color-zOrangered-600: rgb(var(--zOrangered-600));
+  --color-zOrangered-700: rgb(var(--zOrangered-700));
+  --color-zOrangered-800: rgb(var(--zOrangered-800));
+  --color-zOrangered-900: rgb(var(--zOrangered-900));
+  --color-zOrangered-950: rgb(var(--zOrangered-950));
+
+  /* Zeabur's semantic tokens, with the dashboard's class names: `text-main`, `text-secondary`,
+     `text-tertiary`, `text-inverse`, `border-main`, `bg-surface-page`, `bg-surface-frame`, and
+     `*-v2-border`, `*-v2-separator`, `*-v2-surface-hover`, `*-v2-surface-active` for any colour
+     utility. `text-secondary` is the secondary text colour (shadcn/ui's `bg-secondary` stays the
+     secondary fill). */
+  --text-color-main: var(--text-main);
+  --text-color-secondary: var(--text-secondary);
+  --text-color-tertiary: var(--text-tertiary);
+  --text-color-inverse: var(--text-inverse);
+  --border-color-main: var(--border-main);
+  --divide-color-main: var(--border-main);
+  --background-color-surface-page: var(--surface-page);
+  --background-color-surface-frame: var(--surface-frame);
+  --color-surface-page: var(--surface-page);
+  --color-surface-frame: var(--surface-frame);
+  --color-v2-border: var(--v2-border);
+  --color-v2-separator: var(--v2-separator);
+  --color-v2-surface-hover: var(--v2-surface-hover);
+  --color-v2-surface-active: var(--v2-surface-active);
+  --color-success: var(--success);
+  --color-error: var(--error);
+  --color-deployment-running: var(--deployment-running);
+  --color-deployment-error: var(--deployment-error);
+  --color-deployment-progress: var(--deployment-progress);
+  --color-deployment-normal: var(--deployment-normal);
+  --color-usage-normal: var(--usage-normal);
+  --color-usage-warning: var(--usage-warning);
+  --color-usage-severe: var(--usage-severe);
+
+  /* The roles. */
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-strong: var(--brand-strong);
+  --color-violet: var(--violet);
+  --color-lavender: var(--lavender);
+  --color-orangered: var(--orangered);
+  --color-peach: var(--peach);
+  --color-mint: var(--mint);
+  --color-lime: var(--lime);
+  --color-ink-deep: var(--ink-deep);
+  --color-moss: var(--moss);
+  --color-amber: var(--amber);
+  --color-persimmon: var(--persimmon);
+  --color-sky: var(--sky);
+  --color-mosaic-grey-1: var(--mosaic-grey-1);
+  --color-mosaic-grey-2: var(--mosaic-grey-2);
+  --color-mosaic-grey-3: var(--mosaic-grey-3);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-strong: var(--ok-strong);
+  --color-progress: var(--progress);
+  --color-progress-soft: var(--progress-soft);
+  --color-progress-strong: var(--progress-strong);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-strong: var(--warn-strong);
+  --color-fail: var(--fail);
+  --color-fail-soft: var(--fail-soft);
+  --color-fail-strong: var(--fail-strong);
+  --color-idle: var(--idle);
+  --color-idle-soft: var(--idle-soft);
+  --color-idle-strong: var(--idle-strong);
+  --color-chrome: var(--chrome);
+  --color-subtle: var(--subtle);
+  --color-border-strong: var(--border-strong);
+  --color-border-popover: var(--border-popover);
+  --color-rule: var(--rule);
+  --color-plane: var(--plane);
+  --color-surface: var(--surface);
+  --color-canvas: var(--canvas);
+  --color-canvas-dot: var(--canvas-dot);
+  --color-hover: var(--hover);
+  --color-selected: var(--selected);
+  --color-press: var(--press);
+
+  /* Radii are Tailwind's own scale: 4px (`rounded`) for checkboxes and small chips, 6px
+     (`rounded-md`) for buttons, fields and menus, 8px (`rounded-lg`) for navigation rows, banners
+     and containers, 12px (`rounded-xl`) for cards. */
+
+  /* `shadow-xs` and `shadow-sm` raise what sits on the page; `shadow-md` and `shadow-lg` are what
+     floats; `shadow-xl` and up, dialogs. */
+  --shadow-2xs: var(--shadow-raised);
+  --shadow-xs: var(--shadow-raised);
+  --shadow-sm: var(--shadow-raised);
+  --shadow-md: var(--shadow-float);
+  --shadow-lg: var(--shadow-float);
+  --shadow-xl: var(--shadow-dialog);
+  --shadow-2xl: var(--shadow-dialog);
+
+  /* Zeabur's easing (`ease-emphasized`). */
+  --ease-emphasized: var(--ease-site);
+}

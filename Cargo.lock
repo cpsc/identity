@@ -1284,20 +1284,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "genkan"
+name = "zeabur-identity"
 version = "0.0.1"
 dependencies = [
  "axum",
  "bytes",
  "clap",
- "genkan-core",
- "genkan-k8s",
- "genkan-keys",
- "genkan-oauth",
- "genkan-signin",
- "genkan-store",
- "genkan-tls",
- "genkan-ui",
+ "zeabur-identity-core",
+ "zeabur-identity-k8s",
+ "zeabur-identity-keys",
+ "zeabur-identity-oauth",
+ "zeabur-identity-signin",
+ "zeabur-identity-store",
+ "zeabur-identity-tls",
+ "zeabur-identity-ui",
  "k8s-openapi",
  "kube",
  "rustls",
@@ -1311,7 +1311,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "genkan-core"
+name = "zeabur-identity-core"
 version = "0.0.1"
 dependencies = [
  "aws-lc-rs",
@@ -1323,16 +1323,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "genkan-e2e"
+name = "zeabur-identity-e2e"
 version = "0.0.1"
 dependencies = [
  "axum",
  "form_urlencoded",
- "genkan-core",
- "genkan-k8s",
- "genkan-oauth",
- "genkan-signin",
- "genkan-test-support",
+ "zeabur-identity-core",
+ "zeabur-identity-k8s",
+ "zeabur-identity-oauth",
+ "zeabur-identity-signin",
+ "zeabur-identity-test-support",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -1345,7 +1345,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "genkan-k8s"
+name = "zeabur-identity-k8s"
 version = "0.0.1"
 dependencies = [
  "aws-lc-rs",
@@ -1354,11 +1354,11 @@ dependencies = [
  "clap",
  "form_urlencoded",
  "futures-util",
- "genkan-core",
- "genkan-keys",
- "genkan-oauth",
- "genkan-store",
- "genkan-tls",
+ "zeabur-identity-core",
+ "zeabur-identity-keys",
+ "zeabur-identity-oauth",
+ "zeabur-identity-store",
+ "zeabur-identity-tls",
  "http-body-util",
  "k8s-openapi",
  "kube",
@@ -1377,13 +1377,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "genkan-keys"
+name = "zeabur-identity-keys"
 version = "0.0.1"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
  "bytes",
- "genkan-core",
+ "zeabur-identity-core",
  "jsonwebtoken",
  "proptest",
  "schemars 1.2.2",
@@ -1395,18 +1395,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "genkan-oauth"
+name = "zeabur-identity-oauth"
 version = "0.0.1"
 dependencies = [
  "axum",
  "base64 0.22.1",
  "bytes",
  "form_urlencoded",
- "genkan-core",
- "genkan-keys",
- "genkan-store",
- "genkan-test-support",
- "genkan-ui",
+ "zeabur-identity-core",
+ "zeabur-identity-keys",
+ "zeabur-identity-store",
+ "zeabur-identity-test-support",
+ "zeabur-identity-ui",
  "http-body-util",
  "jsonwebtoken",
  "proptest",
@@ -1419,7 +1419,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "genkan-signin"
+name = "zeabur-identity-signin"
 version = "0.0.1"
 dependencies = [
  "async-trait",
@@ -1427,12 +1427,12 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "form_urlencoded",
- "genkan-core",
- "genkan-keys",
- "genkan-oauth",
- "genkan-store",
- "genkan-test-support",
- "genkan-ui",
+ "zeabur-identity-core",
+ "zeabur-identity-keys",
+ "zeabur-identity-oauth",
+ "zeabur-identity-store",
+ "zeabur-identity-test-support",
+ "zeabur-identity-ui",
  "http-body-util",
  "hyper",
  "hyper-rustls",
@@ -1452,18 +1452,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "genkan-store"
+name = "zeabur-identity-store"
 version = "0.0.1"
 dependencies = [
- "genkan-core",
- "genkan-keys",
+ "zeabur-identity-core",
+ "zeabur-identity-keys",
  "schemars 1.2.2",
  "serde",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "genkan-test-support"
+name = "zeabur-identity-test-support"
 version = "0.0.1"
 dependencies = [
  "async-trait",
@@ -1475,11 +1475,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "genkan-tls"
+name = "zeabur-identity-tls"
 version = "0.0.1"
 dependencies = [
  "axum",
- "genkan-core",
+ "zeabur-identity-core",
  "rcgen",
  "rustls",
  "rustls-native-certs",
@@ -1491,24 +1491,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "genkan-ui"
+name = "zeabur-identity-ui"
 version = "0.0.1"
 dependencies = [
  "askama",
  "axum",
  "form_urlencoded",
- "genkan-core",
+ "zeabur-identity-core",
  "tracing",
 ]
 
 [[package]]
-name = "genkanctl"
+name = "zeabur-identityctl"
 version = "0.0.1"
 dependencies = [
  "clap",
- "genkan-core",
- "genkan-k8s",
- "genkan-keys",
+ "zeabur-identity-core",
+ "zeabur-identity-k8s",
+ "zeabur-identity-keys",
  "kube",
  "serde_json",
  "tokio",

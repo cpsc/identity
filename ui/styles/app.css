@@ -1,8 +1,8 @@
-/* Genkan sign-in pages. Built with `scripts/build-ui.sh`; output committed in crates/genkan-ui/assets.
+/* Zeabur Identity sign-in pages. Built with `scripts/build-ui.sh`; output committed in crates/zeabur-identity-ui/assets.
    Theme: shadcn/ui preset brrM (style nova, base colour neutral, radius medium), dark mode follows the
-   operating system. Lines marked A11Y are local WCAG 2.2 fixes (contrast table in the genkan-ui docs). */
+   operating system. Lines marked A11Y are local WCAG 2.2 fixes (contrast table in the zeabur-identity-ui docs). */
 @import "tailwindcss" source(none);
-@source "../../crates/genkan-ui/templates";
+@source "../../crates/zeabur-identity-ui/templates";
 @import "./shadcn.css";
 
 @font-face {

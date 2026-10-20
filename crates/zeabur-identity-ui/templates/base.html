@@ -1,0 +1,26 @@
+{%- import "icons.html" as icons -%}
+<!doctype html>
+<html lang="{{ lang.tag() }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<title>{% block title %}{% endblock %} · Zeabur Identity</title>
+<link rel="stylesheet" href="/assets/app.css?v={{ assets.css }}">
+<link rel="preload" href="/assets/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+{% block head %}{% endblock %}
+</head>
+<body class="bg-muted">
+<main class="flex min-h-svh flex-col items-center justify-center gap-4 p-4 sm:p-6">
+{% block content %}{% endblock %}
+<nav aria-label="{{ m.nav_language }}" class="flex flex-wrap items-center justify-center gap-1 text-sm text-foreground/70">
+  {{ icons::icon("Globe", "size-4") }}
+  {%- for l in langs %}
+  <a href="?lang={{ l.tag() }}" hreflang="{{ l.tag() }}" lang="{{ l.tag() }}" data-lang-link{% if *l == lang %} aria-current="true"{% endif %}
+     class="inline-flex min-h-6 min-w-6 items-center rounded-md px-1.5 underline-offset-4 hover:underline outline-none focus-visible:ring-3 focus-visible:ring-ring aria-[current]:font-medium aria-[current]:text-foreground">{{ l.messages().language_name }}</a>
+  {%- endfor %}
+</nav>
+</main>
+</body>
+</html>

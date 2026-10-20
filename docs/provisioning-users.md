@@ -1,7 +1,7 @@
 # Provisioning users from a directory
 
 If your team already lives in Okta, Entra ID, Google Workspace, LDAP or an HR system, you can
-keep Genkan's users in step with it. Genkan has no built-in connector (it does not speak SCIM).
+keep Zeabur Identity's users in step with it. Zeabur Identity has no built-in connector (it does not speak SCIM).
 Instead, you run a small sync program that reads your directory and writes `User` objects
 through the Kubernetes API.
 
@@ -28,7 +28,7 @@ It does **not**:
   one-time link the person opens, so a sync tool can never decide who signs in as whom.
 - **Create `Invitation`s.** An invitation link enrols a passkey on an existing user, so whoever
   can create invitations can take over any account. Keep that power with admins
-  (`genkanctl invite --username <name>`), or give it to a separate, admin-equivalent job.
+  (`zeabur-identityctl invite --username <name>`), or give it to a separate, admin-equivalent job.
 - **Assign elevated groups.** Admin rights stay a decision made by hand: an admin may add
   elevated groups to a managed user, and the tool's later updates keep them as they are.
 - **Delete users.** Removing a user safely means deleting its credentials and sessions first
@@ -47,15 +47,15 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: user-sync
-  namespace: genkan-system
+  namespace: zeabur-identity
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: user-sync
-  namespace: genkan-system
+  namespace: zeabur-identity
 rules:
-- apiGroups: [genkan.engawahq.dev]
+- apiGroups: [identity.zeabur.com]
   resources: [users]
   verbs: [get, list, watch, create, update, patch]
 ---
@@ -63,7 +63,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: user-sync
-  namespace: genkan-system
+  namespace: zeabur-identity
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -71,7 +71,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: user-sync
-  namespace: genkan-system
+  namespace: zeabur-identity
 ```
 
 There is no `delete`, and no access to credentials, invitations, grants or Secrets.
@@ -84,7 +84,7 @@ the `user-sync` account, and if the policy cannot be evaluated, the write is ref
 
 It enforces that the sync program:
 
-- only changes users it created (label `genkan.engawahq.dev/source=directory`);
+- only changes users it created (label `identity.zeabur.com/source=directory`);
 - never assigns or changes elevated groups;
 - only assigns groups from an allowlist. Edit `['dev', 'ops']` below to yours;
 - names each object after its username (see [why](#why-the-name-must-equal-the-username)).
@@ -95,29 +95,29 @@ Save this as `user-sync-policy.yaml` and apply it with `kubectl apply -f user-sy
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
-  name: genkan-user-sync
+  name: zeabur-identity-user-sync
 spec:
   failurePolicy: Fail
   matchConstraints:
     resourceRules:
-    - apiGroups: [genkan.engawahq.dev]
+    - apiGroups: [identity.zeabur.com]
       apiVersions: ["*"]
       operations: [CREATE, UPDATE]
       resources: [users]
   matchConditions:
   - name: user-sync
-    expression: request.userInfo.username == 'system:serviceaccount:genkan-system:user-sync'
+    expression: request.userInfo.username == 'system:serviceaccount:zeabur-identity:user-sync'
   variables:
   - name: managed
     expression: >-
       has(object.metadata.labels) &&
-      'genkan.engawahq.dev/source' in object.metadata.labels &&
-      object.metadata.labels['genkan.engawahq.dev/source'] == 'directory'
+      'identity.zeabur.com/source' in object.metadata.labels &&
+      object.metadata.labels['identity.zeabur.com/source'] == 'directory'
   - name: wasManaged
     expression: >-
       request.operation == 'CREATE' || (has(oldObject.metadata.labels) &&
-      'genkan.engawahq.dev/source' in oldObject.metadata.labels &&
-      oldObject.metadata.labels['genkan.engawahq.dev/source'] == 'directory')
+      'identity.zeabur.com/source' in oldObject.metadata.labels &&
+      oldObject.metadata.labels['identity.zeabur.com/source'] == 'directory')
   - name: elevated
     expression: "has(object.spec.elevatedGroups) ? object.spec.elevatedGroups : []"
   - name: wasElevated
@@ -128,7 +128,7 @@ spec:
   - expression: variables.wasManaged
     message: user-sync may only change users it created
   - expression: variables.managed
-    message: users written by user-sync must keep the label genkan.engawahq.dev/source=directory
+    message: users written by user-sync must keep the label identity.zeabur.com/source=directory
   - expression: object.spec.username == object.metadata.name
     message: the object name must equal the username, so a username cannot be taken twice
   - expression: "!has(object.spec.groups) || object.spec.groups.all(g, g in ['dev', 'ops'])"
@@ -139,9 +139,9 @@ spec:
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
-  name: genkan-user-sync
+  name: zeabur-identity-user-sync
 spec:
-  policyName: genkan-user-sync
+  policyName: zeabur-identity-user-sync
   validationActions: [Deny]
 ```
 
@@ -150,7 +150,7 @@ updates leave them alone, because server-side apply keeps fields the program doe
 
 ### Why the name must equal the username
 
-Kubernetes sees every `User` as `genkan:<username>`. Two objects with the same username would
+Kubernetes sees every `User` as `zeabur:<username>`. Two objects with the same username would
 be the same person to RBAC. Object names are unique, so requiring the name to equal the
 username stops the program from creating a second `admin`.
 
@@ -164,7 +164,7 @@ label starting and ending in a letter or digit. No `@`, `+` or `_`. The exact pa
 ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
 ```
 
-`genkanctl invite` and `genkanctl setup-link` enforce the same rule.
+`zeabur-identityctl invite` and `zeabur-identityctl setup-link` enforce the same rule.
 
 If your directory identifies people by email address, derive a short name that fits these
 rules (for example `alice.chen` from `alice.chen@example.com`). Two people can end up with the
@@ -177,17 +177,17 @@ Before trusting the policy, check that it refuses what it should. Both commands 
 fail:
 
 ```sh
-as=(--as=system:serviceaccount:genkan-system:user-sync)
+as=(--as=system:serviceaccount:zeabur-identity:user-sync)
 # Refused: touches a user the tool did not create.
-kubectl -n genkan-system patch gkuser admin "${as[@]}" --type=merge -p '{"spec":{"disabled":true}}'
+kubectl -n zeabur-identity patch gkuser admin "${as[@]}" --type=merge -p '{"spec":{"disabled":true}}'
 # Refused: elevated group.
-kubectl -n genkan-system apply "${as[@]}" -f - <<'EOF'
-apiVersion: genkan.engawahq.dev/v1alpha1
+kubectl -n zeabur-identity apply "${as[@]}" -f - <<'EOF'
+apiVersion: identity.zeabur.com/v1alpha1
 kind: User
 metadata:
   name: mallory
-  namespace: genkan-system
-  labels: {genkan.engawahq.dev/source: directory}
+  namespace: zeabur-identity
+  labels: {identity.zeabur.com/source: directory}
 spec: {username: mallory, elevatedGroups: [admins]}
 EOF
 ```
@@ -196,7 +196,7 @@ EOF
 
 Write the program in any language with a Kubernetes client. Run it as the `user-sync` service
 account: as a `CronJob` in the cluster, or elsewhere with a token from
-`kubectl -n genkan-system create token user-sync`.
+`kubectl -n zeabur-identity create token user-sync`.
 
 Below is the shape of it in shell. `directory-export` stands for your own command that lists
 everyone in the directory, one JSON object per line with `id`, `username`, `name`, `groups` and
@@ -205,7 +205,7 @@ everyone in the directory, one JSON object per line with `id`, `username`, `name
 ```sh
 #!/usr/bin/env bash
 set -euo pipefail
-ns=genkan-system
+ns=zeabur-identity
 failed=0
 
 # Read the whole export before writing anything: a failing exporter stops the job here.
@@ -218,12 +218,12 @@ fi
 while read -r person; do
   username=$(jq -r .username <<<"$person")
   jq -n --arg ns "$ns" --argjson p "$person" '{
-    apiVersion: "genkan.engawahq.dev/v1alpha1",
+    apiVersion: "identity.zeabur.com/v1alpha1",
     kind: "User",
     metadata: {
       name: $p.username,
       namespace: $ns,
-      labels: {"genkan.engawahq.dev/source": "directory"},
+      labels: {"identity.zeabur.com/source": "directory"},
       annotations: {"example.com/directory-id": $p.id}
     },
     spec: {
@@ -260,7 +260,7 @@ Before applying, a real tool should also:
 - Refuse to change the directory-ID annotation of an existing user, so a renamed or recycled
   account in the directory cannot inherit someone else's `User`.
 - Disable managed users that are no longer in the export
-  (`kubectl get gkuser -l genkan.engawahq.dev/source=directory`).
+  (`kubectl get gkuser -l identity.zeabur.com/source=directory`).
 - Lowercase usernames and check them against the [username rules](#username-rules) before
   writing.
 
@@ -268,10 +268,10 @@ Before applying, a real tool should also:
 
 The sync program creates users, but they still need a one-time link to set up a passkey. An
 admin sends it, as in [Add someone](managing-users.md#add-someone). The link works only if the
-Genkan server runs with `--invitations`; see
+Zeabur Identity server runs with `--invitations`; see
 [If the link does not work](managing-users.md#if-the-link-does-not-work).
 
 ```sh
-export GENKAN_ISSUER=https://genkan.example.test     # your issuer
-genkanctl invite --username <name>
+export ZEABUR_IDENTITY_ISSUER=https://identity.example.test     # your issuer
+zeabur-identityctl invite --username <name>
 ```

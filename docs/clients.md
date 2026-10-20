@@ -1,13 +1,13 @@
 # Registering clients
 
-Before an application can sign people in through Genkan, you register it as a client. Each
-client is an `OAuthClient` object in Genkan's namespace, and its name is the application's
+Before an application can sign people in through Zeabur Identity, you register it as a client. Each
+client is an `OAuthClient` object in Zeabur Identity's namespace, and its name is the application's
 `client_id`. `kubectl` is a client too; [Get started](get-started.md) registered it.
 
-`genkanctl client create` builds the object for you: it checks your input, prints the object,
+`zeabur-identityctl client create` builds the object for you: it checks your input, prints the object,
 and generates a secret when the client needs one. Pipe its output into `kubectl apply`. The
 commands below assume the cluster from [Get started](get-started.md) (namespace
-`genkan-system`) and run with the cluster admin's kubeconfig.
+`zeabur-identity`) and run with the cluster admin's kubeconfig.
 
 First decide which kind of client the application is:
 
@@ -21,7 +21,7 @@ First decide which kind of client the application is:
 This is the `kubectl` client from [Get started](get-started.md):
 
 ```sh
-genkanctl client create kubectl --type public --allow-elevation \
+zeabur-identityctl client create kubectl --type public --allow-elevation \
   --redirect-uri http://127.0.0.1:8000/ --audience kubernetes | kubectl apply -f -
 ```
 
@@ -46,8 +46,8 @@ A redirect URI is one of:
 - `http://127.0.0.1/…` or `http://[::1]/…`, for apps that receive the result on the user's own
   machine. Any port matches, so `kubectl` still works when it has to listen on another port.
 
-Genkan compares redirect URIs exactly, character by character. To prevent near-misses,
-`genkanctl` accepts a URI only in the form a browser sends it:
+Zeabur Identity compares redirect URIs exactly, character by character. To prevent near-misses,
+`zeabur-identityctl` accepts a URI only in the form a browser sends it:
 
 - lowercase scheme and host, and no default port (`:443`);
 - at least a `/` path: `https://app.example.com/`, not `https://app.example.com`;
@@ -59,7 +59,7 @@ addresses a browser would refuse, such as `999.1.1.1` or port `99999`.
 ## Confidential clients
 
 ```sh
-genkanctl client create grafana --type confidential --display-name Grafana \
+zeabur-identityctl client create grafana --type confidential --display-name Grafana \
   --redirect-uri https://grafana.example.com/login/generic_oauth | kubectl apply -f -
 ```
 
@@ -81,17 +81,17 @@ unset CLIENT_SECRET
 
 Then configure the application with three values: the issuer URL, the `client_id` (here
 `grafana`) and the secret. It finds everything else through
-`<issuer>/.well-known/openid-configuration`. Genkan accepts the secret either way applications
+`<issuer>/.well-known/openid-configuration`. Zeabur Identity accepts the secret either way applications
 send it: HTTP Basic (`client_secret_basic`) or a form field (`client_secret_post`).
 
 ### Never choose a secret yourself
 
-Always let `genkanctl client create` generate the secret. The hash is visible to anyone who can
+Always let `zeabur-identityctl client create` generate the secret. The hash is visible to anyone who can
 read `OAuthClient` objects or your Git repository, and it has no salt. That is safe for a long
 random secret, but a password someone chose can be guessed back from its hash offline, and
-Genkan would never notice.
+Zeabur Identity would never notice.
 
-Without `genkanctl`, generate 32 random bytes and hash them yourself:
+Without `zeabur-identityctl`, generate 32 random bytes and hash them yourself:
 
 ```sh
 CLIENT_SECRET=$(openssl rand -hex 32)
@@ -100,19 +100,19 @@ printf 'sha256:%s\n' "$(printf %s "$CLIENT_SECRET" | sha256sum | cut -d' ' -f1)"
 
 ## Replace a secret
 
-Run the same `genkanctl client create` command again and apply its output. The new hash
+Run the same `zeabur-identityctl client create` command again and apply its output. The new hash
 replaces the old one, and the old secret stops working right away, so update the application's
 Secret in the same step.
 
 ## Change or remove a client
 
-Edit the object like any other (`kubectl -n genkan-system edit oauthclient grafana`), or run
-`genkanctl client create` with the new options and apply it. That also replaces the secret of a
+Edit the object like any other (`kubectl -n zeabur-identity edit oauthclient grafana`), or run
+`zeabur-identityctl client create` with the new options and apply it. That also replaces the secret of a
 confidential client.
 
 ```sh
-kubectl -n genkan-system get oauthclients                  # short name: gkclient
-kubectl -n genkan-system delete oauthclient grafana        # nobody can sign in to it any more
+kubectl -n zeabur-identity get oauthclients                  # short name: gkclient
+kubectl -n zeabur-identity delete oauthclient grafana        # nobody can sign in to it any more
 ```
 
 ## GitOps
@@ -120,7 +120,7 @@ kubectl -n genkan-system delete oauthclient grafana        # nobody can sign in 
 The printed object contains no secret, so you can commit it. Convert it to YAML if you prefer:
 
 ```sh
-genkanctl client create grafana --type confidential --display-name Grafana \
+zeabur-identityctl client create grafana --type confidential --display-name Grafana \
   --redirect-uri https://grafana.example.com/login/generic_oauth \
   | kubectl create --dry-run=client -o yaml -f - > grafana-client.yaml
 ```
@@ -132,5 +132,5 @@ adds a `last-applied-configuration` annotation, and, if the client already exist
 
 If you edit the object by hand, the cluster checks it when you apply it: a plain `http` or
 fragment redirect URI, or a malformed `secretHash`, fails at `kubectl apply` rather than at
-sign-in. The cluster's URL check is looser than `genkanctl`'s, though, so run new redirect URIs
-through `genkanctl client create` to catch the rest.
+sign-in. The cluster's URL check is looser than `zeabur-identityctl`'s, though, so run new redirect URIs
+through `zeabur-identityctl client create` to catch the rest.

@@ -1,14 +1,14 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/cover-dark.avif">
-  <img alt="Genkan: cross out admin.conf, log in to Kubernetes with a passkey" src="docs/images/cover-light.avif">
+  <img alt="Zeabur Identity: cross out admin.conf, log in to Kubernetes with a passkey" src="docs/images/cover-light.avif">
 </picture>
 
-# Genkan
+# Zeabur Identity
 
 **Delete `admin.conf`. Log in to your cluster with a passkey.**
 
 Most self-managed clusters are run with one admin kubeconfig that never expires, gets copied to
-every laptop, and cannot be revoked. Genkan (玄関, the entrance of a Japanese house) replaces it
+every laptop, and cannot be revoked. Zeabur Identity replaces it
 with a passkey: `kubectl` opens your browser, you touch your fingerprint reader, and you get a
 token that lasts minutes, not years.
 
@@ -20,7 +20,7 @@ https://github.com/user-attachments/assets/4c6e29f2-341c-4622-8cc5-4337e13e53b5
 *Signing in to [Aptakube](https://aptakube.com) with a passkey: the cluster opens for browsing,
 and restarting a deployment is refused with 403 until you ask for admin rights.*
 
-## Why Genkan
+## Why Zeabur Identity
 
 - **Passkeys, not passwords.** Touch ID, Windows Hello or a security key. Teammates can also
   link a GitHub or Google account for everyday access.
@@ -59,10 +59,10 @@ and restarting a deployment is refused with 403 until you ask for admin rights.*
 
 ## How it works
 
-1. You run `kubectl get pods`. Your browser opens Genkan's sign-in page.
+1. You run `kubectl get pods`. Your browser opens Zeabur Identity's sign-in page.
 2. You sign in with your passkey. `kubectl` receives a token valid for ten minutes and renews it
    quietly while you work.
-3. Kubernetes checks the token itself. Genkan never sits in the path of your requests.
+3. Kubernetes checks the token itself. Zeabur Identity never sits in the path of your requests.
 
 Need to change something? Use your admin context: one more passkey tap, five minutes of admin
 rights, then back to read-only.
@@ -70,20 +70,20 @@ rights, then back to read-only.
 ## Get started
 
 Follow the [step-by-step guide](docs/get-started.md) to install k3s on an Ubuntu server,
-download and verify Genkan, and sign in with a passkey from your computer (macOS, Linux or
+download and verify Zeabur Identity, and sign in with a passkey from your computer (macOS, Linux or
 Windows).
 
-For an existing cluster, first [download and verify Genkan](docs/get-started.md#1-download-genkan).
+For an existing cluster, first [download and verify Zeabur Identity](docs/get-started.md#1-download-zeabur-identity).
 Then install it with your cluster-admin kubeconfig:
 
 ```sh
-export GENKAN_ISSUER=https://login.example.com
-genkanctl crds | kubectl apply --server-side -f -
-genkanctl manifests --image "$GENKAN_IMAGE" --serve-arg=--invitations | kubectl apply --server-side -f -
+export ZEABUR_IDENTITY_ISSUER=https://login.example.com
+zeabur-identityctl crds | kubectl apply --server-side -f -
+zeabur-identityctl manifests --image "$ZEABUR_IDENTITY_IMAGE" --serve-arg=--invitations | kubectl apply --server-side -f -
 # Prints kube-apiserver's configuration and how to install it for your distribution:
-genkanctl kube-config --distro k3s > authn.yaml
+zeabur-identityctl kube-config --distro k3s > authn.yaml
 # A one-time link: open it and create your passkey.
-genkanctl setup-link --username admin
+zeabur-identityctl setup-link --username admin
 ```
 
 For development builds, see [Building from source](CONTRIBUTING.md#building-from-source).
@@ -92,10 +92,10 @@ Then:
 
 - Sign in with [GitHub](docs/github-sign-in.md) or [Google](docs/google-sign-in.md).
 - [Register clients](docs/clients.md) such as Grafana or Argo CD, with
-  `genkanctl client create`.
+  `zeabur-identityctl client create`.
 - [Manage users](docs/managing-users.md): groups, admin rights, lost passkeys, removing people;
   [provision them from a directory](docs/provisioning-users.md) with a small sync script.
-- `genkanctl invite --username alice` to send someone a one-time link. It needs the server
+- `zeabur-identityctl invite --username alice` to send someone a one-time link. It needs the server
   started with `--invitations`, as above; without it the link cannot be redeemed.
 
 ## Learn more
@@ -111,5 +111,5 @@ Apache-2.0. Contributions are accepted under the [Developer Certificate of Origi
 
 The sign-in pages copy component class strings from [shadcn/ui](https://ui.shadcn.com) (MIT,
 notice in `ui/styles/shadcn.css`) and ship the [Geist](https://github.com/vercel/geist-font) font (SIL Open
-Font License 1.1, `crates/genkan-ui/assets/LICENSE-Geist.txt`). The container image includes
+Font License 1.1, `crates/zeabur-identity-ui/assets/LICENSE-Geist.txt`). The container image includes
 Mozilla's CA certificate bundle as packaged by nixpkgs (MPL-2.0).

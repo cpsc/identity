@@ -11,15 +11,15 @@ publish = false
 
 [workspace.dependencies]
 # Workspace crates, levelled from the bottom up.
-genkan-core = { path = "crates/genkan-core" }
-genkan-keys = { path = "crates/genkan-keys" }
-genkan-store = { path = "crates/genkan-store" }
-genkan-ui = { path = "crates/genkan-ui" }
-genkan-tls = { path = "crates/genkan-tls" }
-genkan-oauth = { path = "crates/genkan-oauth" }
-genkan-signin = { path = "crates/genkan-signin" }
-genkan-k8s = { path = "crates/genkan-k8s" }
-genkan-test-support = { path = "crates/genkan-test-support" }
+zeabur-identity-core = { path = "crates/zeabur-identity-core" }
+zeabur-identity-keys = { path = "crates/zeabur-identity-keys" }
+zeabur-identity-store = { path = "crates/zeabur-identity-store" }
+zeabur-identity-ui = { path = "crates/zeabur-identity-ui" }
+zeabur-identity-tls = { path = "crates/zeabur-identity-tls" }
+zeabur-identity-oauth = { path = "crates/zeabur-identity-oauth" }
+zeabur-identity-signin = { path = "crates/zeabur-identity-signin" }
+zeabur-identity-k8s = { path = "crates/zeabur-identity-k8s" }
+zeabur-identity-test-support = { path = "crates/zeabur-identity-test-support" }
 
 # Third-party crates.
 askama = { version = "0.16", default-features = false, features = ["derive", "std"] }

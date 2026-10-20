@@ -1,6 +1,6 @@
 # Conformance
 
-This file maps every MUST and SHOULD that Genkan implements to the code that implements it and
+This file maps every MUST and SHOULD that Zeabur Identity implements to the code that implements it and
 the test that proves it. Normative words follow RFC 2119 and RFC 8174. The design reasons and the
 full citations are in each crate's documentation (`cargo doc --workspace --open`).
 
@@ -9,7 +9,7 @@ Status values: **Met** (code and test), **Partial** (explained in the row), **No
 
 Code paths are relative to `crates/`. Tests are given as `crate: module::tests::name` for unit
 tests and `crate/tests/file.rs: name` for integration tests. Tests marked *(cluster)* run against
-k3s v1.36.5 (`--run-ignored only`); *(e2e)* is `genkan-e2e/tests/e2e.rs`, which runs Genkan from
+k3s v1.36.5 (`--run-ignored only`); *(e2e)* is `zeabur-identity-e2e/tests/e2e.rs`, which runs Zeabur Identity from
 its container image.
 
 ## Summary by specification
@@ -42,7 +42,7 @@ its container image.
 | RFC 9396 Rich Authorization Requests | RFC | N/A: kube-apiserver cannot evaluate `authorization_details`; not advertised |
 | RFC 9470 Step-up Authentication Challenge | RFC | N/A: kube-apiserver never sends the challenge. Elevation uses short-lived elevated groups instead |
 | OAuth 2.1 (draft-ietf-oauth-v2-1) | Draft | Followed where it tightens OAuth 2.0 (PKCE always, S256 only) |
-| OpenID Foundation conformance suite, `oidcc-basic-certification-test-plan` | — | Not run: the suite's browser automation cannot perform a passkey ceremony, and Genkan has no password login to give it |
+| OpenID Foundation conformance suite, `oidcc-basic-certification-test-plan` | — | Not run: the suite's browser automation cannot perform a passkey ceremony, and Zeabur Identity has no password login to give it |
 
 ## Repository requirements
 
@@ -55,139 +55,139 @@ its container image.
 | clippy pedantic + restriction set, rustfmt | `Cargo.toml [workspace.lints]`, `clippy.toml`, `rustfmt.toml` | CI `clippy`, `format`, `docs` | Met |
 | DCO sign-off | `CONTRIBUTING.md`, `scripts/check-dco.sh` | CI `dco` | Met |
 | One toolchain source for rustup and Nix | `rust-toolchain.toml`, `flake.nix` | `nix develop` hash check | Met |
-| Image: static binary, non-root, no shell | `Containerfile`, `genkan-k8s/src/deployment.rs` | `genkan-k8s: deployment::tests::deployment_is_locked_down`; *(e2e)* | Met |
+| Image: static binary, non-root, no shell | `Containerfile`, `zeabur-identity-k8s/src/deployment.rs` | `zeabur-identity-k8s: deployment::tests::deployment_is_locked_down`; *(e2e)* | Met |
 | Image size and idle memory measured in CI | `scripts/build-image.sh`, e2e measurement | CI `kubernetes` job summary | Met (about 20 MB; pod working set within the 30 MiB budget) |
 | Image signing (Sigstore) and SBOM | `.github/workflows/release.yml`, `scripts/release-{build,publish,verify}.sh` | Exact-digest signature/SBOM verification and public pull in both native release rehearsal jobs | Partial: pipeline implemented; public OIDC publication evidence requires a successful tag-triggered run ([release procedure](releases.md)) |
-| Versioned CLI archives, checksums, signed provenance and SBOMs | Same workflow; `scripts/release-smoke.sh` | Signed checksum manifest; downloaded archive execution and Kubernetes-backed container startup on Linux amd64/arm64 while release stays draft; separate maintainer publication after installation acceptance | Partial: pipeline implemented; local smoke is not evidence of a published release; [#43](https://github.com/engawahq/genkan/issues/43) remains unverified |
+| Versioned CLI archives, checksums, signed provenance and SBOMs | Same workflow; `scripts/release-smoke.sh` | Signed checksum manifest; downloaded archive execution and Kubernetes-backed container startup on Linux amd64/arm64 while release stays draft; separate maintainer publication after installation acceptance | Partial: pipeline implemented; local smoke is not evidence of a published release; [#43](https://github.com/zeabur/identity/issues/43) remains unverified |
 
 ## OpenID Connect Discovery 1.0 and RFC 8414
 
 | § | Requirement | Level | Code | Test | Status |
 |---|---|---|---|---|---|
-| Disc. 3 | `issuer`: https, no query or fragment | REQUIRED | `genkan-core/src/config.rs` `BaseUrl::parse` | `genkan-core: config::tests::rejects_everything_else` | Met |
-| Disc. 3 | `authorization_endpoint`, `token_endpoint`, `userinfo_endpoint`, `jwks_uri` (https) | REQUIRED | `genkan-oauth/src/discovery.rs` | `genkan-oauth: discovery::tests::required_members_are_present` | Met |
-| Disc. 3 | `id_token_signing_alg_values_supported` includes RS256 | MUST | `discovery.rs`, `genkan-keys` `Algorithm::ALL` | same | Met |
+| Disc. 3 | `issuer`: https, no query or fragment | REQUIRED | `zeabur-identity-core/src/config.rs` `BaseUrl::parse` | `zeabur-identity-core: config::tests::rejects_everything_else` | Met |
+| Disc. 3 | `authorization_endpoint`, `token_endpoint`, `userinfo_endpoint`, `jwks_uri` (https) | REQUIRED | `zeabur-identity-oauth/src/discovery.rs` | `zeabur-identity-oauth: discovery::tests::required_members_are_present` | Met |
+| Disc. 3 | `id_token_signing_alg_values_supported` includes RS256 | MUST | `discovery.rs`, `zeabur-identity-keys` `Algorithm::ALL` | same | Met |
 | Disc. 3 | `scopes_supported` includes `openid` | MUST | `discovery.rs` | same | Met |
-| Disc. 3 | Defaults that would over-claim set explicitly | — | `discovery.rs` | `genkan-oauth: discovery::tests::does_not_inherit_misleading_defaults` | Met |
-| Disc. 4, 4.3 | Document at `/.well-known/openid-configuration`; `issuer` identical | MUST | `genkan-oauth/src/metadata.rs` | `genkan-oauth: metadata::tests::both_metadata_locations_serve_the_same_document` | Met |
+| Disc. 3 | Defaults that would over-claim set explicitly | — | `discovery.rs` | `zeabur-identity-oauth: discovery::tests::does_not_inherit_misleading_defaults` | Met |
+| Disc. 4, 4.3 | Document at `/.well-known/openid-configuration`; `issuer` identical | MUST | `zeabur-identity-oauth/src/metadata.rs` | `zeabur-identity-oauth: metadata::tests::both_metadata_locations_serve_the_same_document` | Met |
 | 8414 §3, §3.3 | Well-known location; identical `issuer`; RFC 9068 §4 consistency | MUST | one document at both paths | same | Met |
-| Disc. 7.1 | TLS for discovery | MUST | TLS at the ingress; the internal listener for kube-apiserver uses Genkan's own CA | `genkan: internal::tests::serves_metadata_with_the_issued_certificate_and_renews_in_place` | Met |
+| Disc. 7.1 | TLS for discovery | MUST | TLS at the ingress; the internal listener for kube-apiserver uses Zeabur Identity's own CA | `zeabur-identity: internal::tests::serves_metadata_with_the_issued_certificate_and_renews_in_place` | Met |
 
 ## JOSE: RFC 7515, 7517, 7518, 7638, 8725
 
 | § | Requirement | Level | Code | Test | Status |
 |---|---|---|---|---|---|
-| 7515 §4.1.1, §4.1.4 | `alg` present; `kid` identifies the key | MUST | `genkan-keys/src/jws.rs` | `genkan-keys: jws::tests::independent_library_verifies_with_published_jwk` | Met |
-| 7515 §4.1.11 | Unknown critical extensions rejected | MUST | `genkan-keys/src/verify.rs` | `genkan-keys: verify::tests::rejects_tampering_wrong_keys_and_algorithms` | Met |
-| 7517 §4.5, §4.3, §5 | Distinct `kid`s; not `use` with `key_ops`; set format | SHOULD | `genkan-keys/src/jwk.rs` | `genkan-keys: jwk::tests::*`, `rotation::tests::schedule_invariants` | Met |
-| 7518 §3.3, §3.4, §3.6 | RSA ≥ 2048 bits (3072 generated); fixed-width ES256; no `none` | MUST | `genkan-keys/src/signing.rs`, `verify.rs` | `genkan-keys: signing::tests::*`, `verify::tests::*` | Met |
-| 7638 §3 | Thumbprint canonical form | MUST | `jwk.rs` | `genkan-keys: jwk::tests::rfc7638_example_thumbprint` | Met |
-| 8725 §3.1 | One algorithm per key | MUST | `signing.rs`, `verify.rs` | `genkan-keys: signing::tests::rejects_key_for_the_wrong_algorithm`, `verify::tests::an_rsa_key_never_verifies_an_es256_header` | Met |
-| 8725 §3.10, §3.11 | No `jku`/`x5u`/`jwk` headers; explicit `typ` | — / RECOMMENDED | `jws.rs` (`at+jwt`, `JWT`) | `genkan-oauth/tests/oauth.rs: code_flow_issues_tokens_kubernetes_can_use` | Met |
-| OIDC Core §10.1.1 | Keep decommissioned keys published for a while | SHOULD | `genkan-keys/src/rotation.rs` | `genkan-keys: rotation::tests::*` | Met |
+| 7515 §4.1.1, §4.1.4 | `alg` present; `kid` identifies the key | MUST | `zeabur-identity-keys/src/jws.rs` | `zeabur-identity-keys: jws::tests::independent_library_verifies_with_published_jwk` | Met |
+| 7515 §4.1.11 | Unknown critical extensions rejected | MUST | `zeabur-identity-keys/src/verify.rs` | `zeabur-identity-keys: verify::tests::rejects_tampering_wrong_keys_and_algorithms` | Met |
+| 7517 §4.5, §4.3, §5 | Distinct `kid`s; not `use` with `key_ops`; set format | SHOULD | `zeabur-identity-keys/src/jwk.rs` | `zeabur-identity-keys: jwk::tests::*`, `rotation::tests::schedule_invariants` | Met |
+| 7518 §3.3, §3.4, §3.6 | RSA ≥ 2048 bits (3072 generated); fixed-width ES256; no `none` | MUST | `zeabur-identity-keys/src/signing.rs`, `verify.rs` | `zeabur-identity-keys: signing::tests::*`, `verify::tests::*` | Met |
+| 7638 §3 | Thumbprint canonical form | MUST | `jwk.rs` | `zeabur-identity-keys: jwk::tests::rfc7638_example_thumbprint` | Met |
+| 8725 §3.1 | One algorithm per key | MUST | `signing.rs`, `verify.rs` | `zeabur-identity-keys: signing::tests::rejects_key_for_the_wrong_algorithm`, `verify::tests::an_rsa_key_never_verifies_an_es256_header` | Met |
+| 8725 §3.10, §3.11 | No `jku`/`x5u`/`jwk` headers; explicit `typ` | — / RECOMMENDED | `jws.rs` (`at+jwt`, `JWT`) | `zeabur-identity-oauth/tests/oauth.rs: code_flow_issues_tokens_kubernetes_can_use` | Met |
+| OIDC Core §10.1.1 | Keep decommissioned keys published for a while | SHOULD | `zeabur-identity-keys/src/rotation.rs` | `zeabur-identity-keys: rotation::tests::*` | Met |
 
 ## kube-apiserver integration (KEP-3331)
 
 | Source | Requirement | Code | Test | Status |
 |---|---|---|---|---|
 | `oidc.go` | RS/ES/PS algorithms only | ES256 default, RS256 | — | Met |
-| go-oidc v2 key cache | A new key is visible before it signs | `genkan-keys/src/rotation.rs` publish-ahead; max-age below it | `genkan-keys: rotation::tests::schedule_invariants`, `genkan: cli::tests::rejects_bad_issuers_and_inconsistent_timings` | Met |
+| go-oidc v2 key cache | A new key is visible before it signs | `zeabur-identity-keys/src/rotation.rs` publish-ahead; max-age below it | `zeabur-identity-keys: rotation::tests::schedule_invariants`, `zeabur-identity: cli::tests::rejects_bad_issuers_and_inconsistent_timings` | Met |
 | `validation.go` | `discoveryURL` https and different from `url` | internal TLS listener at the Service's ClusterIP | *(e2e)* | Met |
-| `oidc.go` | Internal discovery keeps `issuer`; `jwks_uri` from that document | `genkan-oauth/src/discovery.rs` | `genkan-oauth: discovery::tests::internal_variant_changes_only_the_jwks_uri`; *(e2e)* | Met |
-| AuthenticationConfiguration | Prefixed usernames and groups; no `system:`; access tokens only (`has(claims.client_id)`); lifetime bound; elevated groups only in short, fresh tokens | `genkan-k8s/src/kube_config.rs` | `genkan-k8s: kube_config::tests::*`; *(e2e)* `passkey_sign_in_then_kubectl_auth_whoami` | Met |
-| Distributions | `anonymous` per distribution; install steps for k3s, k0s, kubeadm; KubeSolo refused | `kube_config.rs` | `genkan-k8s: kube_config::tests::anonymous_section_follows_the_distribution` | Partial: configuration generation tested; cluster E2E covers k3s only, k0s/kubeadm release installation unverified |
+| `oidc.go` | Internal discovery keeps `issuer`; `jwks_uri` from that document | `zeabur-identity-oauth/src/discovery.rs` | `zeabur-identity-oauth: discovery::tests::internal_variant_changes_only_the_jwks_uri`; *(e2e)* | Met |
+| AuthenticationConfiguration | Prefixed usernames and groups; no `system:`; access tokens only (`has(claims.client_id)`); lifetime bound; elevated groups only in short, fresh tokens | `zeabur-identity-k8s/src/kube_config.rs` | `zeabur-identity-k8s: kube_config::tests::*`; *(e2e)* `passkey_sign_in_then_kubectl_auth_whoami` | Met |
+| Distributions | `anonymous` per distribution; install steps for k3s, k0s, kubeadm; KubeSolo refused | `kube_config.rs` | `zeabur-identity-k8s: kube_config::tests::anonymous_section_follows_the_distribution` | Partial: configuration generation tested; cluster E2E covers k3s only, k0s/kubeadm release installation unverified |
 | Project requirement | `kubectl auth whoami` on k3s | — | *(e2e)* | Met |
 
 ## Kubernetes storage
 
 | Source | Requirement | Code | Test | Status |
 |---|---|---|---|---|
-| API concepts | Update with `resourceVersion` is compare-and-swap; delete preconditions; create of an existing name fails | `genkan-k8s/src/objects.rs` | `genkan-k8s/tests/kubernetes.rs: exactly_one_racer_wins_each_primitive` *(cluster)* | Met |
-| CRD validation | CEL within the cost budget | `genkan-k8s/src/crd/*.rs` | `admission_rejects_invalid_objects` *(cluster)* | Met |
-| RBAC | Least privilege: Secrets only by name, no `create` on Secrets, no RBAC verbs | `genkan-k8s/src/rbac.rs` | `service_account_has_least_privilege` *(cluster)*, `genkan-k8s: rbac::tests::*` | Met |
-| RFC 9700 §2.1; RFC 8252 §7.3; RFC 6749 §3.1.2 | Redirect URIs are `https://` with a host, or a loopback `http://` with a path; printable ASCII, no fragment or user information. Admission checks this with CEL `isURL()`/`url()`; `genkanctl client create` additionally requires a valid WHATWG URL written in its serialized form with well-formed percent-encoding, so exact matching sees the string a browser uses and admission accepts it | `genkan-k8s/src/crd/client.rs` `REDIRECT_URI_RULE`, `genkan-k8s/src/clients.rs` `redirect_uri_allowed` | `genkan-k8s: clients::tests::redirect_uris_are_https_or_loopback_in_the_form_a_browser_uses`, `clients::tests::invalid_registrations_are_rejected_with_the_offending_value`; `tests/redirect_uris.rs` (property: accepted URIs survive the WHATWG and RFC 3986 parsers and the authorization response, loopback ports match, the browser's form is accepted); `admission_rejects_invalid_objects`, `admission_and_genkanctl_agree_on_generated_redirect_uris` *(cluster: generated candidates; what `genkanctl` accepts is admitted, and what admission lets in is never a non-https, non-loopback, fragment or credential target to a browser)* | Met |
-| RFC 6749 §10.10 | Generated client secrets: 256 bits from the CSPRNG (guessing probability at most 2^-128 is a MUST, at most 2^-160 a SHOULD); only the hash is stored | `genkan-k8s/src/clients.rs` `register` | `genkan-k8s: clients::tests::confidential_clients_get_a_fresh_random_secret_and_only_its_hash`, `clients::tests::emitted_objects_satisfy_the_schema_rules`; `oauth_flow_on_kubernetes_storage` *(cluster: the printed secret authenticates, a wrong one is `invalid_client`)* | Met |
-| Project requirement | Expired objects are cleaned up | `genkan-k8s/src/gc.rs` | `garbage_collector_deletes_expired_objects_only` *(cluster)* | Met |
-| Project requirement | Signing keys in a Secret, rotation with overlap | `genkan-k8s/src/keys.rs` | `signing_keys_persist_and_only_one_writer_wins` *(cluster)* | Met |
-| WebAuthn Level 3 §7.1 | A known credential ID fails registration | `genkan-store` `passkey_credential_name`, create-once | `genkan-signin/tests/signin.rs`; `setup_link_is_single_use_and_replaceable` *(cluster)* | Met |
-| RFC 9700 §4.14.2 | Refresh rotation with reuse detection | `genkan-k8s/src/grants.rs`, `genkan-store` `classify` | `grant_rotation_is_linearizable` *(cluster: 1 of 64 rotates)* | Met |
-| Project account-recovery policy; RFC 9700 §4.14.2 (security-event revocation, MAY) | Reset deletes pending invitations, then credentials, then refresh-token families before writing a setup link, including zero-credential retries after partial failure | `genkan-k8s/src/setup.rs` | [Account-recovery tests](#account-recovery-tests) | Met |
+| API concepts | Update with `resourceVersion` is compare-and-swap; delete preconditions; create of an existing name fails | `zeabur-identity-k8s/src/objects.rs` | `zeabur-identity-k8s/tests/kubernetes.rs: exactly_one_racer_wins_each_primitive` *(cluster)* | Met |
+| CRD validation | CEL within the cost budget | `zeabur-identity-k8s/src/crd/*.rs` | `admission_rejects_invalid_objects` *(cluster)* | Met |
+| RBAC | Least privilege: Secrets only by name, no `create` on Secrets, no RBAC verbs | `zeabur-identity-k8s/src/rbac.rs` | `service_account_has_least_privilege` *(cluster)*, `zeabur-identity-k8s: rbac::tests::*` | Met |
+| RFC 9700 §2.1; RFC 8252 §7.3; RFC 6749 §3.1.2 | Redirect URIs are `https://` with a host, or a loopback `http://` with a path; printable ASCII, no fragment or user information. Admission checks this with CEL `isURL()`/`url()`; `zeabur-identityctl client create` additionally requires a valid WHATWG URL written in its serialized form with well-formed percent-encoding, so exact matching sees the string a browser uses and admission accepts it | `zeabur-identity-k8s/src/crd/client.rs` `REDIRECT_URI_RULE`, `zeabur-identity-k8s/src/clients.rs` `redirect_uri_allowed` | `zeabur-identity-k8s: clients::tests::redirect_uris_are_https_or_loopback_in_the_form_a_browser_uses`, `clients::tests::invalid_registrations_are_rejected_with_the_offending_value`; `tests/redirect_uris.rs` (property: accepted URIs survive the WHATWG and RFC 3986 parsers and the authorization response, loopback ports match, the browser's form is accepted); `admission_rejects_invalid_objects`, `admission_and_zeabur-identityctl_agree_on_generated_redirect_uris` *(cluster: generated candidates; what `zeabur-identityctl` accepts is admitted, and what admission lets in is never a non-https, non-loopback, fragment or credential target to a browser)* | Met |
+| RFC 6749 §10.10 | Generated client secrets: 256 bits from the CSPRNG (guessing probability at most 2^-128 is a MUST, at most 2^-160 a SHOULD); only the hash is stored | `zeabur-identity-k8s/src/clients.rs` `register` | `zeabur-identity-k8s: clients::tests::confidential_clients_get_a_fresh_random_secret_and_only_its_hash`, `clients::tests::emitted_objects_satisfy_the_schema_rules`; `oauth_flow_on_kubernetes_storage` *(cluster: the printed secret authenticates, a wrong one is `invalid_client`)* | Met |
+| Project requirement | Expired objects are cleaned up | `zeabur-identity-k8s/src/gc.rs` | `garbage_collector_deletes_expired_objects_only` *(cluster)* | Met |
+| Project requirement | Signing keys in a Secret, rotation with overlap | `zeabur-identity-k8s/src/keys.rs` | `signing_keys_persist_and_only_one_writer_wins` *(cluster)* | Met |
+| WebAuthn Level 3 §7.1 | A known credential ID fails registration | `zeabur-identity-store` `passkey_credential_name`, create-once | `zeabur-identity-signin/tests/signin.rs`; `setup_link_is_single_use_and_replaceable` *(cluster)* | Met |
+| RFC 9700 §4.14.2 | Refresh rotation with reuse detection | `zeabur-identity-k8s/src/grants.rs`, `zeabur-identity-store` `classify` | `grant_rotation_is_linearizable` *(cluster: 1 of 64 rotates)* | Met |
+| Project account-recovery policy; RFC 9700 §4.14.2 (security-event revocation, MAY) | Reset deletes pending invitations, then credentials, then refresh-token families before writing a setup link, including zero-credential retries after partial failure | `zeabur-identity-k8s/src/setup.rs` | [Account-recovery tests](#account-recovery-tests) | Met |
 
 ### Account-recovery tests
 
-- `genkan-k8s/tests/setup_reset.rs`: `reset_revokes_invitations_before_anything_else`,
+- `zeabur-identity-k8s/tests/setup_reset.rs`: `reset_revokes_invitations_before_anything_else`,
   `reset_retries_grant_deletion_after_credentials_are_gone` and
   `reset_revokes_old_grants_without_credentials` exercise partial-failure recovery using a mock
   Kubernetes HTTP API and the real OAuth router.
-- `genkan-k8s/tests/kubernetes.rs`: `setup_link_is_single_use_and_replaceable` checks on a cluster
+- `zeabur-identity-k8s/tests/kubernetes.rs`: `setup_link_is_single_use_and_replaceable` checks on a cluster
   that reset revokes only the target user's invitation.
-- `genkan-e2e/tests/e2e.rs`: `passkey_sign_in_then_kubectl_auth_whoami` checks on a cluster that
+- `zeabur-identity-e2e/tests/e2e.rs`: `passkey_sign_in_then_kubectl_auth_whoami` checks on a cluster that
   refresh succeeds before reset and fails afterward.
 
 ## OAuth 2.0 and OpenID Connect
 
-Tests are in `genkan-oauth/tests/oauth.rs` unless noted.
+Tests are in `zeabur-identity-oauth/tests/oauth.rs` unless noted.
 
-| Spec § | Requirement | Level | Code (`genkan-oauth/src/`) | Test | Status |
+| Spec § | Requirement | Level | Code (`zeabur-identity-oauth/src/`) | Test | Status |
 |---|---|---|---|---|---|
 | 6749 §3.1, §3.2 | Parameters not repeated | MUST | `params.rs` | `authorization_endpoint_errors` | Met |
-| 6749 §3.1.2.3; 9700 §2.1 | Exact redirect URI match (loopback port excepted) | MUST | `authorize.rs` | `genkan-oauth: authorize::tests::redirect_uri_rules` | Met |
-| 6749 §4.1.2.1 | No redirect for an invalid client or redirect URI | MUST NOT | `endpoints.rs` (HTML error page) | `authorization_endpoint_errors`; `genkan-signin/tests/pages.rs: untrusted_authorization_requests_show_an_error_page` | Met |
+| 6749 §3.1.2.3; 9700 §2.1 | Exact redirect URI match (loopback port excepted) | MUST | `authorize.rs` | `zeabur-identity-oauth: authorize::tests::redirect_uri_rules` | Met |
+| 6749 §4.1.2.1 | No redirect for an invalid client or redirect URI | MUST NOT | `endpoints.rs` (HTML error page) | `authorization_endpoint_errors`; `zeabur-identity-signin/tests/pages.rs: untrusted_authorization_requests_show_an_error_page` | Met |
 | 6749 §4.1.2 | Codes short-lived and single use; reuse revokes issued tokens | MUST | `code.rs`, `endpoints.rs` | `code_is_single_use_and_reuse_revokes_what_it_issued`, `exactly_one_concurrent_redemption_succeeds` | Met |
 | 6749 §4.1.3 | Code bound to client and `redirect_uri` | MUST | `endpoints.rs` | `pkce_and_code_binding_are_enforced` | Met |
 | 6749 §2.3.1, §5.2 | Client authentication; `WWW-Authenticate` for Basic | MUST | `client_auth.rs` | `confidential_client_gets_rs256_id_tokens_and_must_authenticate` | Met |
 | 6749 §5.1 | `Cache-Control: no-store` | MUST | `error.rs` `no_store` | `code_flow_issues_tokens_kubernetes_can_use` | Met |
 | 6749 §10.10 | Token guessing ≤ 2^-128 | MUST | 256-bit secrets; sealed codes | — | Met |
-| 6749 §10.12 | CSRF protection for the authorization endpoint | MUST | approval is a same-origin JSON sign-in bound to the browser's sealed flow cookie | `genkan-signin/tests/signin.rs: requests_from_other_sites_are_refused`, `sign_in_needs_a_pending_authorization_request` | Met |
-| 7636 §4.1, §4.4.1, §4.6 | Verifier format; challenge required; S256 compare | MUST | `pkce.rs`, `authorize.rs` | `genkan-oauth: pkce::tests::*`, `authorize::tests::*` | Met |
+| 6749 §10.12 | CSRF protection for the authorization endpoint | MUST | approval is a same-origin JSON sign-in bound to the browser's sealed flow cookie | `zeabur-identity-signin/tests/signin.rs: requests_from_other_sites_are_refused`, `sign_in_needs_a_pending_authorization_request` | Met |
+| 7636 §4.1, §4.4.1, §4.6 | Verifier format; challenge required; S256 compare | MUST | `pkce.rs`, `authorize.rs` | `zeabur-identity-oauth: pkce::tests::*`, `authorize::tests::*` | Met |
 | 9700 §2.1.1, §2.2.2 | PKCE required; public-client refresh tokens rotated | MUST | `authorize.rs`, `endpoints.rs` | `pkce_and_code_binding_are_enforced`, `refresh_rotates_and_reuse_revokes_the_family` | Met |
 | 9700 §4.11.2 | 303, never 307 | MUST NOT | `endpoints.rs` | `code_flow_issues_tokens_kubernetes_can_use` | Met |
 | 9068 §2.1, §2.2, §5 | `at+jwt`; required claims; distinct `aud` per resource | MUST | `tokens.rs`, `authorize.rs` | `code_flow_issues_tokens_kubernetes_can_use`, `authorization_endpoint_errors` | Met |
-| 8707 §2 | `invalid_target` for disallowed resources | — | `authorize.rs` | `genkan-oauth: authorize::tests::*` | Met |
+| 8707 §2 | `invalid_target` for disallowed resources | — | `authorize.rs` | `zeabur-identity-oauth: authorize::tests::*` | Met |
 | 9126 §2.1, §2.2, §4 | Authenticated PAR; one-time, client-bound, expiring request URI | MUST | `endpoints.rs` | `pushed_authorization_requests` | Met |
-| 7009 §2.1, §2.2 | Revocation by the owning client with constant-time proof of a current or previous refresh secret; 200 for invalid tokens without deleting a grant | MUST | `endpoints.rs`, `refresh.rs` | `revocation`, `guessed_refresh_secrets_cannot_revoke_a_known_grant`, `current_and_previous_refresh_secrets_authorize_family_revocation`; `genkan-e2e: passkey_sign_in_then_kubectl_auth_whoami` (forged-secret smoke) | Met |
-| 6749 §6 | Validate refresh token and client binding; wrong-client family deletion requires constant-time proof of a current or previous secret, never a grant name alone | MUST; deletion policy | `endpoints.rs`, `refresh.rs` | `guessed_refresh_secrets_cannot_revoke_a_known_grant`, `current_and_previous_refresh_secrets_authorize_family_revocation`; `genkan-e2e: passkey_sign_in_then_kubectl_auth_whoami` (second public-client forged-secret smoke) | Met |
+| 7009 §2.1, §2.2 | Revocation by the owning client with constant-time proof of a current or previous refresh secret; 200 for invalid tokens without deleting a grant | MUST | `endpoints.rs`, `refresh.rs` | `revocation`, `guessed_refresh_secrets_cannot_revoke_a_known_grant`, `current_and_previous_refresh_secrets_authorize_family_revocation`; `zeabur-identity-e2e: passkey_sign_in_then_kubectl_auth_whoami` (forged-secret smoke) | Met |
+| 6749 §6 | Validate refresh token and client binding; wrong-client family deletion requires constant-time proof of a current or previous secret, never a grant name alone | MUST; deletion policy | `endpoints.rs`, `refresh.rs` | `guessed_refresh_secrets_cannot_revoke_a_known_grant`, `current_and_previous_refresh_secrets_authorize_family_revocation`; `zeabur-identity-e2e: passkey_sign_in_then_kubectl_auth_whoami` (second public-client forged-secret smoke) | Met |
 | 9207 §2 | `iss` in authorization responses | MUST | `authorize.rs` | `code_flow_issues_tokens_kubernetes_can_use` | Met |
 | OIDC Core §2, §3.1.3.6 | ID token claims; `aud` is the client; `azp` | REQUIRED | `tokens.rs` | `code_flow_issues_tokens_kubernetes_can_use` | Met |
 | OIDC Core §3.1.2.1 | GET and POST; `prompt=none` without a session fails | MUST | `endpoints.rs`, `authorize.rs` | `authorization_endpoint_accepts_post`, `authorization_endpoint_errors` | Met |
-| OIDC Core §3.1.2.1 | `ui_locales` | OPTIONAL | error page | `genkan-signin/tests/pages.rs: untrusted_authorization_requests_show_an_error_page` | Partial: the sign-in page does not use it |
+| OIDC Core §3.1.2.1 | `ui_locales` | OPTIONAL | error page | `zeabur-identity-signin/tests/pages.rs: untrusted_authorization_requests_show_an_error_page` | Partial: the sign-in page does not use it |
 | OIDC Core §5.3; RFC 6750 §2.1, §3 | UserInfo with bearer access tokens; challenges with error codes; current claims by scope | MUST | `userinfo.rs` | `userinfo_returns_current_claims_for_access_tokens_only` | Met |
-| OIDC Core §5.3.2 | Always return the grant's `sub`; resolve metadata by UID and verify the directly read user's UID and enabled state | MUST; binding policy | `userinfo.rs`, `genkan-k8s/src/directory.rs` | `userinfo_returns_current_claims_for_access_tokens_only`, `userinfo_rejects_deleted_and_recreated_users`, `userinfo_rejects_unknown_and_ambiguous_subjects` | Met (client-side ID token subject comparison remains the client's responsibility) |
+| OIDC Core §5.3.2 | Always return the grant's `sub`; resolve metadata by UID and verify the directly read user's UID and enabled state | MUST; binding policy | `userinfo.rs`, `zeabur-identity-k8s/src/directory.rs` | `userinfo_returns_current_claims_for_access_tokens_only`, `userinfo_rejects_deleted_and_recreated_users`, `userinfo_rejects_unknown_and_ambiguous_subjects` | Met (client-side ID token subject comparison remains the client's responsibility) |
 | OIDC Core §12.2 | Refreshed ID token keeps `auth_time`, no nonce | MUST | `endpoints.rs` | `refresh_rotates_and_reuse_revokes_the_family` | Met |
-| OIDC Core §15.1 | `max_age`, `prompt=login` | MUST | every sign-in is a fresh ceremony (no sessions) | `genkan-signin/tests/signin.rs: setup_link_then_passkey_sign_in_issues_tokens` | Met while there are no sessions |
+| OIDC Core §15.1 | `max_age`, `prompt=login` | MUST | every sign-in is a fresh ceremony (no sessions) | `zeabur-identity-signin/tests/signin.rs: setup_link_then_passkey_sign_in_issues_tokens` | Met while there are no sessions |
 
 ## Elevation
 
 | Requirement | Code | Test | Status |
 |---|---|---|---|
-| Elevated groups only after a passkey sign-in (`amr` contains `swk`) | `genkan-oauth/src/endpoints.rs` | `elevation_needs_the_feature_a_passkey_and_eligible_groups`; `genkan-signin/tests/upstream.rs: start_requires_a_pending_request_and_refuses_elevation` | Met |
+| Elevated groups only after a passkey sign-in (`amr` contains `swk`) | `zeabur-identity-oauth/src/endpoints.rs` | `elevation_needs_the_feature_a_passkey_and_eligible_groups`; `zeabur-identity-signin/tests/upstream.rs: start_requires_a_pending_request_and_refuses_elevation` | Met |
 | Short, non-refreshable elevated tokens; refresh never yields elevated groups | `endpoints.rs` | `elevation_issues_short_lived_tokens_without_refresh` | Met |
-| Only clients with `allowElevation` may ask: `invalid_scope` at `/authorize` and `/par`, `invalid_grant` at `/token` if the flag was removed meanwhile | `genkan-oauth/src/authorize.rs`, `endpoints.rs` | `authorize::tests::elevate_needs_the_feature_and_the_client_opt_in`, `elevation_needs_the_client_to_allow_it` | Met |
-| The sign-in page says the application is asking for elevated access, and for how long | `genkan-ui/src/pages.rs`, `templates/login.html` | `genkan-signin/tests/pages.rs: login_says_when_elevated_access_is_requested` | Met |
+| Only clients with `allowElevation` may ask: `invalid_scope` at `/authorize` and `/par`, `invalid_grant` at `/token` if the flag was removed meanwhile | `zeabur-identity-oauth/src/authorize.rs`, `endpoints.rs` | `authorize::tests::elevate_needs_the_feature_and_the_client_opt_in`, `elevation_needs_the_client_to_allow_it` | Met |
+| The sign-in page says the application is asking for elevated access, and for how long | `zeabur-identity-ui/src/pages.rs`, `templates/login.html` | `zeabur-identity-signin/tests/pages.rs: login_says_when_elevated_access_is_requested` | Met |
 | Elevated codes single use under concurrency | `endpoints.rs` | `an_elevated_code_is_redeemed_at_most_once_under_concurrency` | Met |
-| kube-apiserver rejects elevated groups in long or stale tokens | `genkan-k8s/src/kube_config.rs` | *(e2e)* | Met |
-| First admin: read-only base group, cluster admin only when elevated | `genkan-k8s/src/rbac.rs`, `setup.rs` | *(e2e)* `passkey_sign_in_then_kubectl_auth_whoami` | Met |
+| kube-apiserver rejects elevated groups in long or stale tokens | `zeabur-identity-k8s/src/kube_config.rs` | *(e2e)* | Met |
+| First admin: read-only base group, cluster admin only when elevated | `zeabur-identity-k8s/src/rbac.rs`, `setup.rs` | *(e2e)* `passkey_sign_in_then_kubectl_auth_whoami` | Met |
 
 ## Sign-in: passkeys, enrolment links, invitations
 
-Tests are in `genkan-signin/tests/signin.rs` unless noted.
+Tests are in `zeabur-identity-signin/tests/signin.rs` unless noted.
 
-| Source | Requirement | Level | Code (`genkan-signin/src/`) | Test | Status |
+| Source | Requirement | Level | Code (`zeabur-identity-signin/src/`) | Test | Status |
 |---|---|---|---|---|---|
-| Project requirement | Setup link works once and expires; no first-visitor admin | MUST | `lib.rs` (consume before storing), `genkan-k8s/src/setup.rs` | `setup_token_is_single_use`, `concurrent_enrolments_with_one_token_add_one_passkey`, `setup_token_expires_and_must_match`, `setup_link_is_single_use_and_replaceable` *(cluster, 64 concurrent)* | Met |
-| Project requirement | Invitations work once, only for the invited user; the service account cannot create them | MUST | `lib.rs`, `genkan-k8s/src/setup.rs`, `invitations.rs` | `invitation_enrols_the_invited_user_once`, `invitations_are_single_use_and_admin_only` *(cluster)* | Met |
-| WebAuthn §5.4.4, §5.4.6 | Discoverable credential, user verification required | — | `passkeys.rs` | `genkan-signin: passkeys::tests::registration_requires_resident_keys_and_uv` | Met |
+| Project requirement | Setup link works once and expires; no first-visitor admin | MUST | `lib.rs` (consume before storing), `zeabur-identity-k8s/src/setup.rs` | `setup_token_is_single_use`, `concurrent_enrolments_with_one_token_add_one_passkey`, `setup_token_expires_and_must_match`, `setup_link_is_single_use_and_replaceable` *(cluster, 64 concurrent)* | Met |
+| Project requirement | Invitations work once, only for the invited user; the service account cannot create them | MUST | `lib.rs`, `zeabur-identity-k8s/src/setup.rs`, `invitations.rs` | `invitation_enrols_the_invited_user_once`, `invitations_are_single_use_and_admin_only` *(cluster)* | Met |
+| WebAuthn §5.4.4, §5.4.6 | Discoverable credential, user verification required | — | `passkeys.rs` | `zeabur-identity-signin: passkeys::tests::registration_requires_resident_keys_and_uv` | Met |
 | WebAuthn §7.1, §7.2 | UV verified; user handle is the owner's; challenge single use | MUST | `passkeys.rs`, `lib.rs` | `passkeys_without_user_verification_are_refused` (registration, client side), `sign_in_without_user_verification_is_refused` and `elevation_without_user_verification_is_refused` (signed assertion with UV clear, refused with no code or tokens; UV-positive control completes), `unknown_passkeys_and_disabled_users_cannot_sign_in`, `assertions_cannot_be_replayed` | Met |
-| WebAuthn conditional mediation | Autofill (`autocomplete="username webauthn"`) | — | `passkeys.rs`, `ui/src/login.ts` | `genkan-signin/tests/pages.rs: login_offers_passkey_autofill_for_a_pending_request` | Met |
+| WebAuthn conditional mediation | Autofill (`autocomplete="username webauthn"`) | — | `passkeys.rs`, `ui/src/login.ts` | `zeabur-identity-signin/tests/pages.rs: login_offers_passkey_autofill_for_a_pending_request` | Met |
 | RFC 9457 §3 | Problem details | — | `problem.rs` | `requests_from_other_sites_are_refused` | Met |
-| Fetch Metadata | Cross-site state-changing requests refused | — | `lib.rs` `check_request` | `requests_from_other_sites_are_refused`, `genkan-signin: tests::same_origin_checks` | Met |
+| Fetch Metadata | Cross-site state-changing requests refused | — | `lib.rs` `check_request` | `requests_from_other_sites_are_refused`, `zeabur-identity-signin: tests::same_origin_checks` | Met |
 | RFC 6265bis | `__Host-` cookies: Secure, `Path=/`, no Domain | MUST | `lib.rs`, `upstream.rs` | `code_flow_issues_tokens_kubernetes_can_use` | Met |
 
 ## Upstream sign-in (GitHub, Google)
 
-Tests are in `genkan-signin/tests/upstream.rs`.
+Tests are in `zeabur-identity-signin/tests/upstream.rs`.
 
-| Source | Requirement | Code (`genkan-signin/src/`) | Test | Status |
+| Source | Requirement | Code (`zeabur-identity-signin/src/`) | Test | Status |
 |---|---|---|---|---|
 | RFC 6749 §10.12; RFC 9700 §2.1 | `state` bound to the browser, compared in constant time, used once | `upstream.rs` | `unlinked_disabled_and_replayed_sign_ins_fail` | Met |
 | RFC 7636 | PKCE towards the provider | `upstream/provider.rs` | `a_linked_github_account_signs_in_and_gets_a_code` (fake provider checks the verifier) | Met |
@@ -196,19 +196,19 @@ Tests are in `genkan-signin/tests/upstream.rs`.
 
 ## Sign-in pages
 
-Tests are in `genkan-signin/tests/pages.rs`; every page test checks headers and that the markup
+Tests are in `zeabur-identity-signin/tests/pages.rs`; every page test checks headers and that the markup
 needs nothing the CSP forbids.
 
 | Source | Requirement | Level | Code | Test | Status |
 |---|---|---|---|---|---|
-| RFC 9700 §4.16 | Prevent clickjacking (CSP `frame-ancestors`, `X-Frame-Options`) | MUST | `genkan-ui/src/lib.rs` `harden` | all page tests | Met |
-| CSP Level 3, Trusted Types | No inline script, style or handlers; no string-to-HTML sinks | — | `genkan-ui`, `ui/src/*.ts` | all page tests | Met |
-| RFC 9110 §12.5.4, §12.4.2 | `Accept-Language` with quality values | — | `genkan-ui/src/i18n.rs` | `genkan-ui: i18n::tests::*`, `language_follows_parameter_then_header` | Met |
-| Project requirement | Assets embedded, no CDN; built output checked against source; size measured | MUST | `genkan-ui/src/assets.rs`, `scripts/build-ui.sh`, `scripts/ui-budget.sh` | `assets_are_embedded_versioned_and_immutable`; CI `ui` | Met |
-| Project requirement | No tokens in browser storage; cookies `HttpOnly`, `Secure`, `SameSite` | MUST | `ui/src/*.ts`, `genkan-signin` | `tsc -p ui`, review | Met |
+| RFC 9700 §4.16 | Prevent clickjacking (CSP `frame-ancestors`, `X-Frame-Options`) | MUST | `zeabur-identity-ui/src/lib.rs` `harden` | all page tests | Met |
+| CSP Level 3, Trusted Types | No inline script, style or handlers; no string-to-HTML sinks | — | `zeabur-identity-ui`, `ui/src/*.ts` | all page tests | Met |
+| RFC 9110 §12.5.4, §12.4.2 | `Accept-Language` with quality values | — | `zeabur-identity-ui/src/i18n.rs` | `zeabur-identity-ui: i18n::tests::*`, `language_follows_parameter_then_header` | Met |
+| Project requirement | Assets embedded, no CDN; built output checked against source; size measured | MUST | `zeabur-identity-ui/src/assets.rs`, `scripts/build-ui.sh`, `scripts/ui-budget.sh` | `assets_are_embedded_versioned_and_immutable`; CI `ui` | Met |
+| Project requirement | No tokens in browser storage; cookies `HttpOnly`, `Secure`, `SameSite` | MUST | `ui/src/*.ts`, `zeabur-identity-signin` | `tsc -p ui`, review | Met |
 | Project requirement | Fallback without passkey support or script; provider buttons only when configured and not for elevation | MUST | templates | `login_offers_passkey_autofill_for_a_pending_request`, `provider_buttons_appear_only_when_configured_and_not_for_elevation` | Met |
-| Project requirement | Dark mode; en, zh-TW, zh-CN | MUST | `ui/styles/app.css`, `genkan-ui/src/i18n.rs` | `language_follows_parameter_then_header` | Met |
+| Project requirement | Dark mode; en, zh-TW, zh-CN | MUST | `ui/styles/app.css`, `zeabur-identity-ui/src/i18n.rs` | `language_follows_parameter_then_header` | Met |
 | Escaping | User-influenced text cannot inject markup | — | askama auto-escaping | `user_controlled_text_is_escaped` | Met |
-| WCAG 2.2 1.4.3, 1.4.11 | Text ≥ 4.5:1; boundaries and focus ≥ 3:1 | AA | `ui/styles/app.css` (`A11Y` overrides) | computed table in the `genkan-ui` docs | Met for every pair used |
+| WCAG 2.2 1.4.3, 1.4.11 | Text ≥ 4.5:1; boundaries and focus ≥ 3:1 | AA | `ui/styles/app.css` (`A11Y` overrides) | computed table in the `zeabur-identity-ui` docs | Met for every pair used |
 | WCAG 2.2 2.4.7, 2.5.8, 3.1.1, 3.1.2, 3.3.1, 4.1.3 | Focus, target size, language, errors, status messages | A / AA | templates | `language_follows_parameter_then_header`; review | Met by inspection |
 | WCAG 2.2 | Automated audit and assistive-technology pass | — | — | — | Not done |

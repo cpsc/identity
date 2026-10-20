@@ -1,42 +1,42 @@
 # Managing users
 
-Genkan stores people, passkeys and sessions as Kubernetes objects in its own namespace. You
+Zeabur Identity stores people, passkeys and sessions as Kubernetes objects in its own namespace. You
 manage them with two tools:
 
-- `genkanctl` creates the one-time links people use to set up a passkey;
+- `zeabur-identityctl` creates the one-time links people use to set up a passkey;
 - `kubectl` (or your GitOps tool) does everything else: groups, admin rights, signing people
   out, removing them.
 
-The examples assume the cluster from [Get started](get-started.md): namespace `genkan-system`
-and issuer `https://genkan.example.test`. Run them where you have the cluster admin's kubeconfig,
+The examples assume the cluster from [Get started](get-started.md): namespace `zeabur-identity`
+and issuer `https://identity.example.test`. Run them where you have the cluster admin's kubeconfig,
 and use your own issuer:
 
 ```sh
-export GENKAN_ISSUER=https://genkan.example.test
+export ZEABUR_IDENTITY_ISSUER=https://identity.example.test
 ```
 
-`genkanctl` reads the issuer from `GENKAN_ISSUER`, so the commands below do not repeat it.
+`zeabur-identityctl` reads the issuer from `ZEABUR_IDENTITY_ISSUER`, so the commands below do not repeat it.
 
 ## The objects
 
 | Object | Short name | What it is | Who creates it |
 |---|---|---|---|
 | `User` | `gkuser` | a person: username, display name, groups | you |
-| `Credential` | `gkcred` | one passkey, or one linked GitHub or Google account | Genkan, when someone uses a link |
-| `Invitation` | `gkinvite` | a pending one-time link | `genkanctl invite`; Genkan deletes it once used or expired |
-| `Grant` | `gkgrant` | one signed-in session | Genkan, at each sign-in |
+| `Credential` | `gkcred` | one passkey, or one linked GitHub or Google account | Zeabur Identity, when someone uses a link |
+| `Invitation` | `gkinvite` | a pending one-time link | `zeabur-identityctl invite`; Zeabur Identity deletes it once used or expired |
+| `Grant` | `gkgrant` | one signed-in session | Zeabur Identity, at each sign-in |
 
-Credentials, invitations and grants carry the label `genkan.engawahq.dev/user=<username>`, so
-`-l genkan.engawahq.dev/user=alice` selects everything that belongs to `alice`.
+Credentials, invitations and grants carry the label `identity.zeabur.com/user=<username>`, so
+`-l identity.zeabur.com/user=alice` selects everything that belongs to `alice`.
 
 The lifetimes below are the defaults: everyday tokens last 10 minutes and admin tokens 5
-minutes. See [token limits](../crates/genkanctl/README.md#configure-token-limits-and-certificates)
+minutes. See [token limits](../crates/zeabur-identityctl/README.md#configure-token-limits-and-certificates)
 if you changed them.
 
 ## Add someone
 
 ```sh
-genkanctl invite --username alice --display-name "Alice Chen" --group dev
+zeabur-identityctl invite --username alice --display-name "Alice Chen" --group dev
 ```
 
 This creates the user `alice` in the group `dev`, and prints a one-time link. Send the link to
@@ -51,11 +51,11 @@ Things to know:
   up a new user. For an existing username, the invitation only adds a passkey or a linked
   GitHub or Google account; it does not change groups or the name.
 - **Repeat `--group`** to add several groups.
-- **Genkan sends no mail.** The link goes to stdout and everything else to stderr, so a script
+- **Zeabur Identity sends no mail.** The link goes to stdout and everything else to stderr, so a script
   can deliver it however your team works:
 
   ```sh
-  link=$(genkanctl invite --username alice --group dev)
+  link=$(zeabur-identityctl invite --username alice --group dev)
   mail -s "Set up your passkey" alice@example.com <<EOF
   Open this link on the device that will keep your passkey:
 
@@ -63,13 +63,13 @@ Things to know:
   EOF
   ```
 
-Kubernetes sees Alice as the user `genkan:alice` in the group `genkan:dev`. Give permissions to
+Kubernetes sees Alice as the user `zeabur:alice` in the group `zeabur-identity:dev`. Give permissions to
 the group, not to the person. For example, to let the `dev` group edit everything in a `dev`
 namespace:
 
 ```sh
 kubectl create namespace dev            # if it does not exist yet
-kubectl create rolebinding dev-edit --clusterrole=edit --group=genkan:dev -n dev
+kubectl create rolebinding dev-edit --clusterrole=edit --group=zeabur-identity:dev -n dev
 ```
 
 ### If the link does not work
@@ -78,13 +78,13 @@ Invitation links need the server's `--invitations` option. [Get started](get-sta
 turns it on. If your installation does not have it, regenerate the deployment with it:
 
 ```sh
-GENKAN_IMAGE=$(kubectl -n genkan-system get deployment genkan -o jsonpath='{.spec.template.spec.containers[0].image}')
-genkanctl manifests --image "$GENKAN_IMAGE" \
+ZEABUR_IDENTITY_IMAGE=$(kubectl -n zeabur-identity get deployment zeabur-identity -o jsonpath='{.spec.template.spec.containers[0].image}')
+zeabur-identityctl manifests --image "$ZEABUR_IDENTITY_IMAGE" \
   --serve-arg=--invitations | kubectl apply --server-side -f -
-kubectl -n genkan-system rollout status deploy/genkan
+kubectl -n zeabur-identity rollout status deploy/zeabur-identity
 ```
 
-`genkanctl manifests` does not remember earlier options. Pass the same image, namespace,
+`zeabur-identityctl manifests` does not remember earlier options. Pass the same image, namespace,
 `--config-secret` and `--serve-arg` options you installed with, plus the new one.
 
 ## Change groups or the display name
@@ -92,13 +92,13 @@ kubectl -n genkan-system rollout status deploy/genkan
 Edit the `User`:
 
 ```sh
-kubectl -n genkan-system patch gkuser alice --type=merge -p '{"spec":{"groups":["dev","oncall"]}}'
+kubectl -n zeabur-identity patch gkuser alice --type=merge -p '{"spec":{"groups":["dev","oncall"]}}'
 ```
 
-The change shows up in the next token Genkan issues. Tokens already issued keep the old groups
+The change shows up in the next token Zeabur Identity issues. Tokens already issued keep the old groups
 until they expire, within ten minutes for `kubectl`.
 
-If a directory sync manages the user (label `genkan.engawahq.dev/source=directory`), change the
+If a directory sync manages the user (label `identity.zeabur.com/source=directory`), change the
 name and groups in the directory instead; see [Provisioning users](provisioning-users.md).
 
 You cannot rename a user: RBAC bindings and audit logs refer to the username. To rename
@@ -110,15 +110,15 @@ Everyday tokens can only do what the user's ordinary groups allow. For powerful 
 the user an **elevated group**:
 
 ```sh
-kubectl -n genkan-system patch gkuser alice --type=merge -p '{"spec":{"elevatedGroups":["admins"]}}'
+kubectl -n zeabur-identity patch gkuser alice --type=merge -p '{"spec":{"elevatedGroups":["admins"]}}'
 ```
 
 Alice gets the elevated group only when she asks for it, for example through the admin
-`kubectl` context, and signs in with her passkey again. Kubernetes then sees her in `genkan:elevated:admins`, for five
+`kubectl` context, and signs in with her passkey again. Kubernetes then sees her in `zeabur:elevated:admins`, for five
 minutes. Her everyday tokens never carry it.
 
-The installation binds `genkan:elevated:admins` to `cluster-admin`. Bind other elevated groups
-to narrower roles in the same way, for example `--group=genkan:elevated:dev-admins`.
+The installation binds `zeabur:elevated:admins` to `cluster-admin`. Bind other elevated groups
+to narrower roles in the same way, for example `--group=zeabur:elevated:dev-admins`.
 
 Directory sync never touches elevated groups, so this works the same for synced users.
 
@@ -129,7 +129,7 @@ error. Turn it on for the client you administer the cluster with, such as `kubec
 [Get started](get-started.md), and leave it off for web applications that only sign people in:
 
 ```sh
-kubectl -n genkan-system patch gkclient kubectl --type=merge -p '{"spec":{"allowElevation":true}}'
+kubectl -n zeabur-identity patch gkclient kubectl --type=merge -p '{"spec":{"allowElevation":true}}'
 ```
 
 Turning it off takes effect at once, even for sign-ins in progress. When an application asks
@@ -143,14 +143,14 @@ account, invite the same username again. The new link adds one passkey or linked
 leaves everything else as it is:
 
 ```sh
-genkanctl invite --username alice
+zeabur-identityctl invite --username alice
 ```
 
 ## Remove a passkey or linked account
 
 ```sh
-kubectl -n genkan-system get gkcred -l genkan.engawahq.dev/user=alice
-kubectl -n genkan-system delete gkcred <name>
+kubectl -n zeabur-identity get gkcred -l identity.zeabur.com/user=alice
+kubectl -n zeabur-identity delete gkcred <name>
 ```
 
 The deleted credential cannot sign in again. Sessions it already started keep working until you
@@ -161,8 +161,8 @@ The deleted credential cannot sign in again. Sessions it already started keep wo
 Each signed-in session is a `Grant`. Delete it to end the session:
 
 ```sh
-kubectl -n genkan-system get gkgrant -l genkan.engawahq.dev/user=alice
-kubectl -n genkan-system delete gkgrant -l genkan.engawahq.dev/user=alice
+kubectl -n zeabur-identity get gkgrant -l identity.zeabur.com/user=alice
+kubectl -n zeabur-identity delete gkgrant -l identity.zeabur.com/user=alice
 ```
 
 The session cannot renew its token any more. The token already in hand still works until it
@@ -171,7 +171,7 @@ expires, within ten minutes.
 ## Lost passkey (account recovery)
 
 ```sh
-genkanctl setup-link --username alice --reset
+zeabur-identityctl setup-link --username alice --reset
 ```
 
 This deletes all of Alice's credentials (passkeys and any linked GitHub or Google account),
@@ -184,7 +184,7 @@ opens the link becomes Alice, so confirm you are talking to her before you send 
 deleted, so you can undo it:
 
 ```sh
-kubectl -n genkan-system patch gkuser alice --type=merge -p '{"spec":{"disabled":true}}'
+kubectl -n zeabur-identity patch gkuser alice --type=merge -p '{"spec":{"disabled":true}}'
 ```
 
 **To remove someone for good**, delete their credentials, sessions and invitations first, then
@@ -192,9 +192,9 @@ the `User`:
 
 ```sh
 for kind in gkcred gkgrant gkinvite; do
-  kubectl -n genkan-system delete "$kind" -l genkan.engawahq.dev/user=alice
+  kubectl -n zeabur-identity delete "$kind" -l identity.zeabur.com/user=alice
 done
-kubectl -n genkan-system delete gkuser alice
+kubectl -n zeabur-identity delete gkuser alice
 ```
 
 > [!WARNING]
@@ -208,18 +208,18 @@ kubectl -n genkan-system delete gkuser alice
 `User` objects are plain manifests, so they can live in a GitOps repository:
 
 ```yaml
-apiVersion: genkan.engawahq.dev/v1alpha1
+apiVersion: identity.zeabur.com/v1alpha1
 kind: User
 metadata:
   name: alice
-  namespace: genkan-system
+  namespace: zeabur-identity
 spec:
   username: alice
   displayName: Alice Chen
   groups: [dev]
 ```
 
-Keep `Credential`, `Grant` and `Invitation` out of Git. Genkan creates and deletes them, and a
+Keep `Credential`, `Grant` and `Invitation` out of Git. Zeabur Identity creates and deletes them, and a
 sync tool that prunes them would remove people's passkeys or sign them out.
 
 To keep users in step with a company directory instead, see

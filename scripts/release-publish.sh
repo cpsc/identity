@@ -36,8 +36,8 @@ for arch in amd64 arm64; do
   ref="$image@$digest"
   refs+=("$ref")
   cosign sign --yes "$ref"
-  cosign attest --yes --type cyclonedx --predicate "$dir/genkan-$version-linux-$arch.cdx.json" "$ref"
-  cp "$dir/genkanctl-$version-linux-$arch.tar.gz" "$dir/"*.cdx.json "$work/assets/"
+  cosign attest --yes --type cyclonedx --predicate "$dir/zeabur-identity-$version-linux-$arch.cdx.json" "$ref"
+  cp "$dir/zeabur-identityctl-$version-linux-$arch.tar.gz" "$dir/"*.cdx.json "$work/assets/"
   printf '%s  %s\n' "$arch" "$ref" >> "$work/assets/image-digests.txt"
 done
 # The manifest contains only previously built candidates, selected by digest (never rebuilt).
@@ -49,7 +49,7 @@ printf 'index  %s\n' "$ref" >> "$work/assets/image-digests.txt"
 cosign sign --yes "$ref"
 # Attach both platform SBOMs to the index, as well as to each platform manifest.
 for arch in amd64 arm64; do
-  cosign attest --yes --type cyclonedx --predicate "$work/assets/genkan-$version-linux-$arch.cdx.json" "$ref"
+  cosign attest --yes --type cyclonedx --predicate "$work/assets/zeabur-identity-$version-linux-$arch.cdx.json" "$ref"
 done
 jq -n --arg commit "$GITHUB_SHA" --arg repository "https://github.com/$GITHUB_REPOSITORY" \
   --arg version "$version" --arg run "https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
@@ -58,7 +58,7 @@ jq -n --arg commit "$GITHUB_SHA" --arg repository "https://github.com/$GITHUB_RE
   > "$work/assets/provenance.json"
 (
   cd "$work/assets"
-  sha256sum genkanctl-*.tar.gz genkan*.cdx.json image-digests.txt provenance.json > SHA256SUMS
+  sha256sum zeabur-identityctl-*.tar.gz zeabur-identity*.cdx.json image-digests.txt provenance.json > SHA256SUMS
   cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
 )
 {
@@ -69,5 +69,5 @@ jq -n --arg commit "$GITHUB_SHA" --arg repository "https://github.com/$GITHUB_RE
   printf '```\n\nVerify signatures, checksums and SBOMs using [the release instructions](https://github.com/%s/blob/%s/docs/releases.md).\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA"
 } >> "$work/notes.md"
 gh release create "$version" "$work/assets/"* --repo "$GITHUB_REPOSITORY" --verify-tag \
-  --target "$GITHUB_SHA" --draft --prerelease --title "Genkan $version" --notes-file "$work/notes.md"
+  --target "$GITHUB_SHA" --draft --prerelease --title "Zeabur Identity $version" --notes-file "$work/notes.md"
 printf 'image=%s\n' "$ref" >> "${GITHUB_OUTPUT:?}"

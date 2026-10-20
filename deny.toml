@@ -10,7 +10,7 @@ version = 2
 yanked = "deny"
 # Every ignore needs an id and the reason it is acceptable.
 ignore = [
-  { id = "RUSTSEC-2023-0071", reason = "rsa (Marvin) is reached only through webauthn-rs/crypto-glue, which verifies RS256 passkey signatures with public keys; Genkan's private-key RSA operations use aws-lc-rs. Re-check when crypto-glue leaves rsa 0.9." },
+  { id = "RUSTSEC-2023-0071", reason = "rsa (Marvin) is reached only through webauthn-rs/crypto-glue, which verifies RS256 passkey signatures with public keys; Zeabur Identity's private-key RSA operations use aws-lc-rs. Re-check when crypto-glue leaves rsa 0.9." },
 ]
 
 [licenses]

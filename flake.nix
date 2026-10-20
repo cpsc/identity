@@ -1,5 +1,5 @@
 {
-  description = "genkan development environment";
+  description = "zeabur-identity development environment";
 
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1"; # unstable Nixpkgs
@@ -70,7 +70,7 @@
               tailwindcss_4
               typescript
               brotli
-              python3 # .claude/skills/genkan-ui/contrast.py
+              python3 # .claude/skills/zeabur-identity-ui/contrast.py
 
               # Kubernetes integration tests
               kind
@@ -85,7 +85,7 @@
               RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
               # Mozilla's CA bundle (MPL-2.0), copied into the image for outgoing TLS to identity
               # providers; pinned with nixpkgs.
-              GENKAN_CA_BUNDLE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+              ZEABUR_IDENTITY_CA_BUNDLE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
             }
             // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
               # Static musl builds of the host architecture: aws-lc-sys must be compiled against musl

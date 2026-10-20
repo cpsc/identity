@@ -1060,7 +1060,7 @@ approved = "2026-10-12"
 [[crate]]
 name = "askama_derive"
 kind = "unsafe"
-reason = "Build time only (inside the template proc macro). Same ASCII-wrapper transmutes; generated-code strings that contain the word unsafe are for filter arguments Genkan does not define"
+reason = "Build time only (inside the template proc macro). Same ASCII-wrapper transmutes; generated-code strings that contain the word unsafe are for filter arguments Zeabur Identity does not define"
 approved = "2026-10-12"
 
 [[crate]]

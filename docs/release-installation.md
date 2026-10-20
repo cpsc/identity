@@ -26,9 +26,9 @@ Keep tokens, private keys and setup or invitation links out of the record.
 - [ ] Install CRDs, RBAC, the Deployment and HTTPS ingress using the guide. Check that the pod is ready and HTTPS discovery returns the configured issuer.
 - [ ] Install kube-apiserver's authentication configuration and wait for its successful reload.
 - [ ] Create the first admin's setup link. Open it in the browser and create a passkey.
-- [ ] Sign in through kubelogin. `kubectl auth whoami` should show `genkan:admin` and `genkan:admins`.
+- [ ] Sign in through kubelogin. `kubectl auth whoami` should show `zeabur:admin` and `zeabur:admins`.
 - [ ] Try the guide's ConfigMap write with the everyday context. Expect `Forbidden`.
-- [ ] Repeat with the admin context. After a fresh passkey sign-in, expect the write to succeed and `whoami` to include `genkan:elevated:admins`.
+- [ ] Repeat with the admin context. After a fresh passkey sign-in, expect the write to succeed and `whoami` to include `zeabur:elevated:admins`.
 - [ ] Check admin-token expiry using the steps below.
 
 ## Check the five-minute admin token
@@ -40,14 +40,14 @@ save one admin token in a private temporary directory so every request uses that
 umask 077
 work=$(mktemp -d)
 kubectl oidc-login get-token \
-  --oidc-issuer-url=https://genkan.example.test \
+  --oidc-issuer-url=https://identity.example.test \
   --oidc-client-id=kubectl \
   --oidc-use-access-token \
   --oidc-extra-scope=elevate \
   --token-cache-dir="$work/cache" \
   --listen-address=127.0.0.1:8000 \
   --oidc-redirect-url=http://127.0.0.1:8000/ > "$work/credential.json"
-kubectl --context genkan-k3s-admin config view --raw --minify -o json |
+kubectl --context zeabur-identity-k3s-admin config view --raw --minify -o json |
   jq --slurpfile credential "$work/credential.json" '
     .users = [{name: "fixed-admin", user: {token: $credential[0].status.token}}] |
     .contexts[0].context.user = "fixed-admin"
@@ -86,7 +86,7 @@ Use a test user such as `alice`, keeping the server's cluster-admin kubeconfig a
 - [ ] **Invitation:** invite Alice, open her link and create a passkey. Sign in as Alice and check her username and groups. Opening the used invitation again should fail.
 - [ ] **Disable:** set Alice's `disabled` field to `true`. Check that a fresh sign-in fails and her existing session cannot renew. Re-enable her before continuing.
 - [ ] **Sign out:** sign in as Alice, then delete her `Grant`. Check that the session cannot renew. Kubernetes still accepts an access token already issued until its expiry, up to ten minutes with the default settings.
-- [ ] **Lost passkey:** run `genkanctl setup-link --username alice --reset`. Check that the old passkey fails, pending invitations are removed and old sessions cannot renew. Open the new link, create a replacement passkey and sign in again.
+- [ ] **Lost passkey:** run `zeabur-identityctl setup-link --username alice --reset`. Check that the old passkey fails, pending invitations are removed and old sessions cannot renew. Open the new link, create a replacement passkey and sign in again.
 
 When checking session renewal, use the same session before and after the change. A new
 browser sign-in creates a new session. Record the access token's expiry and the observed

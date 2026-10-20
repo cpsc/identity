@@ -5,13 +5,13 @@
       "apiVersion": "apiextensions.k8s.io/v1",
       "kind": "CustomResourceDefinition",
       "metadata": {
-        "name": "users.genkan.engawahq.dev"
+        "name": "users.identity.zeabur.com"
       },
       "spec": {
-        "group": "genkan.engawahq.dev",
+        "group": "identity.zeabur.com",
         "names": {
           "categories": [
-            "genkan"
+            "zeabur-identity"
           ],
           "kind": "User",
           "plural": "users",
@@ -43,10 +43,10 @@
             "name": "v1alpha1",
             "schema": {
               "openAPIV3Schema": {
-                "description": "A person who can sign in to Genkan.",
+                "description": "A person who can sign in to Zeabur Identity.",
                 "properties": {
                   "spec": {
-                    "description": "A person who can sign in. The admin (or GitOps) owns `spec`; Genkan only reads it.\n\nKubernetes sees the user as `genkan:<username>` with groups `genkan:<group>`.",
+                    "description": "A person who can sign in. The admin (or GitOps) owns `spec`; Zeabur Identity only reads it.\n\nKubernetes sees the user as `zeabur:<username>` with groups `zeabur:<group>`.",
                     "properties": {
                       "disabled": {
                         "default": false,
@@ -60,7 +60,7 @@
                         "type": "string"
                       },
                       "elevatedGroups": {
-                        "description": "Groups the user can take on for a few minutes after a fresh passkey sign-in that asks for\nthe `elevate` scope, when elevation is enabled. Kubernetes sees each as\n`genkan:elevated:<group>`; bind powerful roles only to those names.",
+                        "description": "Groups the user can take on for a few minutes after a fresh passkey sign-in that asks for\nthe `elevate` scope, when elevation is enabled. Kubernetes sees each as\n`zeabur:elevated:<group>`; bind powerful roles only to those names.",
                         "items": {
                           "maxLength": 128,
                           "minLength": 1,
@@ -71,7 +71,7 @@
                         "type": "array"
                       },
                       "groups": {
-                        "description": "Groups. Kubernetes sees each as `genkan:<group>`. The characters exclude ':', so a group\ncan never spell a reserved or elevated name.",
+                        "description": "Groups. Kubernetes sees each as `zeabur:<group>`. The characters exclude ':', so a group\ncan never spell a reserved or elevated name.",
                         "items": {
                           "maxLength": 128,
                           "minLength": 1,
@@ -82,7 +82,7 @@
                         "type": "array"
                       },
                       "username": {
-                        "description": "Login name: a lowercase DNS subdomain of at most 63 characters. Kubernetes sees\n`genkan:<username>`. The length limit keeps the username usable as the\n`genkan.engawahq.dev/user` label value on invitations, credentials and grants.\nUse the username as the object name so object-name uniqueness also prevents duplicate\nusernames. Immutable because RBAC bindings and audit logs refer to it.",
+                        "description": "Login name: a lowercase DNS subdomain of at most 63 characters. Kubernetes sees\n`zeabur:<username>`. The length limit keeps the username usable as the\n`identity.zeabur.com/user` label value on invitations, credentials and grants.\nUse the username as the object name so object-name uniqueness also prevents duplicate\nusernames. Immutable because RBAC bindings and audit logs refer to it.",
                         "maxLength": 63,
                         "minLength": 1,
                         "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$",
@@ -123,13 +123,13 @@
       "apiVersion": "apiextensions.k8s.io/v1",
       "kind": "CustomResourceDefinition",
       "metadata": {
-        "name": "credentials.genkan.engawahq.dev"
+        "name": "credentials.identity.zeabur.com"
       },
       "spec": {
-        "group": "genkan.engawahq.dev",
+        "group": "identity.zeabur.com",
         "names": {
           "categories": [
-            "genkan"
+            "zeabur-identity"
           ],
           "kind": "Credential",
           "plural": "credentials",
@@ -161,7 +161,7 @@
             "name": "v1alpha1",
             "schema": {
               "openAPIV3Schema": {
-                "description": "A passkey or linked upstream identity of a Genkan user.",
+                "description": "A passkey or linked upstream identity of a Zeabur Identity user.",
                 "properties": {
                   "spec": {
                     "description": "A way for a `User` to sign in.\n\nThe object name is derived from the credential's unique key (`c-` + hex SHA-256 of the\npasskey credential ID, or of the upstream issuer and subject), so creating a duplicate fails\nwith `409 AlreadyExists`. That is the uniqueness check WebAuthn Level 3 §7.1 asks for, and\nit holds across replicas. The spec is immutable; revoking is deleting.",
@@ -289,13 +289,13 @@
       "apiVersion": "apiextensions.k8s.io/v1",
       "kind": "CustomResourceDefinition",
       "metadata": {
-        "name": "oauthclients.genkan.engawahq.dev"
+        "name": "oauthclients.identity.zeabur.com"
       },
       "spec": {
-        "group": "genkan.engawahq.dev",
+        "group": "identity.zeabur.com",
         "names": {
           "categories": [
-            "genkan"
+            "zeabur-identity"
           ],
           "kind": "OAuthClient",
           "plural": "oauthclients",
@@ -322,7 +322,7 @@
             "name": "v1alpha1",
             "schema": {
               "openAPIV3Schema": {
-                "description": "An OAuth 2.0 / OpenID Connect client registered with Genkan.",
+                "description": "An OAuth 2.0 / OpenID Connect client registered with Zeabur Identity.",
                 "properties": {
                   "spec": {
                     "description": "A registered OAuth 2.0 / OpenID Connect client. The object name is the `client_id`.\n\nAdmission rules reject redirect URIs that RFC 9700 §2.1 and OAuth 2.1 forbid, so a\nmistake in a GitOps repository fails at `kubectl apply`, not at login.",
@@ -417,13 +417,13 @@
       "apiVersion": "apiextensions.k8s.io/v1",
       "kind": "CustomResourceDefinition",
       "metadata": {
-        "name": "grants.genkan.engawahq.dev"
+        "name": "grants.identity.zeabur.com"
       },
       "spec": {
-        "group": "genkan.engawahq.dev",
+        "group": "identity.zeabur.com",
         "names": {
           "categories": [
-            "genkan"
+            "zeabur-identity"
           ],
           "kind": "Grant",
           "plural": "grants",
@@ -460,10 +460,10 @@
             "name": "v1alpha1",
             "schema": {
               "openAPIV3Schema": {
-                "description": "A refresh-token family issued by Genkan.",
+                "description": "A refresh-token family issued by Zeabur Identity.",
                 "properties": {
                   "spec": {
-                    "description": "One login's refresh-token family.\n\nCreated when an authorization code is redeemed; every refresh rotates the token with one\ncompare-and-swap on `status`; reuse of an old token deletes the object, which revokes the\nwhole family. Deleting it by hand is how an admin revokes a session\n(`kubectl delete grant`, or `-l genkan.engawahq.dev/user=<user>` for all of a user's).\nOnly hashes are stored.",
+                    "description": "One login's refresh-token family.\n\nCreated when an authorization code is redeemed; every refresh rotates the token with one\ncompare-and-swap on `status`; reuse of an old token deletes the object, which revokes the\nwhole family. Deleting it by hand is how an admin revokes a session\n(`kubectl delete grant`, or `-l identity.zeabur.com/user=<user>` for all of a user's).\nOnly hashes are stored.",
                     "properties": {
                       "amr": {
                         "description": "Authentication methods (RFC 8176 values).",
@@ -605,13 +605,13 @@
       "apiVersion": "apiextensions.k8s.io/v1",
       "kind": "CustomResourceDefinition",
       "metadata": {
-        "name": "invitations.genkan.engawahq.dev"
+        "name": "invitations.identity.zeabur.com"
       },
       "spec": {
-        "group": "genkan.engawahq.dev",
+        "group": "identity.zeabur.com",
         "names": {
           "categories": [
-            "genkan"
+            "zeabur-identity"
           ],
           "kind": "Invitation",
           "plural": "invitations",
@@ -638,10 +638,10 @@
             "name": "v1alpha1",
             "schema": {
               "openAPIV3Schema": {
-                "description": "A one-time passkey enrolment link for a Genkan user.",
+                "description": "A one-time passkey enrolment link for a Zeabur Identity user.",
                 "properties": {
                   "spec": {
-                    "description": "A one-time enrolment link for a `User`, created by an admin (`genkanctl invite`).\n\nThe link carries `<invitation name>.<secret>`; only the SHA-256 of that token is stored. It\nworks once: redeeming deletes the object with UID and resourceVersion preconditions before\nthe passkey is stored, so exactly one of any number of concurrent redemptions succeeds. The\nadmin's CLI generates the token, records its hash in `spec` and prints the link; delivering it\nis up to the admin. Expired invitations are deleted by the garbage collector.",
+                    "description": "A one-time enrolment link for a `User`, created by an admin (`zeabur-identityctl invite`).\n\nThe link carries `<invitation name>.<secret>`; only the SHA-256 of that token is stored. It\nworks once: redeeming deletes the object with UID and resourceVersion preconditions before\nthe passkey is stored, so exactly one of any number of concurrent redemptions succeeds. The\nadmin's CLI generates the token, records its hash in `spec` and prints the link; delivering it\nis up to the admin. Expired invitations are deleted by the garbage collector.",
                     "properties": {
                       "expiresAt": {
                         "description": "When the link stops working, in Unix seconds.",

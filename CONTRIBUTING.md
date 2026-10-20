@@ -19,22 +19,22 @@ Use a Linux machine matching your cluster's architecture, with Docker running an
 flakes enabled:
 
 ```sh
-git clone https://github.com/engawahq/genkan.git
-cd genkan
+git clone https://github.com/zeabur/identity.git
+cd zeabur-identity
 nix develop
-cargo build --release --locked -p genkanctl
-alias genkanctl="$PWD/target/release/genkanctl"
-./scripts/build-image.sh genkan:dev
+cargo build --release --locked -p zeabur-identityctl
+alias zeabur-identityctl="$PWD/target/release/zeabur-identityctl"
+./scripts/build-image.sh zeabur-identity:dev
 ```
 
 For a local k3s cluster, import the image and choose it for the installation:
 
 ```sh
-docker save genkan:dev | sudo k3s ctr images import -
-export GENKAN_IMAGE=docker.io/library/genkan:dev
+docker save zeabur-identity:dev | sudo k3s ctr images import -
+export ZEABUR_IDENTITY_IMAGE=docker.io/library/zeabur-identity:dev
 ```
 
-Continue at [Install Genkan](docs/get-started.md#3-install-genkan), with the cluster-admin
+Continue at [Install Zeabur Identity](docs/get-started.md#3-install-zeabur-identity), with the cluster-admin
 kubeconfig from the guide. For a k3d test cluster, use the [test setup](#disposable-k3d-cluster)
 below.
 
@@ -49,7 +49,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-it
 cargo nextest run --workspace
 cargo deny --locked check
 ./scripts/unsafe-report.sh
-./scripts/build-ui.sh && git diff --exit-code -- crates/genkan-ui/assets && tsc -p ui && ./scripts/ui-budget.sh
+./scripts/build-ui.sh && git diff --exit-code -- crates/zeabur-identity-ui/assets && tsc -p ui && ./scripts/ui-budget.sh
 ```
 
 Design rationale lives next to the code, in rustdoc: state the decision and its reason, and
@@ -115,7 +115,7 @@ allowlist entry below is added and reviewed, so those pull requests are never me
 A dependency that reaches the shipped binaries and contains `unsafe` code or builds native code
 needs an entry in `supply-chain/unsafe-allowlist.toml` with a reason and the date a maintainer
 approved it. `scripts/unsafe-report.sh` scans the shipped dependency graph (normal and build
-dependencies of `genkan` and `genkanctl` for the image target), lists every such crate and fails
+dependencies of `zeabur-identity` and `zeabur-identityctl` for the image target), lists every such crate and fails
 on one that is not approved; an entry marked `pending` is a proposal awaiting review. The count
 is a review signal, not an audit.
 
@@ -128,7 +128,7 @@ is a review signal, not an audit.
 
 ### Disposable k3d cluster
 
-Run from the Genkan checkout on a Linux machine or VM with Docker running, Nix with flakes,
+Run from the Zeabur Identity checkout on a Linux machine or VM with Docker running, Nix with flakes,
 and permission to use Docker. Enter `nix develop` for the tools, including k3d and kubectl.
 Do not use a production cluster: the tests create and delete resources and replace the
 API server's authentication configuration.
@@ -147,10 +147,10 @@ anonymous:
   enabled: false
 jwt: []
 EOF
-k3d cluster create genkan --image rancher/k3s:v1.36.5-k3s1 --no-lb --wait --timeout 300s \
-  --volume "$RUNNER_TEMP/authn:/etc/rancher/k3s/genkan@server:0" \
-  --k3s-arg "--kube-apiserver-arg=authentication-config=/etc/rancher/k3s/genkan/authn.yaml@server:0"
-export KUBECONFIG=$(k3d kubeconfig write genkan)
+k3d cluster create zeabur-identity --image rancher/k3s:v1.36.5-k3s1 --no-lb --wait --timeout 300s \
+  --volume "$RUNNER_TEMP/authn:/etc/rancher/k3s/zeabur-identity@server:0" \
+  --k3s-arg "--kube-apiserver-arg=authentication-config=/etc/rancher/k3s/zeabur-identity/authn.yaml@server:0"
+export KUBECONFIG=$(k3d kubeconfig write zeabur-identity)
 kubectl get nodes                         # Ready
 cargo nextest run --locked --run-ignored only -E 'binary(kubernetes)'
 ```
@@ -162,22 +162,22 @@ Keep `anonymous.enabled: false` unchanged; kube-apiserver cannot change it durin
 Build and import the image, then run the end-to-end scenario against the same cluster:
 
 ```sh
-./scripts/build-image.sh genkan:e2e
-k3d image import genkan:e2e --cluster genkan
-GENKAN_E2E_IMAGE=genkan:e2e \
-GENKAN_E2E_AUTHN_DIR="$RUNNER_TEMP/authn" \
-GENKAN_E2E_MEASUREMENTS="$RUNNER_TEMP/measurements.json" \
+./scripts/build-image.sh zeabur-identity:e2e
+k3d image import zeabur-identity:e2e --cluster zeabur-identity
+ZEABUR_IDENTITY_E2E_IMAGE=zeabur-identity:e2e \
+ZEABUR_IDENTITY_E2E_AUTHN_DIR="$RUNNER_TEMP/authn" \
+ZEABUR_IDENTITY_E2E_MEASUREMENTS="$RUNNER_TEMP/measurements.json" \
   cargo nextest run --locked --run-ignored only -E 'binary(e2e)'
 ```
 
-The scenario installs Genkan, enrols a software passkey, signs in, and checks
+The scenario installs Zeabur Identity, enrols a software passkey, signs in, and checks
 `kubectl auth whoami`, elevation and the pod's memory. See the
-[genkan-e2e README](crates/genkan-e2e/README.md) for its assertions and reload timing.
+[zeabur-identity-e2e README](crates/zeabur-identity-e2e/README.md) for its assertions and reload timing.
 
 When finished:
 
 ```sh
-k3d cluster delete genkan
+k3d cluster delete zeabur-identity
 ```
 
 The temporary directory holds the authentication configuration and optional measurements;

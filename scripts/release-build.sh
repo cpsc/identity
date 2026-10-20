@@ -11,7 +11,7 @@ version="$1"
 arch="$2"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 : "${IN_NIX_SHELL:?run inside nix develop}"
-: "${GENKAN_CA_BUNDLE:?run inside nix develop}"
+: "${ZEABUR_IDENTITY_CA_BUNDLE:?run inside nix develop}"
 : "${SOURCE_DATE_EPOCH:?set to the release commit timestamp}"
 if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ || ! "$SOURCE_DATE_EPOCH" =~ ^[0-9]+$ ]]; then
   echo "expected a v-prefixed release version and integer SOURCE_DATE_EPOCH" >&2
@@ -38,33 +38,33 @@ target_dir="$(cd "$target_dir" && pwd)"
 # Embedded cargo-auditable metadata lets Syft inventory dependencies in shipped binaries,
 # instead of reporting every package in the workspace or Cargo.lock.
 cargo auditable build --release --locked --target "$target" --target-dir "$target_dir" \
-  --manifest-path "$root/Cargo.toml" -p genkanctl -p genkan
-for binary in genkanctl genkan; do
+  --manifest-path "$root/Cargo.toml" -p zeabur-identityctl -p zeabur-identity
+for binary in zeabur-identityctl zeabur-identity; do
   elf="$(readelf --program-headers --dynamic "$target_dir/$target/release/$binary")"
   if [[ "$elf" == *INTERP* || "$elf" == *'(NEEDED)'* ]]; then
     echo "$binary is not a fully static executable" >&2
     exit 1
   fi
 done
-install -m 0755 "$target_dir/$target/release/genkanctl" "$work/cli/genkanctl"
+install -m 0755 "$target_dir/$target/release/zeabur-identityctl" "$work/cli/zeabur-identityctl"
 tar --format=ustar --sort=name --mtime="@$SOURCE_DATE_EPOCH" \
   --owner=0 --group=0 --numeric-owner --mode=0755 \
-  -C "$work/cli" -cf - genkanctl | gzip -n -9 > "$output/genkanctl-$version-linux-$arch.tar.gz"
+  -C "$work/cli" -cf - zeabur-identityctl | gzip -n -9 > "$output/zeabur-identityctl-$version-linux-$arch.tar.gz"
 
 # Scan the exact file packaged above, not Cargo manifests or a fresh build.
 export SYFT_CHECK_FOR_APP_UPDATE=false
-syft scan "file:$work/cli/genkanctl" \
-  --output "cyclonedx-json=$output/genkanctl-$version-linux-$arch.cdx.json"
+syft scan "file:$work/cli/zeabur-identityctl" \
+  --output "cyclonedx-json=$output/zeabur-identityctl-$version-linux-$arch.cdx.json"
 jq -e '.bomFormat == "CycloneDX" and any(.components[]?; (.purl // "") | startswith("pkg:cargo/"))' \
-  "$output/genkanctl-$version-linux-$arch.cdx.json" > /dev/null
+  "$output/zeabur-identityctl-$version-linux-$arch.cdx.json" > /dev/null
 
 # Keep the Containerfile's existing traversable CA-directory staging pattern.
-install -m 0555 "$target_dir/$target/release/genkan" "$work/image/genkan"
+install -m 0555 "$target_dir/$target/release/zeabur-identity" "$work/image/zeabur-identity"
 install -d -m 0755 "$work/image/etc" "$work/image/etc/ssl" "$work/image/etc/ssl/certs"
-install -m 0444 "$GENKAN_CA_BUNDLE" "$work/image/etc/ssl/certs/ca-certificates.crt"
-touch -d "@$SOURCE_DATE_EPOCH" "$work/image/genkan" "$work/image/etc" \
+install -m 0444 "$ZEABUR_IDENTITY_CA_BUNDLE" "$work/image/etc/ssl/certs/ca-certificates.crt"
+touch -d "@$SOURCE_DATE_EPOCH" "$work/image/zeabur-identity" "$work/image/etc" \
   "$work/image/etc/ssl" "$work/image/etc/ssl/certs" "$work/image/etc/ssl/certs/ca-certificates.crt"
-image="genkan:release-$arch"
+image="zeabur-identity:release-$arch"
 docker build --platform "linux/$arch" --network none --build-arg "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH" \
   --file "$root/Containerfile" --tag "$image" "$work/image"
 docker image save --output "$output/image.tar" "$image"
@@ -79,14 +79,14 @@ SYFT_FILE_METADATA_SELECTION=all SYFT_FILE_METADATA_DIGESTS=sha256 \
 ca_sha="$(jq -er '[.files[] | select(.location.path == "/etc/ssl/certs/ca-certificates.crt")
   | .digests[] | select(.algorithm == "sha256") | .value] | unique
   | if length == 1 then .[0] else error("missing or ambiguous CA bundle digest") end' "$work/image.syft.json")"
-jq --arg sha "$ca_sha" --arg source "$GENKAN_CA_BUNDLE" '
+jq --arg sha "$ca_sha" --arg source "$ZEABUR_IDENTITY_CA_BUNDLE" '
   .components += [{
     type: "file", "bom-ref": "file:/etc/ssl/certs/ca-certificates.crt",
     name: "/etc/ssl/certs/ca-certificates.crt",
     hashes: [{alg: "SHA-256", content: $sha}],
-    properties: [{name: "genkan:nix-source", value: $source}]
+    properties: [{name: "zeabur-identity:nix-source", value: $source}]
   }]
-' "$work/image.cdx.json" > "$output/genkan-$version-linux-$arch.cdx.json"
+' "$work/image.cdx.json" > "$output/zeabur-identity-$version-linux-$arch.cdx.json"
 jq -e '.bomFormat == "CycloneDX" and any(.components[]?; (.purl // "") | startswith("pkg:cargo/"))' \
-  "$output/genkan-$version-linux-$arch.cdx.json" > /dev/null
-printf 'Built %s and %s (not published).\n' "$output/genkanctl-$version-linux-$arch.tar.gz" "$image"
+  "$output/zeabur-identity-$version-linux-$arch.cdx.json" > /dev/null
+printf 'Built %s and %s (not published).\n' "$output/zeabur-identityctl-$version-linux-$arch.tar.gz" "$image"

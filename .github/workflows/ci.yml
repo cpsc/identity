@@ -39,7 +39,7 @@ jobs:
             run: ./scripts/unsafe-report.sh
           # Sign-in page assets: committed output must match the sources, typecheck, and fit the budget.
           - name: ui
-            run: ./scripts/build-ui.sh && git diff --exit-code -- crates/genkan-ui/assets && tsc -p ui && ./scripts/ui-budget.sh
+            run: ./scripts/build-ui.sh && git diff --exit-code -- crates/zeabur-identity-ui/assets && tsc -p ui && ./scripts/ui-budget.sh
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -78,25 +78,25 @@ jobs:
         with:
           key: kubernetes
       # kube-apiserver reads its AuthenticationConfiguration from a host directory, so the
-      # end-to-end test can install Genkan's (and remove it afterwards). It starts with no issuer.
+      # end-to-end test can install Zeabur Identity's (and remove it afterwards). It starts with no issuer.
       - name: Start k3s
         run: |
           mkdir -p "$RUNNER_TEMP/authn"
           printf 'apiVersion: apiserver.config.k8s.io/v1\nkind: AuthenticationConfiguration\nanonymous:\n  enabled: false\njwt: []\n' > "$RUNNER_TEMP/authn/authn.yaml"
-          nix develop --command k3d cluster create genkan --image "rancher/k3s:${{ matrix.k3s }}" --no-lb --wait --timeout 300s \
-            --volume "$RUNNER_TEMP/authn:/etc/rancher/k3s/genkan@server:0" \
-            --k3s-arg "--kube-apiserver-arg=authentication-config=/etc/rancher/k3s/genkan/authn.yaml@server:0"
+          nix develop --command k3d cluster create zeabur-identity --image "rancher/k3s:${{ matrix.k3s }}" --no-lb --wait --timeout 300s \
+            --volume "$RUNNER_TEMP/authn:/etc/rancher/k3s/zeabur-identity@server:0" \
+            --k3s-arg "--kube-apiserver-arg=authentication-config=/etc/rancher/k3s/zeabur-identity/authn.yaml@server:0"
       - name: Integration tests
         run: nix develop --command cargo nextest run --locked --run-ignored only -E 'binary(kubernetes)'
       - name: Build the image
         run: |
-          nix develop --command ./scripts/build-image.sh genkan:e2e
-          nix develop --command k3d image import genkan:e2e --cluster genkan
+          nix develop --command ./scripts/build-image.sh zeabur-identity:e2e
+          nix develop --command k3d image import zeabur-identity:e2e --cluster zeabur-identity
       - name: End-to-end test (passkey sign-in, kubectl auth whoami)
         env:
-          GENKAN_E2E_IMAGE: genkan:e2e
-          GENKAN_E2E_AUTHN_DIR: ${{ runner.temp }}/authn
-          GENKAN_E2E_MEASUREMENTS: ${{ runner.temp }}/measurements.json
+          ZEABUR_IDENTITY_E2E_IMAGE: zeabur-identity:e2e
+          ZEABUR_IDENTITY_E2E_AUTHN_DIR: ${{ runner.temp }}/authn
+          ZEABUR_IDENTITY_E2E_MEASUREMENTS: ${{ runner.temp }}/measurements.json
         run: nix develop --command cargo nextest run --locked --run-ignored only -E 'binary(e2e)'
       - name: Report image size and memory
         if: always()
@@ -105,7 +105,7 @@ jobs:
             echo "### Image size and memory (k3s ${{ matrix.k3s }})"
             echo "| Measure | Bytes |"
             echo "|---|---|"
-            echo "| Image \`genkan:e2e\` | $(docker image inspect --format '{{.Size}}' genkan:e2e 2>/dev/null || echo n/a) |"
+            echo "| Image \`zeabur-identity:e2e\` | $(docker image inspect --format '{{.Size}}' zeabur-identity:e2e 2>/dev/null || echo n/a) |"
             echo "| Pod working set after a sign-in | $(jq -r .pod_working_set_bytes "$RUNNER_TEMP/measurements.json" 2>/dev/null || echo n/a) |"
           } >> "$GITHUB_STEP_SUMMARY"
 

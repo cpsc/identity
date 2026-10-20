@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Fails if the sign-in page assets exceed their size budget (brotli, the size a browser downloads).
-# Budgets are first measurements with headroom; see the genkan-ui docs.
+# Budgets are first measurements with headroom; see the zeabur-identity-ui docs.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-assets="$root/crates/genkan-ui/assets"
+assets="$root/crates/zeabur-identity-ui/assets"
 status=0
 printf '%-12s %8s %8s %8s\n' asset bytes brotli budget
 for entry in app.css:8192 login.js:3072 setup.js:3072; do

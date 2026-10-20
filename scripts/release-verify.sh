@@ -32,7 +32,7 @@ if [[ -z "$identity" ]]; then
 fi
 
 directory="$(cd "$directory" && pwd)"
-archive="genkanctl-${version}-linux-${arch}.tar.gz"
+archive="zeabur-identityctl-${version}-linux-${arch}.tar.gz"
 issuer='https://token.actions.githubusercontent.com'
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -46,7 +46,7 @@ cosign verify-blob "${certificate[@]}" \
 (
   cd "$directory"
   # A signed manifest must actually cover every artifact consumed below, not just an unrelated file.
-  for asset in "$archive" "genkanctl-${version}-linux-${arch}.cdx.json" "genkan-${version}-linux-${arch}.cdx.json" image-digests.txt provenance.json; do
+  for asset in "$archive" "zeabur-identityctl-${version}-linux-${arch}.cdx.json" "zeabur-identity-${version}-linux-${arch}.cdx.json" image-digests.txt provenance.json; do
     found=false
     while IFS= read -r line || [[ -n "$line" ]]; do
       if [[ "$line" =~ ^[0-9a-f]{64}\ \  ]] && [[ "${line:66}" == "$asset" ]]; then
@@ -81,7 +81,7 @@ cosign verify "${certificate[@]}" "$image" > "$work/image-signature.json"
 # --type checks the in-toto predicate type, and default claim checking binds its subject to image.
 cosign verify-attestation "${certificate[@]}" --type cyclonedx "$image" > "$work/attestations.json"
 # Require an actual CycloneDX document inside the verified envelope, not merely its type label.
-jq --slurp --exit-status --slurpfile expected "$directory/genkan-${version}-linux-${arch}.cdx.json" '
+jq --slurp --exit-status --slurpfile expected "$directory/zeabur-identity-${version}-linux-${arch}.cdx.json" '
   length > 0 and any(.[]; (.payload | @base64d | fromjson).predicate == $expected[0]) and all(.[];
     (.payload | @base64d | fromjson) as $statement |
     $statement.predicateType == "https://cyclonedx.org/bom" and

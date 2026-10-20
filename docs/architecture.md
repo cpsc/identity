@@ -1,8 +1,8 @@
 # Architecture
 
-Genkan (玄関, the entrance of a Japanese house) is a passkey-first OpenID Connect issuer for
+Zeabur Identity is a passkey-first OpenID Connect issuer for
 self-managed Kubernetes clusters. k3s is tested in CI; k0s and kubeadm have configuration
-support but no release-installation verification. kube-apiserver verifies Genkan's tokens
+support but no release-installation verification. kube-apiserver verifies Zeabur Identity's tokens
 itself through [Structured Authentication Configuration][kep-3331], so people sign in with a
 passkey instead of carrying a long-lived admin kubeconfig that cannot be revoked. Any OpenID
 Connect client (Argo CD, Grafana, Headlamp, …) can use the same issuer.
@@ -12,7 +12,7 @@ Connect client (Argo CD, Grafana, Headlamp, …) can use the same issuer.
 - **No passwords.** Passkeys (WebAuthn, user verification required) are the primary credential;
   GitHub and Google accounts can be linked as alternatives for ordinary access.
 - **Least privilege by default.** A normal token carries ordinary groups. Administrative groups
-  (`genkan:elevated:<group>`) exist only in a non-refreshable token, limited to five minutes by
+  (`zeabur:elevated:<group>`) exist only in a non-refreshable token, limited to five minutes by
   default, issued right after a passkey sign-in that asks for elevation. kube-apiserver's
   configuration enforces the lifetime and fresh-passkey requirements independently.
 - **No standing secrets in the issuer's hands.** Tokens are short-lived and audience-bound; only
@@ -24,13 +24,13 @@ Connect client (Argo CD, Grafana, Headlamp, …) can use the same issuer.
 - **Small.** One static binary in an otherwise empty image (about 20 MB), a few MiB of memory at
   rest; sign-in pages are server-rendered with about 1 KB of script each.
 
-[conformance.md](conformance.md) maps every specification requirement Genkan implements to the
+[conformance.md](conformance.md) maps every specification requirement Zeabur Identity implements to the
 code and the test that proves it.
 
 ## How it fits together
 
 ```text
-browser ──passkey──▶ genkan (in the cluster) ──tokens──▶ kubectl / OIDC clients
+browser ──passkey──▶ zeabur-identity (in the cluster) ──tokens──▶ kubectl / OIDC clients
                         │  ▲                                     │
                  custom resources                       bearer token
                         ▼  │                                     ▼
@@ -39,20 +39,20 @@ browser ──passkey──▶ genkan (in the cluster) ──tokens──▶ kub
 
 A `kubectl` request goes like this:
 
-1. kubelogin opens the browser at Genkan's sign-in page.
+1. kubelogin opens the browser at Zeabur Identity's sign-in page.
 2. The person signs in with a passkey. kubelogin receives a short-lived access token and a
-   refresh token, and Genkan records the session as a `Grant` object.
+   refresh token, and Zeabur Identity records the session as a `Grant` object.
 3. `kubectl` sends the token to kube-apiserver.
-4. kube-apiserver checks the token's signature against Genkan's published keys, which it
-   fetches over an internal TLS connection. Genkan is not involved in the request itself.
+4. kube-apiserver checks the token's signature against Zeabur Identity's published keys, which it
+   fetches over an internal TLS connection. Zeabur Identity is not involved in the request itself.
 5. When the token expires, kubelogin renews it with a refresh token, without the browser.
 
-The admin tool `genkanctl` runs on an administrator's machine with their own kubeconfig. It
+The admin tool `zeabur-identityctl` runs on an administrator's machine with their own kubeconfig. It
 prints the install manifests, writes kube-apiserver's `AuthenticationConfiguration` for the
 distribution, and issues the one-time links people use to enrol a passkey.
 
-`deploy/crds.json` and `deploy/rbac.json` are the committed outputs of `genkanctl crds` and
-`genkanctl rbac`, for review in pull requests.
+`deploy/crds.json` and `deploy/rbac.json` are the committed outputs of `zeabur-identityctl crds` and
+`zeabur-identityctl rbac`, for review in pull requests.
 
 ## Crates
 
@@ -71,20 +71,20 @@ Every crate has a README that is also its crate-level documentation (`cargo doc 
 
 | Crate | What it holds | Depends on |
 |---|---|---|
-| [`genkan-core`](../crates/genkan-core) | time, cryptographic helpers, validated config values, protocol names | — |
-| [`genkan-keys`](../crates/genkan-keys) | signing keys, JWK publication, JWS signing and verification, rotation | core |
-| [`genkan-store`](../crates/genkan-store) | storage ports (traits, records) and in-memory adapters | core, keys |
-| [`genkan-tls`](../crates/genkan-tls) | trust roots, certificate issuance, a reloadable TLS listener | core |
-| [`genkan-ui`](../crates/genkan-ui) | server-rendered pages, embedded assets, translations, security headers | core |
-| [`genkan-oauth`](../crates/genkan-oauth) | the OAuth 2.0 / OpenID Connect authorization server | core, keys, store, ui |
-| [`genkan-signin`](../crates/genkan-signin) | passkey enrolment and sign-in, upstream providers, page routes | core, keys, store, oauth, ui |
-| [`genkan-k8s`](../crates/genkan-k8s) | custom resources, Kubernetes adapters, GC, manifests, kube-apiserver config | core, keys, store, tls |
-| [`genkan`](../crates/genkan) | **binary**: the in-cluster server | all of the above |
-| [`genkanctl`](../crates/genkanctl) | **binary**: the administrator's CLI | core, k8s |
-| [`genkan-test-support`](../crates/genkan-test-support), [`genkan-e2e`](../crates/genkan-e2e) | test helpers; end-to-end tests on a cluster | — |
+| [`zeabur-identity-core`](../crates/zeabur-identity-core) | time, cryptographic helpers, validated config values, protocol names | — |
+| [`zeabur-identity-keys`](../crates/zeabur-identity-keys) | signing keys, JWK publication, JWS signing and verification, rotation | core |
+| [`zeabur-identity-store`](../crates/zeabur-identity-store) | storage ports (traits, records) and in-memory adapters | core, keys |
+| [`zeabur-identity-tls`](../crates/zeabur-identity-tls) | trust roots, certificate issuance, a reloadable TLS listener | core |
+| [`zeabur-identity-ui`](../crates/zeabur-identity-ui) | server-rendered pages, embedded assets, translations, security headers | core |
+| [`zeabur-identity-oauth`](../crates/zeabur-identity-oauth) | the OAuth 2.0 / OpenID Connect authorization server | core, keys, store, ui |
+| [`zeabur-identity-signin`](../crates/zeabur-identity-signin) | passkey enrolment and sign-in, upstream providers, page routes | core, keys, store, oauth, ui |
+| [`zeabur-identity-k8s`](../crates/zeabur-identity-k8s) | custom resources, Kubernetes adapters, GC, manifests, kube-apiserver config | core, keys, store, tls |
+| [`zeabur-identity`](../crates/zeabur-identity) | **binary**: the in-cluster server | all of the above |
+| [`zeabur-identityctl`](../crates/zeabur-identityctl) | **binary**: the administrator's CLI | core, k8s |
+| [`zeabur-identity-test-support`](../crates/zeabur-identity-test-support), [`zeabur-identity-e2e`](../crates/zeabur-identity-e2e) | test helpers; end-to-end tests on a cluster | — |
 
 The sign-in pages' TypeScript and Tailwind sources live in [`ui/`](../ui); their built output is
-committed to `crates/genkan-ui/assets` and embedded in the binary, so building Genkan needs only
+committed to `crates/zeabur-identity-ui/assets` and embedded in the binary, so building Zeabur Identity needs only
 Cargo.
 
 ## Development

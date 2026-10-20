@@ -102,7 +102,7 @@ export async function post(path: string, body: Json): Promise<Reply> {
 /** The problem type suffix from an RFC 9457 response, for example "setup-invalid". */
 export function problem(reply: Reply): string {
   const type = typeof reply.body.type === "string" ? reply.body.type : "";
-  return type.replace("urn:genkan:problem:", "");
+  return type.replace("urn:zeabur-identity:problem:", "");
 }
 
 export function supported(): boolean {

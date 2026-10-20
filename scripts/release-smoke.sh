@@ -5,7 +5,7 @@
 set -euo pipefail
 
 if [[ $# != 2 ]]; then
-  echo "usage: release-smoke.sh <genkanctl-archive> <image-ref>" >&2
+  echo "usage: release-smoke.sh <zeabur-identityctl-archive> <image-ref>" >&2
   exit 2
 fi
 : "${IN_NIX_SHELL:?run inside nix develop}"
@@ -21,11 +21,11 @@ esac
 archive="$1"
 image="$2"
 work="$(mktemp -d)"
-cluster="genkan-release-${work##*.}"
+cluster="zeabur-identity-release-${work##*.}"
 cluster="${cluster,,}"
-local_image="genkan:smoke-${cluster#genkan-release-}"
-namespace=genkan-release-smoke
-issuer=https://release-smoke.genkan.invalid
+local_image="zeabur-identity:smoke-${cluster#zeabur-identity-release-}"
+namespace=zeabur-identity-release-smoke
+issuer=https://release-smoke.zeabur-identity.invalid
 cluster_started=false
 image_tagged=false
 forward_pid=
@@ -40,8 +40,8 @@ cleanup() {
   fi
   if [[ "$status" != 0 && -s "$KUBECONFIG" ]]; then
     kubectl --request-timeout=10s -n "$namespace" get pods -o wide >&2 || true
-    kubectl --request-timeout=10s -n "$namespace" describe deployment genkan >&2 || true
-    kubectl --request-timeout=10s -n "$namespace" logs deployment/genkan --all-containers --tail=100 >&2 || true
+    kubectl --request-timeout=10s -n "$namespace" describe deployment zeabur-identity >&2 || true
+    kubectl --request-timeout=10s -n "$namespace" logs deployment/zeabur-identity --all-containers --tail=100 >&2 || true
     kubectl --request-timeout=10s -n "$namespace" get events --sort-by=.lastTimestamp >&2 || true
     if [[ -f "$work/port-forward.log" ]]; then
       cat "$work/port-forward.log" >&2
@@ -62,22 +62,22 @@ trap 'exit 143' TERM
 
 # A single regular executable is the complete CLI archive contract. Streaming the
 # file out avoids honoring archive ownership, links or other extraction metadata.
-if [[ "$(tar -tzf "$archive")" != genkanctl ]]; then
-  echo "expected archive containing only genkanctl" >&2
+if [[ "$(tar -tzf "$archive")" != zeabur-identityctl ]]; then
+  echo "expected archive containing only zeabur-identityctl" >&2
   exit 1
 fi
-tar -xOzf "$archive" genkanctl > "$work/genkanctl"
-chmod 0755 "$work/genkanctl"
+tar -xOzf "$archive" zeabur-identityctl > "$work/zeabur-identityctl"
+chmod 0755 "$work/zeabur-identityctl"
 # These commands do not consult kubeconfig, so they also check useful offline CLI behavior.
-"$work/genkanctl" crds > "$work/crds.json"
-"$work/genkanctl" rbac --namespace "$namespace" > "$work/rbac.json"
+"$work/zeabur-identityctl" crds > "$work/crds.json"
+"$work/zeabur-identityctl" rbac --namespace "$namespace" > "$work/rbac.json"
 jq -e '.apiVersion == "v1" and .kind == "List" and (.items | length > 0)
-  and all(.items[]; .kind == "CustomResourceDefinition" and .spec.group == "genkan.engawahq.dev")' \
+  and all(.items[]; .kind == "CustomResourceDefinition" and .spec.group == "identity.zeabur.com")' \
   "$work/crds.json" > /dev/null
 jq -e --arg namespace "$namespace" '.apiVersion == "v1" and .kind == "List"
   and any(.items[]; .kind == "Namespace" and .metadata.name == $namespace)
   and any(.items[]; .kind == "RoleBinding" and .metadata.namespace == $namespace)
-  and any(.items[]; .kind == "Secret" and .metadata.name == "genkan-signing-keys")' \
+  and any(.items[]; .kind == "Secret" and .metadata.name == "zeabur-identity-signing-keys")' \
   "$work/rbac.json" > /dev/null
 
 # Pin the local snapshot by image ID before importing. Retagging changes no bytes,
@@ -108,20 +108,20 @@ kubectl wait --for=condition=Established --timeout=90s -f "$work/crds.json"
 kubectl apply -f "$work/rbac.json"
 # Exercise the archived install command as well as the production hardened Deployment:
 # real service account, namespace RBAC, read-only root, non-root UID and seccomp.
-"$work/genkanctl" manifests --issuer "$issuer" --namespace "$namespace" --image "$local_image" \
+"$work/zeabur-identityctl" manifests --issuer "$issuer" --namespace "$namespace" --image "$local_image" \
   | jq '(.items[] | select(.kind == "Deployment") | .spec.template.spec.containers[]).imagePullPolicy = "Never"' \
   > "$work/manifests.json"
 # RBAC includes the initially empty signing-key Secret: do not reapply it after startup.
 kubectl apply -f "$work/manifests.json"
-kubectl -n "$namespace" rollout status deployment/genkan --timeout=180s
-kubectl -n "$namespace" get secret genkan-signing-keys -o json \
+kubectl -n "$namespace" rollout status deployment/zeabur-identity --timeout=180s
+kubectl -n "$namespace" get secret zeabur-identity-signing-keys -o json \
   | jq -e '.data | type == "object" and length > 0' > /dev/null
 
 # Let the kernel choose the host port, avoiding collisions across concurrent runs.
 # Create the log synchronously: the parent can read it before the background
 # process has executed its redirection.
 : > "$work/port-forward.log"
-kubectl -n "$namespace" port-forward --address 127.0.0.1 service/genkan :80 \
+kubectl -n "$namespace" port-forward --address 127.0.0.1 service/zeabur-identity :80 \
   > "$work/port-forward.log" 2>&1 &
 forward_pid=$!
 port=

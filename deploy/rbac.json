@@ -6,9 +6,9 @@
       "kind": "Namespace",
       "metadata": {
         "labels": {
-          "app.kubernetes.io/managed-by": "genkan"
+          "app.kubernetes.io/managed-by": "zeabur-identity"
         },
-        "name": "genkan-system"
+        "name": "zeabur-identity"
       }
     },
     {
@@ -17,10 +17,10 @@
       "kind": "ServiceAccount",
       "metadata": {
         "labels": {
-          "app.kubernetes.io/managed-by": "genkan"
+          "app.kubernetes.io/managed-by": "zeabur-identity"
         },
-        "name": "genkan",
-        "namespace": "genkan-system"
+        "name": "zeabur-identity",
+        "namespace": "zeabur-identity"
       }
     },
     {
@@ -28,10 +28,10 @@
       "kind": "Role",
       "metadata": {
         "labels": {
-          "app.kubernetes.io/managed-by": "genkan"
+          "app.kubernetes.io/managed-by": "zeabur-identity"
         },
-        "name": "genkan",
-        "namespace": "genkan-system"
+        "name": "zeabur-identity",
+        "namespace": "zeabur-identity"
       },
       "rules": [
         {
@@ -39,7 +39,7 @@
             ""
           ],
           "resourceNames": [
-            "genkan-signing-keys"
+            "zeabur-identity-signing-keys"
           ],
           "resources": [
             "secrets"
@@ -54,7 +54,7 @@
             ""
           ],
           "resourceNames": [
-            "genkan-setup"
+            "zeabur-identity-setup"
           ],
           "resources": [
             "secrets"
@@ -69,7 +69,7 @@
             ""
           ],
           "resourceNames": [
-            "genkan-internal-tls"
+            "zeabur-identity-internal-tls"
           ],
           "resources": [
             "secrets"
@@ -80,7 +80,7 @@
         },
         {
           "apiGroups": [
-            "genkan.engawahq.dev"
+            "identity.zeabur.com"
           ],
           "resources": [
             "users",
@@ -95,7 +95,7 @@
         },
         {
           "apiGroups": [
-            "genkan.engawahq.dev"
+            "identity.zeabur.com"
           ],
           "resources": [
             "credentials"
@@ -107,7 +107,7 @@
         },
         {
           "apiGroups": [
-            "genkan.engawahq.dev"
+            "identity.zeabur.com"
           ],
           "resources": [
             "grants"
@@ -124,7 +124,7 @@
         },
         {
           "apiGroups": [
-            "genkan.engawahq.dev"
+            "identity.zeabur.com"
           ],
           "resources": [
             "grants/status"
@@ -135,7 +135,7 @@
         },
         {
           "apiGroups": [
-            "genkan.engawahq.dev"
+            "identity.zeabur.com"
           ],
           "resources": [
             "invitations"
@@ -154,21 +154,21 @@
       "kind": "RoleBinding",
       "metadata": {
         "labels": {
-          "app.kubernetes.io/managed-by": "genkan"
+          "app.kubernetes.io/managed-by": "zeabur-identity"
         },
-        "name": "genkan",
-        "namespace": "genkan-system"
+        "name": "zeabur-identity",
+        "namespace": "zeabur-identity"
       },
       "roleRef": {
         "apiGroup": "rbac.authorization.k8s.io",
         "kind": "Role",
-        "name": "genkan"
+        "name": "zeabur-identity"
       },
       "subjects": [
         {
           "kind": "ServiceAccount",
-          "name": "genkan",
-          "namespace": "genkan-system"
+          "name": "zeabur-identity",
+          "namespace": "zeabur-identity"
         }
       ]
     },
@@ -177,9 +177,9 @@
       "kind": "ClusterRoleBinding",
       "metadata": {
         "labels": {
-          "app.kubernetes.io/managed-by": "genkan"
+          "app.kubernetes.io/managed-by": "zeabur-identity"
         },
-        "name": "genkan-admins"
+        "name": "zeabur-identity-admins"
       },
       "roleRef": {
         "apiGroup": "rbac.authorization.k8s.io",
@@ -190,7 +190,7 @@
         {
           "apiGroup": "rbac.authorization.k8s.io",
           "kind": "Group",
-          "name": "genkan:admins"
+          "name": "zeabur:admins"
         }
       ]
     },
@@ -199,9 +199,9 @@
       "kind": "ClusterRoleBinding",
       "metadata": {
         "labels": {
-          "app.kubernetes.io/managed-by": "genkan"
+          "app.kubernetes.io/managed-by": "zeabur-identity"
         },
-        "name": "genkan-elevated-admins"
+        "name": "zeabur-identity-elevated-admins"
       },
       "roleRef": {
         "apiGroup": "rbac.authorization.k8s.io",
@@ -212,7 +212,7 @@
         {
           "apiGroup": "rbac.authorization.k8s.io",
           "kind": "Group",
-          "name": "genkan:elevated:admins"
+          "name": "zeabur:elevated:admins"
         }
       ]
     },
@@ -221,12 +221,12 @@
       "kind": "Secret",
       "metadata": {
         "labels": {
-          "app.kubernetes.io/managed-by": "genkan"
+          "app.kubernetes.io/managed-by": "zeabur-identity"
         },
-        "name": "genkan-signing-keys",
-        "namespace": "genkan-system"
+        "name": "zeabur-identity-signing-keys",
+        "namespace": "zeabur-identity"
       },
-      "type": "genkan.engawahq.dev/signing-keys"
+      "type": "identity.zeabur.com/signing-keys"
     }
   ],
   "kind": "List"

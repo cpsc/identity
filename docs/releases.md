@@ -1,14 +1,14 @@
 # Releases
 
-Use [GitHub Releases](https://github.com/engawahq/genkan/releases) to download Genkan.
-While Genkan is in alpha, releases are marked as prereleases.
+Use [GitHub Releases](https://github.com/zeabur/identity/releases) to download Zeabur Identity.
+While Zeabur Identity is in alpha, releases are marked as prereleases.
 
 ## Choose your platform
 
 | Platform | CLI archive | Container image |
 |---|---|---|
-| Linux amd64 / x86_64 | `genkanctl-v<VERSION>-linux-amd64.tar.gz` | `ghcr.io/engawahq/genkan:v<VERSION>` |
-| Linux arm64 / aarch64 | `genkanctl-v<VERSION>-linux-arm64.tar.gz` | Same image tag; Docker selects your architecture |
+| Linux amd64 / x86_64 | `zeabur-identityctl-v<VERSION>-linux-amd64.tar.gz` | `ghcr.io/zeabur/identity:v<VERSION>` |
+| Linux arm64 / aarch64 | `zeabur-identityctl-v<VERSION>-linux-arm64.tar.gz` | Same image tag; Docker selects your architecture |
 
 The CLI and server are statically linked. For macOS, Windows or other architectures, build
 the CLI from source.
@@ -26,12 +26,12 @@ Choose a release version and your architecture, then download its files:
 ```sh
 version=v0.0.1
 arch=arm64 # use amd64 for x86_64
-identity="https://github.com/engawahq/genkan/.github/workflows/release.yml@refs/tags/$version"
-gh release download "$version" --repo engawahq/genkan --dir downloaded
+identity="https://github.com/zeabur/identity/.github/workflows/release.yml@refs/tags/$version"
+gh release download "$version" --repo zeabur/identity --dir downloaded
 ```
 
 Verify the signature on `SHA256SUMS`, then use it to check the downloaded files. The identity
-ties the signature to Genkan's release workflow and the version you chose.
+ties the signature to Zeabur Identity's release workflow and the version you chose.
 
 ```sh
 (
@@ -47,8 +47,8 @@ ties the signature to Genkan's release workflow and the version you chose.
 After both checks pass, extract and try the CLI:
 
 ```sh
-tar -xzf "downloaded/genkanctl-$version-linux-$arch.tar.gz"
-./genkanctl --help
+tar -xzf "downloaded/zeabur-identityctl-$version-linux-$arch.tar.gz"
+./zeabur-identityctl --help
 ```
 
 To verify and pull the container, read its digest from the checked `image-digests.txt`.
@@ -77,7 +77,7 @@ which records the source commit and build run.
 2. In GitHub Actions, select **Release → Run workflow**, choose that commit's branch and enter
    the matching version, such as `v0.0.1`. This runs CI and tries both platform builds without
    publishing.
-3. Make sure the GHCR package `engawahq/genkan` is public and this repository's Actions token
+3. Make sure the GHCR package `zeabur/identity` is public and this repository's Actions token
    can write to it. If the package is new, the first publishing run creates it; change its
    visibility before the download checks run. Set repository rulesets to protect `main` and
    restrict release-tag changes to maintainers.
@@ -95,7 +95,7 @@ which records the source commit and build run.
 6. Download the draft assets with a maintainer's authenticated GitHub CLI:
 
    ```sh
-   gh release download v0.0.1 --repo engawahq/genkan --dir downloaded
+   gh release download v0.0.1 --repo zeabur/identity --dir downloaded
    ```
 
    Draft assets are not anonymously downloadable. For the download step in
@@ -103,12 +103,12 @@ which records the source commit and build run.
    perform the same signature and checksum verification; do not rebuild the CLI or image.
    Complete the [installation checklist](release-installation.md) on Linux amd64 and arm64.
    Record the release commit, CLI checksums, image digests, cluster versions and observed
-   outcomes in [#43](https://github.com/engawahq/genkan/issues/43). Keep acceptance failures
+   outcomes in [#43](https://github.com/zeabur/identity/issues/43). Keep acceptance failures
    visible; a green release workflow is not a substitute for this checklist.
 7. Only after the workflow and installation acceptance pass, make the prerelease public:
 
    ```sh
-   gh release edit v0.0.1 --repo engawahq/genkan --draft=false --prerelease
+   gh release edit v0.0.1 --repo zeabur/identity --draft=false --prerelease
    ```
 
    Repeat the guide's unauthenticated downloads and signature/checksum verification against
@@ -159,7 +159,7 @@ bash scripts/release-verify.sh "$version" "$arch" downloaded "$image" "$identity
 ```
 
 The script verifies the downloads, pulls the image and creates a temporary k3s cluster.
-It uses the downloaded CLI to install Genkan, checks the running server and removes the
+It uses the downloaded CLI to install Zeabur Identity, checks the running server and removes the
 cluster when finished. It needs access to GHCR, Sigstore, the k3s image and Nix caches.
 
 For a local build, follow [Building from source](../CONTRIBUTING.md#building-from-source).

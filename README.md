@@ -5,7 +5,7 @@
 
 # Zeabur Identity
 
-**Delete `admin.conf`. Log in to your cluster with a passkey.**
+**Delete `admin.conf`. Sign in to your cluster with a passkey.**
 
 Most self-managed clusters are run with one admin kubeconfig that never expires, gets copied to
 every laptop, and cannot be revoked. Zeabur Identity replaces it

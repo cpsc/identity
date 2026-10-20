@@ -61,12 +61,12 @@ const LIFETIME: Duration = Duration::from_mins(10);
 const UNKNOWN_PROVIDER: Problem = Problem::new(
     StatusCode::NOT_FOUND,
     "unknown-provider",
-    "This provider is not enabled.",
+    "This sign-in provider isn't enabled.",
 );
 const NEEDS_PASSKEY: Problem = Problem::new(
     StatusCode::FORBIDDEN,
     "needs-passkey",
-    "This sign-in needs a passkey.",
+    "Elevated access needs a passkey. Sign in with a passkey instead.",
 );
 
 /// Upstream sign-in state shared by the handlers.

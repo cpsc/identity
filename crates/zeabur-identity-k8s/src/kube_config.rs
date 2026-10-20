@@ -178,7 +178,7 @@ pub enum KubeConfigError {
     )]
     Unsupported,
     /// The Kubernetes API failed.
-    #[error("Kubernetes API: {0}")]
+    #[error("Kubernetes API request failed: {0}")]
     Kubernetes(#[from] kube::Error),
     /// Zeabur Identity's Service is missing or has no ClusterIP.
     #[error(
@@ -345,7 +345,7 @@ pub fn instructions(distro: Distro, discovery: DiscoveryMode) -> String {
                 "Add /etc/rancher/k3s/config.yaml.d/50-zeabur-identity.yaml containing:",
                 "    kube-apiserver-arg:",
                 "      - \"authentication-config=/etc/rancher/k3s/zeabur-identity/authn.yaml\"",
-                "Run `systemctl restart k3s` once. Later changes to authn.yaml are picked up within about a minute.",
+                "Run `systemctl restart k3s` once. kube-apiserver reloads later changes to authn.yaml within about a minute.",
                 "Internal discovery needs the node's embedded agent (it does not work with --disable-agent).",
             ],
         ),
@@ -379,7 +379,7 @@ pub fn instructions(distro: Distro, discovery: DiscoveryMode) -> String {
                 "        readOnly: true",
                 "        pathType: DirectoryOrCreate",
                 "Then on each control-plane node: `kubeadm init phase control-plane apiserver --config <file>`.",
-                "The directory (not the file) is mounted so that replacing authn.yaml is seen by kube-apiserver.",
+                "Mounting the directory rather than the file lets kube-apiserver see a replaced authn.yaml.",
             ],
         ),
         Distro::Generic | Distro::Kubesolo => (

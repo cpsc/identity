@@ -41,7 +41,7 @@ impl Problem {
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "internal",
-            "Something went wrong. Try again.",
+            "Unable to complete the request. Try again.",
         )
     }
 }

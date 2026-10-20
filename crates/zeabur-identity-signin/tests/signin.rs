@@ -1022,9 +1022,9 @@ mod tests {
             let error = diagnostic["fields"]["error"].as_str().unwrap();
             assert!(error.contains("InvalidRequest"));
             assert!(error.contains(if expired {
-                "the sign-in request expired; start again"
+                "The sign-in request expired. Start again from the app."
             } else {
-                "the sign-in request is missing or invalid"
+                "No valid sign-in request was found. Start again from the app."
             }));
             assert!(!serde_json::to_string(fields).unwrap().contains(error));
             // A rejected authorization still consumed the verified passkey ceremony.

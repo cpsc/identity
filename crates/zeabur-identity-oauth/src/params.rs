@@ -30,7 +30,7 @@ impl Params {
             if count >= MAX_PARAMS {
                 return Err(OAuthError::new(
                     ErrorCode::InvalidRequest,
-                    "too many parameters",
+                    "The request has more than 64 parameters.",
                 ));
             }
             if value.is_empty() {
@@ -47,7 +47,7 @@ impl Params {
             {
                 return Err(OAuthError::new(
                     ErrorCode::InvalidRequest,
-                    "a parameter was repeated",
+                    "A parameter appears more than once. Send each parameter once.",
                 ));
             }
         }

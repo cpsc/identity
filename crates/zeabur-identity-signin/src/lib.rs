@@ -89,34 +89,37 @@ where
 const CROSS_SITE: Problem = Problem::new(
     StatusCode::FORBIDDEN,
     "cross-site",
-    "This request must come from the sign-in page.",
+    "Send this request from the sign-in page.",
 );
-const NOT_JSON: Problem =
-    Problem::new(StatusCode::UNSUPPORTED_MEDIA_TYPE, "not-json", "Send JSON.");
+const NOT_JSON: Problem = Problem::new(
+    StatusCode::UNSUPPORTED_MEDIA_TYPE,
+    "not-json",
+    "Send the request body as JSON.",
+);
 const BAD_REQUEST: Problem = Problem::new(
     StatusCode::BAD_REQUEST,
     "bad-request",
-    "The request is malformed.",
+    "Unable to read the request body. Send the JSON this endpoint expects.",
 );
 pub(crate) const SETUP_INVALID: Problem = Problem::new(
     StatusCode::UNAUTHORIZED,
     "setup-invalid",
-    "This setup link is invalid, used or expired. Ask your cluster administrator for a new one.",
+    "This setup link is invalid, already used, or expired. Ask your cluster administrator for a new link.",
 );
 const CEREMONY_EXPIRED: Problem = Problem::new(
     StatusCode::BAD_REQUEST,
     "ceremony-expired",
-    "This passkey prompt expired. Start again.",
+    "The passkey prompt expired. Start again.",
 );
 const PASSKEY_FAILED: Problem = Problem::new(
     StatusCode::UNAUTHORIZED,
     "passkey-failed",
-    "That passkey could not be verified.",
+    "Unable to verify the passkey.",
 );
 pub(crate) const NO_REQUEST: Problem = Problem::new(
     StatusCode::BAD_REQUEST,
     "no-request",
-    "There is no sign-in in progress. Return to the application and start again.",
+    "No sign-in is in progress. Go back to the app and start again.",
 );
 
 /// Cross-site request protection for the JSON endpoints: `Sec-Fetch-Site: same-origin`, or, for
@@ -405,7 +408,7 @@ where
                 return Err(Problem::new(
                     StatusCode::CONFLICT,
                     "passkey-exists",
-                    "This passkey is already registered.",
+                    "This passkey is already registered. Sign in with it instead.",
                 ));
             }
         }

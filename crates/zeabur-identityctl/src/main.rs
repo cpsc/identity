@@ -65,7 +65,7 @@ fn client_create(args: ClientCreateArgs) -> ExitCode {
     let code = print_json(serde_json::to_string_pretty(&registration.client));
     if let Some(secret) = registration.secret {
         output::stderr(
-            "Client secret (shown only now; it cannot be recovered from the cluster, only replaced):",
+            "Client secret (shown only once; the cluster keeps only its hash, so a lost secret can only be replaced):",
         );
         output::stderr(&secret);
     }
@@ -99,15 +99,15 @@ fn invite(args: &InviteArgs) -> ExitCode {
         Ok(created) => {
             if !created.created_user {
                 output::stderr(&format!(
-                    "User {} already exists; its groups were not changed.",
+                    "User {} already exists; this command left its groups unchanged.",
                     args.username
                 ));
             }
             output::stdout(&created.url);
             output::stderr(&format!(
-                "Send this link to {}. It works once and expires in {} days.",
+                "Send this link to {}. It works once and expires in {}.",
                 args.username,
-                args.valid_for.as_secs() / 86_400
+                span(args.valid_for)
             ));
             ExitCode::SUCCESS
         }
@@ -125,7 +125,9 @@ fn current_thread_runtime() -> Option<tokio::runtime::Runtime> {
     {
         Ok(runtime) => Some(runtime),
         Err(error) => {
-            output::stderr(&format!("error: starting the async runtime: {error}"));
+            output::stderr(&format!(
+                "error: unable to start the async runtime: {error}"
+            ));
             None
         }
     }
@@ -158,9 +160,9 @@ fn kube_config(args: &KubeConfigArgs) -> ExitCode {
             output::stdout(prepared.configuration.trim_end());
             if let Some(until) = prepared.issued_until {
                 output::stderr(&format!(
-                    "Issued a new internal certificate, valid until Unix time {} ({} days). Re-run this command before then.",
-                    until.as_secs(),
-                    args.certificate_validity.as_secs() / 86_400
+                    "Issued a new internal certificate, valid for {} (until Unix time {}). Run this command again before then.",
+                    span(args.certificate_validity),
+                    until.as_secs()
                 ));
             }
             output::stderr(
@@ -199,9 +201,9 @@ fn setup_link(args: &SetupLinkArgs) -> ExitCode {
         Ok(link) => {
             output::stdout(&link.url);
             output::stderr(&format!(
-                "This link enrols a passkey for {}. It works once and expires in {} minutes. Open it in a browser.",
+                "Open this link in a browser to enroll a passkey for {}. It works once and expires in {}.",
                 args.username,
-                args.valid_for.as_secs() / 60
+                span(args.valid_for)
             ));
             ExitCode::SUCCESS
         }
@@ -210,6 +212,18 @@ fn setup_link(args: &SetupLinkArgs) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// A duration in the largest whole unit that states it exactly: `7 days`, `12 hours`, `90
+/// minutes`, `45 seconds`.
+fn span(duration: std::time::Duration) -> String {
+    let secs = duration.as_secs();
+    let (count, unit) = [(86_400, "day"), (3_600, "hour"), (60, "minute")]
+        .into_iter()
+        .find(|(size, _)| secs >= *size && secs.is_multiple_of(*size))
+        .map_or((secs, "second"), |(size, unit)| (secs / size, unit));
+    let plural = if count == 1 { "" } else { "s" };
+    format!("{count} {unit}{plural}")
 }
 
 fn print_json(json: serde_json::Result<String>) -> ExitCode {
@@ -222,5 +236,22 @@ fn print_json(json: serde_json::Result<String>) -> ExitCode {
             output::stderr(&format!("error: {error}"));
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::span;
+
+    #[test]
+    fn spans_use_the_largest_exact_unit() {
+        assert_eq!(span(Duration::from_hours(7 * 24)), "7 days");
+        assert_eq!(span(Duration::from_hours(24)), "1 day");
+        assert_eq!(span(Duration::from_hours(12)), "12 hours");
+        assert_eq!(span(Duration::from_mins(90)), "90 minutes");
+        assert_eq!(span(Duration::from_secs(45)), "45 seconds");
+        assert_eq!(span(Duration::from_secs(0)), "0 seconds");
     }
 }

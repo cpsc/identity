@@ -7,7 +7,7 @@
 {{ ui::field_separator(m.upstream_or) }}
 <div id="upstream" class="flex flex-col gap-3">
   {%- for p in providers %}
-  <button type="button" data-provider="{{ p.id }}" class="{{ ui::button_cls("secondary") }} w-full">{{ icons::icon(p.icon) }}{{ m.continue_with }} {{ p.label }}</button>
+  <button type="button" data-provider="{{ p.id }}" class="{{ ui::button_cls("secondary") }} w-full">{{ icons::icon(p.icon) }}{{ m.continue_with.replace("%provider%", p.label) }}</button>
   {%- endfor %}
 </div>
 {%- endif %}

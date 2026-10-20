@@ -28,7 +28,7 @@ pub enum ConfigError {
     },
     /// The value is not a valid duration.
     #[error(
-        "invalid duration {0:?}: use a whole number with a unit, for example 300s, 5m, 24h or 7d"
+        "invalid duration {0:?}: use a whole number with a unit, for example 300s, 5m, 24h, or 7d"
     )]
     InvalidDuration(String),
     /// Options that only work together were given alone.

@@ -22,8 +22,8 @@ pub(crate) enum Command {
     /// Print the custom resource definitions as a Kubernetes `List` (JSON), for
     /// `zeabur-identityctl crds | kubectl apply -f -`.
     Crds,
-    /// Create a one-time setup link for a user, using your own kubeconfig (cluster admin). Prints
-    /// the link; it works once and expires.
+    /// Print a one-time link that enrolls a passkey for a user. Uses your own kubeconfig, which
+    /// needs cluster-admin rights; the link works once and expires.
     SetupLink(SetupLinkArgs),
     /// Print the namespace, service account, `Role`, `RoleBinding` and empty key Secret as a
     /// Kubernetes `List` (JSON), for `zeabur-identityctl rbac | kubectl apply -f -`.
@@ -39,8 +39,8 @@ pub(crate) enum Command {
     /// (cluster admin): issues the internal listener's certificate if needed, prints the
     /// `AuthenticationConfiguration` (stdout) and how to install it (stderr).
     KubeConfig(KubeConfigArgs),
-    /// Invite a user, using your own kubeconfig (admin): creates the `User` if needed and a
-    /// one-time enrolment link, printed for you to send.
+    /// Invite a user: creates the `User` if it does not exist and prints a one-time enrollment
+    /// link for you to send. Uses your own kubeconfig, which needs admin rights.
     Invite(InviteArgs),
     /// Register OAuth clients.
     Client {
@@ -130,7 +130,7 @@ pub(crate) struct InviteArgs {
     /// sign-in with the `elevate` scope.
     #[arg(long = "elevated-group")]
     pub elevated_groups: Vec<String>,
-    /// How long the link works.
+    /// How long the link stays valid.
     #[arg(long, default_value = "7d", value_parser = parse_duration)]
     pub valid_for: Duration,
     /// Namespace Zeabur Identity runs in.
@@ -196,14 +196,14 @@ pub(crate) struct SetupLinkArgs {
     /// The issuer identifier (the same as `zeabur-identity --issuer`).
     #[arg(long, env = "ZEABUR_IDENTITY_ISSUER", value_parser = parse_issuer)]
     pub issuer: BaseUrl,
-    /// The `User` to enrol a passkey for; created in group `admins` if it does not exist.
+    /// The `User` to enroll a passkey for; created in group `admins` if it does not exist.
     /// The username must be a lowercase DNS subdomain of at most 63 characters.
     #[arg(long, default_value = "admin")]
     pub username: String,
     /// Namespace Zeabur Identity runs in.
     #[arg(long, env = "ZEABUR_IDENTITY_NAMESPACE", default_value = zeabur_identity_k8s::rbac::DEFAULT_NAMESPACE)]
     pub namespace: String,
-    /// How long the link works.
+    /// How long the link stays valid.
     #[arg(long, default_value = "60m", value_parser = parse_duration)]
     pub valid_for: Duration,
     /// Remove the user's pending invitations, passkeys and sessions first (account recovery).

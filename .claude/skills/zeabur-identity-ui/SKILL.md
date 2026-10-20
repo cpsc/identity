@@ -21,8 +21,11 @@ description: Change Zeabur Identity's sign-in pages — askama templates, TypeSc
   origins; scripts write only `textContent`, `hidden` and `location` (Trusted Types `'none'`). The
   page tests enforce this.
 - **Text.** Every string is a field of `Messages` in `crates/zeabur-identity-ui/src/i18n.rs` with English,
-  Traditional Chinese (Taiwan usage, 通行密鑰) and Simplified Chinese (通行密钥) values; scripts get
-  their messages from `data-msg-*` attributes. A missing translation is a compile error.
+  Traditional Chinese (Taiwan usage, Passkey) and Simplified Chinese (mainland usage, 通行密钥)
+  values; scripts get their messages from `data-msg-*` attributes. A missing translation is a
+  compile error. Wording, element conventions and terms follow Zeabur's `docs/wording.md`
+  (engawa issue #60): sentence case, errors that say what failed and what to do next, no "we";
+  in Chinese no 被／進行／您, 請 only in a full sentence that asks the reader to act.
 - **Contrast.** `contrast.py` in this skill reads the tokens from the vendored design system and
   `ui/styles/app.css` and checks
   every colour pair the pages render (text ≥ 4.5:1, boundaries and focus rings ≥ 3:1), with

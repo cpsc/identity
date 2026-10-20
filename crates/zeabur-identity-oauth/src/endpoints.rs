@@ -126,7 +126,7 @@ fn is_form(headers: &HeaderMap) -> bool {
 
 const NOT_FORM: OAuthError = OAuthError::new(
     ErrorCode::InvalidRequest,
-    "the body must be application/x-www-form-urlencoded",
+    "Send the request body as application/x-www-form-urlencoded.",
 );
 
 async fn authorize_get<D: Directory, G: GrantStore, C: Clock>(
@@ -241,7 +241,7 @@ fn resolve_pushed<D: Directory, G: GrantStore, C: Clock>(
 ) -> Result<Params, OAuthError> {
     let invalid = OAuthError::new(
         ErrorCode::InvalidRequestUri,
-        "the request_uri is invalid, expired or already used",
+        "The request_uri is invalid, expired, or already used. Start the sign-in again.",
     );
     let pushed: Pushed = uri
         .strip_prefix(REQUEST_URI_PREFIX)
@@ -294,13 +294,13 @@ pub fn complete_authorization<D: Directory, G: GrantStore, C: Clock>(
         .and_then(|json| serde_json::from_slice(&json).ok())
         .ok_or(OAuthError::new(
             ErrorCode::InvalidRequest,
-            "the sign-in request is missing or invalid",
+            "No valid sign-in request was found. Start again from the app.",
         ))?;
     let now = server.now();
     if flow.expires_at <= now {
         return Err(OAuthError::new(
             ErrorCode::InvalidRequest,
-            "the sign-in request expired; start again",
+            "The sign-in request expired. Start again from the app.",
         ));
     }
     // Elevated groups need proof of key possession from a passkey (`amr` contains `swk`, set
@@ -308,7 +308,7 @@ pub fn complete_authorization<D: Directory, G: GrantStore, C: Clock>(
     if flow.request.is_elevated() && !authentication.amr.iter().any(|m| m == "swk") {
         return Err(OAuthError::new(
             ErrorCode::AccessDenied,
-            "elevation requires signing in with a passkey",
+            "Elevated access needs a passkey sign-in.",
         ));
     }
     let (redirect_uri, state) = (
@@ -386,11 +386,11 @@ async fn token<D: Directory, G: GrantStore, C: Clock>(
             Some("refresh_token") => refresh(&server, client, &params).await,
             Some(_) => Err(OAuthError::new(
                 ErrorCode::UnsupportedGrantType,
-                "unsupported grant_type",
+                "This grant_type is not supported. Use authorization_code or refresh_token.",
             )),
             None => Err(OAuthError::new(
                 ErrorCode::InvalidRequest,
-                "grant_type is required",
+                "The grant_type parameter is missing.",
             )),
         }
         .map_err(|error| AuthFailure {
@@ -421,7 +421,7 @@ async fn token<D: Directory, G: GrantStore, C: Clock>(
 
 const INVALID_GRANT: OAuthError = OAuthError::new(
     ErrorCode::InvalidGrant,
-    "the grant is invalid, expired, revoked or was issued to another client",
+    "The grant is invalid, expired, revoked, or was issued to another client.",
 );
 
 fn store_error(error: impl std::fmt::Display) -> OAuthError {
@@ -441,7 +441,7 @@ async fn exchange_code<D: Directory, G: GrantStore, C: Clock>(
     let now = server.now();
     let code = params.get("code").ok_or(OAuthError::new(
         ErrorCode::InvalidRequest,
-        "code is required",
+        "The code parameter is missing.",
     ))?;
     let claims: CodeClaims = code::open(&server.sealer, code).ok_or(INVALID_GRANT)?;
     // RFC 6749 §4.1.3: the code was issued to this client; redirect_uri, if sent, is identical.
@@ -584,7 +584,7 @@ fn elevated_tokens<D: Directory, G: GrantStore, C: Clock>(
     if user.elevated_groups.is_empty() {
         return Err(OAuthError::new(
             ErrorCode::InvalidScope,
-            "the user has no elevated groups",
+            "The user has no elevated groups, so elevated access cannot be granted.",
         ));
     }
     let mut elevated = user.clone();
@@ -657,7 +657,7 @@ fn issue_tokens<D: Directory, G: GrantStore, C: Clock>(
         );
         OAuthError::new(
             ErrorCode::TemporarilyUnavailable,
-            "signing keys are not ready",
+            "Signing keys are not ready yet. Try again in a few seconds.",
         )
     })?;
     let subject = Subject {
@@ -726,7 +726,7 @@ async fn refresh<D: Directory, G: GrantStore, C: Clock>(
     let now = server.now();
     let presented = params.get("refresh_token").ok_or(OAuthError::new(
         ErrorCode::InvalidRequest,
-        "refresh_token is required",
+        "The refresh_token parameter is missing.",
     ))?;
     let presented = RefreshToken::parse(presented).ok_or(INVALID_GRANT)?;
     let stored = server
@@ -747,7 +747,7 @@ async fn refresh<D: Directory, G: GrantStore, C: Clock>(
             if !requested.iter().all(|s| stored.spec.scopes.contains(s)) {
                 return Err(OAuthError::new(
                     ErrorCode::InvalidScope,
-                    "refresh can only narrow the granted scope",
+                    "A refresh can only narrow the granted scope, not add to it.",
                 ));
             }
             requested
@@ -875,8 +875,11 @@ async fn par<D: Directory, G: GrantStore, C: Clock>(
         Err(failure) => return auth_failure(failure),
     };
     if params.get("request_uri").is_some() {
-        return OAuthError::new(ErrorCode::InvalidRequest, "request_uri cannot be pushed")
-            .into_response();
+        return OAuthError::new(
+            ErrorCode::InvalidRequest,
+            "A pushed authorization request cannot contain request_uri.",
+        )
+        .into_response();
     }
     let elevation = server.lifetimes.elevated_token.is_some();
     if let Err(rejection) = authorize::validate(&params, Some(&client), elevation) {
@@ -940,7 +943,7 @@ async fn revoke<D: Directory, G: GrantStore, C: Clock>(
         let authenticated = authenticate(&server.directory, &headers, &params).await?;
         let client = client.insert(authenticated);
         let token = params.get("token").ok_or(AuthFailure {
-            error: OAuthError::new(ErrorCode::InvalidRequest, "token is required"),
+            error: OAuthError::new(ErrorCode::InvalidRequest, "The token parameter is missing."),
             basic: false,
         })?;
         if let Some(refresh) = RefreshToken::parse(token) {
@@ -971,7 +974,7 @@ async fn revoke<D: Directory, G: GrantStore, C: Clock>(
             return Err(AuthFailure {
                 error: OAuthError::new(
                     ErrorCode::UnsupportedTokenType,
-                    "access tokens cannot be revoked; they expire within minutes",
+                    "Access tokens cannot be revoked; they expire within minutes. Revoke the refresh token instead.",
                 ),
                 basic: false,
             });

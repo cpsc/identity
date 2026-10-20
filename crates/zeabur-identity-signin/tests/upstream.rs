@@ -655,7 +655,7 @@ mod tests {
         assert_eq!(reply.status, StatusCode::BAD_REQUEST);
         assert_audit(&reply, "auth.sign_in", Some("account_unlinked"), None, None);
         assert!(
-            reply.body.contains("not linked to any user"),
+            reply.body.contains("isn’t linked to any user"),
             "{}",
             reply.body
         );

@@ -113,7 +113,7 @@ fn unavailable() -> Response {
     (
         StatusCode::SERVICE_UNAVAILABLE,
         [(header::RETRY_AFTER, HeaderValue::from_static("5"))],
-        "signing keys are not available yet",
+        "Signing keys are not ready yet. Try again in a few seconds.",
     )
         .into_response()
 }

@@ -40,7 +40,7 @@ pub enum ClientError {
     #[error("display name must be at most {MAX_DISPLAY_NAME} characters")]
     DisplayNameTooLong,
     /// No redirect URI, or too many.
-    #[error("give between 1 and {MAX_REDIRECT_URIS} redirect URIs")]
+    #[error("provide 1 to {MAX_REDIRECT_URIS} redirect URIs")]
     RedirectUriCount,
     /// A redirect URI that RFC 9700 §2.1 or RFC 8252 §7.3 forbids.
     #[error(
@@ -48,13 +48,13 @@ pub enum ClientError {
     )]
     InvalidRedirectUri(String),
     /// Too many audiences.
-    #[error("give at most {MAX_AUDIENCES} audiences")]
+    #[error("provide at most {MAX_AUDIENCES} audiences")]
     AudienceCount,
     /// An empty or overlong audience.
     #[error("audience {0:?} must be between 1 and {MAX_AUDIENCE} characters")]
     InvalidAudience(String),
     /// Randomness failed.
-    #[error("generating the client secret failed")]
+    #[error("unable to generate the client secret")]
     Crypto,
 }
 

@@ -93,7 +93,7 @@ impl OAuthError {
     /// `server_error`, for storage or crypto failures. Details are logged, not returned.
     #[must_use]
     pub const fn server() -> Self {
-        Self::new(ErrorCode::ServerError, "internal error")
+        Self::new(ErrorCode::ServerError, "Internal error. Try again.")
     }
 
     /// The HTTP status for a token-endpoint style JSON error (RFC 6749 §5.2).

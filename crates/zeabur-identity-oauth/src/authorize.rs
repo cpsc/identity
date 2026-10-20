@@ -165,12 +165,12 @@ pub fn validate(
     elevation: bool,
 ) -> Result<AuthorizationRequest, Rejection> {
     let local = |d| Rejection::Local(OAuthError::new(ErrorCode::InvalidRequest, d));
-    let client = client.ok_or_else(|| local("unknown or missing client_id"))?;
+    let client = client.ok_or_else(|| local("The client_id is missing or not registered."))?;
     let redirect_uri = params
         .get("redirect_uri")
-        .ok_or_else(|| local("redirect_uri is required"))?;
+        .ok_or_else(|| local("The redirect_uri parameter is missing."))?;
     if !redirect_uri_allowed(client, redirect_uri) {
-        return Err(local("redirect_uri is not registered for this client"));
+        return Err(local("This redirect_uri is not registered for the client."));
     }
 
     let state = params.get("state").map(str::to_owned);
@@ -183,13 +183,13 @@ pub fn validate(
     if params.get("request").is_some() {
         return Err(reject(
             ErrorCode::RequestNotSupported,
-            "request objects are not supported",
+            "Request objects (the request parameter) are not supported.",
         ));
     }
     if params.get("registration").is_some() {
         return Err(reject(
             ErrorCode::RegistrationNotSupported,
-            "registration is not supported",
+            "The registration parameter is not supported.",
         ));
     }
     match params.get("response_type") {
@@ -197,20 +197,20 @@ pub fn validate(
         Some(_) => {
             return Err(reject(
                 ErrorCode::UnsupportedResponseType,
-                "only response_type=code is supported",
+                "Only response_type=code is supported.",
             ));
         }
         None => {
             return Err(reject(
                 ErrorCode::InvalidRequest,
-                "response_type is required",
+                "The response_type parameter is missing.",
             ));
         }
     }
     if params.get("response_mode").is_some_and(|m| m != "query") {
         return Err(reject(
             ErrorCode::InvalidRequest,
-            "only response_mode=query is supported",
+            "Only response_mode=query is supported.",
         ));
     }
 
@@ -218,19 +218,19 @@ pub fn validate(
     let Some(code_challenge) = params.get("code_challenge") else {
         return Err(reject(
             ErrorCode::InvalidRequest,
-            "code_challenge is required",
+            "The code_challenge parameter is missing. PKCE with S256 is required.",
         ));
     };
     if params.get("code_challenge_method") != Some("S256") {
         return Err(reject(
             ErrorCode::InvalidRequest,
-            "code_challenge_method must be S256",
+            "Set code_challenge_method to S256.",
         ));
     }
     if !pkce::valid_s256_challenge(code_challenge) {
         return Err(reject(
             ErrorCode::InvalidRequest,
-            "code_challenge is not a valid S256 challenge",
+            "The code_challenge is not an S256 challenge (43 base64url characters).",
         ));
     }
 
@@ -242,7 +242,7 @@ pub fn validate(
         if elevate && !client.allow_elevation {
             return Err(reject(
                 ErrorCode::InvalidScope,
-                "this client may not request the elevate scope",
+                "This client is not allowed to request the elevate scope.",
             ));
         }
         let known = SUPPORTED_SCOPES.contains(&scope) || elevate;
@@ -257,20 +257,20 @@ pub fn validate(
         ([], _) => {
             return Err(reject(
                 ErrorCode::InvalidTarget,
-                "resource is required for this client",
+                "This client has several audiences. Choose one with the resource parameter.",
             ));
         }
         ([resource], allowed) if allowed.contains(resource) => resource.clone(),
         ([_], _) => {
             return Err(reject(
                 ErrorCode::InvalidTarget,
-                "resource is not allowed for this client",
+                "This resource is not one of the client's audiences.",
             ));
         }
         (..) => {
             return Err(reject(
                 ErrorCode::InvalidTarget,
-                "exactly one resource is supported",
+                "Send one resource parameter, not several.",
             ));
         }
     };
@@ -282,12 +282,15 @@ pub fn validate(
         if prompts.len() > 1 {
             return Err(reject(
                 ErrorCode::InvalidRequest,
-                "prompt=none cannot be combined with other values",
+                "prompt=none cannot be combined with other prompt values.",
             ));
         }
         // There is no single sign-on session that could satisfy a silent sign-in, so it always
         // needs interaction (OIDC Core §3.1.2.1).
-        return Err(reject(ErrorCode::LoginRequired, "the user must sign in"));
+        return Err(reject(
+            ErrorCode::LoginRequired,
+            "The user must sign in interactively; prompt=none is not supported.",
+        ));
     }
 
     let max_age = match params.get("max_age") {
@@ -297,7 +300,7 @@ pub fn validate(
             Err(_) => {
                 return Err(reject(
                     ErrorCode::InvalidRequest,
-                    "max_age must be a non-negative integer",
+                    "Set max_age to a whole number of seconds, 0 or more.",
                 ));
             }
         },

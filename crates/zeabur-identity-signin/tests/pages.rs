@@ -213,11 +213,11 @@ mod tests {
         )
         .await;
         assert!(page.body.contains("<html lang=\"zh-TW\""));
-        assert!(page.body.contains("目前沒有要登入的服務"));
+        assert!(page.body.contains("目前沒有登入要求"));
 
         let page = get(&app, "/login?lang=zh-CN", &[("accept-language", "zh-TW")]).await;
         assert!(page.body.contains("<html lang=\"zh-CN\""));
-        assert!(page.body.contains("当前没有需要登录的服务"));
+        assert!(page.body.contains("当前没有登录请求"));
 
         let page = get(&app, "/login?lang=xx", &[("accept-language", "xx")]).await;
         assert!(page.body.contains("<html lang=\"en\""));
@@ -341,12 +341,12 @@ mod tests {
             (
                 "openid+elevate",
                 "en",
-                Some("Cluster Dashboard is asking for temporary elevated access, valid for 5 min."),
+                Some("Cluster Dashboard is requesting elevated access for 5\u{a0}min."),
             ),
             (
                 "openid+elevate",
                 "zh-TW",
-                Some("Cluster Dashboard 要求暫時提升權限，有效 5 分鐘。"),
+                Some("Cluster Dashboard 要求提升權限，有效 5\u{a0}分鐘。"),
             ),
         ] {
             let reply = get(

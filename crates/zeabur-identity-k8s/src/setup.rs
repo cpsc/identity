@@ -207,11 +207,11 @@ impl SetupStore for KubeSetupStore {
 #[derive(Debug, Error)]
 pub enum SetupLinkError {
     /// The Kubernetes API failed (often: the kubeconfig lacks the rights).
-    #[error("Kubernetes API: {0}")]
+    #[error("Kubernetes API request failed: {0}")]
     Kubernetes(#[from] kube::Error),
     /// The user already has passkeys; issuing a link would let its holder add another.
     #[error(
-        "user {user} already has {count} passkey(s); pass --reset to remove them, their sessions and pending invitations"
+        "user {user} already has {count} passkey(s); pass --reset to remove them, their sessions, and pending invitations"
     )]
     HasCredentials {
         /// User object name.
@@ -220,7 +220,7 @@ pub enum SetupLinkError {
         count: usize,
     },
     /// Randomness failed.
-    #[error("generating the token failed")]
+    #[error("unable to generate the token")]
     Crypto,
 }
 

@@ -41,7 +41,10 @@ fn presented(headers: &HeaderMap, params: &Params) -> Result<Presented, AuthFail
     };
     if let Some(value) = headers.get(header::AUTHORIZATION) {
         let invalid_client = AuthFailure {
-            error: OAuthError::new(ErrorCode::InvalidClient, "malformed Basic credentials"),
+            error: OAuthError::new(
+                ErrorCode::InvalidClient,
+                "Unable to read the Basic credentials in the Authorization header.",
+            ),
             basic: true,
         };
         let encoded = value
@@ -67,13 +70,13 @@ fn presented(headers: &HeaderMap, params: &Params) -> Result<Presented, AuthFail
         );
         if params.get("client_secret").is_some() {
             return Err(invalid_request(
-                "use one client authentication method",
+                "Use one client authentication method, not both Basic and client_secret.",
                 true,
             ));
         }
         if params.get("client_id").is_some_and(|form_id| form_id != id) {
             return Err(invalid_request(
-                "client_id does not match the credentials",
+                "The client_id does not match the client in the credentials.",
                 true,
             ));
         }
@@ -85,7 +88,7 @@ fn presented(headers: &HeaderMap, params: &Params) -> Result<Presented, AuthFail
     }
     let id = params
         .get("client_id")
-        .ok_or_else(|| invalid_request("client_id is required", false))?;
+        .ok_or_else(|| invalid_request("The client_id parameter is missing.", false))?;
     Ok(Presented {
         id: id.to_owned(),
         secret: params.get("client_secret").map(str::to_owned),
@@ -120,7 +123,7 @@ pub async fn authenticate<D: Directory>(
                 basic,
             }
         })?
-        .ok_or_else(|| fail("client authentication failed"))?;
+        .ok_or_else(|| fail("Client authentication failed. Check the client ID and secret."))?;
     match (client.kind, &client.secret_hash, presented.secret) {
         (ClientType::Public, _, None) => Ok(client),
         (ClientType::Confidential, Some(expected), Some(secret))
@@ -131,6 +134,8 @@ pub async fn authenticate<D: Directory>(
         {
             Ok(client)
         }
-        _ => Err(fail("client authentication failed")),
+        _ => Err(fail(
+            "Client authentication failed. Check the client ID and secret.",
+        )),
     }
 }

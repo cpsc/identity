@@ -24,10 +24,10 @@ pub const ENROL_PATH: &str = "/setup";
 #[derive(Debug, Error)]
 pub enum InviteError {
     /// The Kubernetes API failed (often: the kubeconfig lacks the rights).
-    #[error("Kubernetes API: {0}")]
+    #[error("Kubernetes API request failed: {0}")]
     Kubernetes(#[from] kube::Error),
     /// Randomness failed.
-    #[error("generating the token failed")]
+    #[error("unable to generate the token")]
     Crypto,
 }
 

@@ -2,7 +2,7 @@
 {%- import "ui.html" as ui -%}
 {%- block title %}{{ title }}{% endblock -%}
 {%- block content %}
-{% call ui::card("w-full max-w-sm") %}
+{% call ui::card() %}
   {{ ui::card_header(title, body) }}
 {% endcall %}
 {%- endblock %}

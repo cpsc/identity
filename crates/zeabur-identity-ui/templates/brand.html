@@ -1,0 +1,8 @@
+{#- The Zeabur mark: the paths of the design system's `Mark` (src/components/brand.tsx, from its
+    vendor/zeabur/logo.svg) at the vendored commit, unchanged. Drawn inline rather than with the
+    `brand-mark` utility, whose data: URL mask the CSP (img-src 'self') would block. The violet and
+    orange-red blocks keep their colours; the rest takes the text colour. The Zeabur name and mark
+    are trademarks of Zeabur Inc. (ui/styles/vendor/zeabur-design-system/README.md). -#}
+{%- macro mark(cls = "") -%}
+<svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true" focusable="false" data-slot="mark" class="aspect-square shrink-0 text-main {{ cls }}"><path d="M13.324 18.9879H28V25.8747H4V18.9879H10.7465L20.0353 14.0118H4V7.125H28V14.0118L13.324 18.9879Z"/><path d="M19.9554 7.125H4V14.0118H19.9554V7.125Z" fill="#6300ff"/><path d="M27.9982 18.9883H13.3984V25.8751H27.9982V18.9883Z" fill="#ee430e"/></svg>
+{%- endmacro -%}

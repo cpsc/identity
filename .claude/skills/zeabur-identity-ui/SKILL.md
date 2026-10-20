@@ -6,7 +6,8 @@ description: Change Zeabur Identity's sign-in pages — askama templates, TypeSc
 # Sign-in pages
 
 - **Where things are.** Sources: `ui/src/*.ts` (scripts), `ui/styles/*.css` (Tailwind v4 input).
-  Templates: `crates/zeabur-identity-ui/templates/` (askama; shadcn/ui class strings). Built output:
+  Templates: `crates/zeabur-identity-ui/templates/` (askama; Zeabur design system class strings, from
+  the vendored `ui/styles/vendor/zeabur-design-system/`). Built output:
   `crates/zeabur-identity-ui/assets/` (committed, embedded with `include_bytes!`). Page routes live in
   `crates/zeabur-identity-signin/src/pages.rs`; rendering in `crates/zeabur-identity-ui/src/pages.rs`.
 - **Build and check** (inside `nix develop`):
@@ -22,11 +23,12 @@ description: Change Zeabur Identity's sign-in pages — askama templates, TypeSc
 - **Text.** Every string is a field of `Messages` in `crates/zeabur-identity-ui/src/i18n.rs` with English,
   Traditional Chinese (Taiwan usage, 通行密鑰) and Simplified Chinese (通行密钥) values; scripts get
   their messages from `data-msg-*` attributes. A missing translation is a compile error.
-- **Contrast.** `contrast.py` in this skill reads the tokens from `ui/styles/app.css` and checks
+- **Contrast.** `contrast.py` in this skill reads the tokens from the vendored design system and
+  `ui/styles/app.css` and checks
   every colour pair the pages render (text ≥ 4.5:1, boundaries and focus rings ≥ 3:1), with
   alpha compositing; it exits 1 on any failure. Run it after changing a token or a colour class:
   `python3 .claude/skills/zeabur-identity-ui/contrast.py` (inside `nix develop`). Try a value first with
-  `--set light:border='oklch(0.6 0 0)'`. When a template starts rendering a new pair (a variant,
+  `--set light:input='rgb(126, 122, 133)'`. When a template starts rendering a new pair (a variant,
   state or surface), add it to the inventory in the script. Update the `A11Y` comments in
   `ui/styles/app.css` with the new ratios.
 - **Budgets.** Brotli sizes are checked by `scripts/ui-budget.sh`; raise a budget only with a

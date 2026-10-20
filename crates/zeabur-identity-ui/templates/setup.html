@@ -5,12 +5,12 @@
 {%- block title %}{{ m.setup_title }}{% endblock -%}
 {%- block head %}<script type="module" src="/assets/setup.js?v={{ assets.setup_js }}"></script>{% endblock -%}
 {%- block content %}
-{% call ui::card("w-full max-w-sm") %}
+{% call ui::card() %}
   {{ ui::card_header(m.setup_title, m.setup_subtitle) }}
   {% call ui::card_content() %}
   <div class="flex flex-col gap-5">
-    <div id="status" role="status" aria-live="polite" class="empty:sr-only text-sm text-muted-foreground"></div>
-    <div id="error" role="alert" class="empty:sr-only text-sm text-destructive"></div>
+    <div id="status" role="status" aria-live="polite" class="empty:sr-only text-[0.8125rem] leading-5 text-secondary"></div>
+    <div id="error" role="alert" class="empty:sr-only text-[0.8125rem] leading-5 text-fail-strong"></div>
     <div id="unsupported" hidden>
       {% call ui::alert(m.passkey_unsupported_title, "default", "Key", live = "") %}{{ m.passkey_unsupported_body }}{% endcall %}
     </div>
@@ -26,7 +26,7 @@
       <input id="label" name="label" type="text" maxlength="64" class="{{ ui::input_cls() }}" autocomplete="off"
              {{- ui::field_describedby("label", m.setup_label_hint) }}>
       {% endcall %}
-      <button type="submit" class="{{ ui::button_cls("default", "lg") }} w-full">{{ icons::icon("Fingerprint") }}{{ m.setup_create }}</button>
+      <button type="submit" class="{{ ui::button_cls("primary") }} w-full">{{ icons::icon("Fingerprint") }}{{ m.setup_create }}</button>
     </form>
     {{ upstream::buttons(providers, m) }}
   </div>

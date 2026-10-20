@@ -274,7 +274,7 @@ mod tests {
             (href.as_str(), "text/css"),
             ("/assets/login.js", "text/javascript"),
             ("/assets/setup.js", "text/javascript"),
-            ("/assets/geist-latin-wght-normal.woff2", "font/woff2"),
+            ("/assets/Geist-Variable.woff2", "font/woff2"),
         ] {
             let asset = get(&app, path, &[]).await;
             assert_eq!(asset.status, StatusCode::OK, "{path}");

@@ -1,4 +1,5 @@
 {%- import "icons.html" as icons -%}
+{%- import "brand.html" as brand -%}
 <!doctype html>
 <html lang="{{ lang.tag() }}">
 <head>
@@ -8,17 +9,20 @@
 <meta name="referrer" content="no-referrer">
 <title>{% block title %}{% endblock %} · Zeabur Identity</title>
 <link rel="stylesheet" href="/assets/app.css?v={{ assets.css }}">
-<link rel="preload" href="/assets/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
 {% block head %}{% endblock %}
 </head>
-<body class="bg-muted">
-<main class="flex min-h-svh flex-col items-center justify-center gap-4 p-4 sm:p-6">
+<body class="bg-zGray-50 dark:bg-zGray-950">
+<main class="flex min-h-svh flex-col items-center justify-center gap-5 px-4 py-8">
+<div class="flex w-full max-w-[400px] flex-col gap-5">
+<header class="flex items-center justify-center gap-2.5">{{ brand::mark("size-7") }}<span class="text-base leading-6 font-semibold tracking-[-0.01em] text-main">Zeabur Identity</span></header>
 {% block content %}{% endblock %}
-<nav aria-label="{{ m.nav_language }}" class="flex flex-wrap items-center justify-center gap-1 text-sm text-foreground/70">
+</div>
+<nav aria-label="{{ m.nav_language }}" class="flex flex-wrap items-center justify-center gap-1 text-[0.8125rem] leading-5 text-secondary">
   {{ icons::icon("Globe", "size-4") }}
   {%- for l in langs %}
   <a href="?lang={{ l.tag() }}" hreflang="{{ l.tag() }}" lang="{{ l.tag() }}" data-lang-link{% if *l == lang %} aria-current="true"{% endif %}
-     class="inline-flex min-h-6 min-w-6 items-center rounded-md px-1.5 underline-offset-4 hover:underline outline-none focus-visible:ring-3 focus-visible:ring-ring aria-[current]:font-medium aria-[current]:text-foreground">{{ l.messages().language_name }}</a>
+     class="inline-flex min-h-6 min-w-6 items-center rounded-md px-1.5 underline-offset-4 hover:text-main hover:underline aria-[current]:font-medium aria-[current]:text-main">{{ l.messages().language_name }}</a>
   {%- endfor %}
 </nav>
 </main>

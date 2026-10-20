@@ -1,32 +1,35 @@
 #!/usr/bin/env python3
 """WCAG 2.2 contrast of every colour pair the sign-in pages render.
 
-Reads the colour tokens from ``ui/styles/app.css`` (the light ``:root`` block and
-its ``prefers-color-scheme: dark`` override), so the numbers follow the
-stylesheet instead of a copy. Each pair names the template that renders it.
+Reads the colour tokens from the vendored Zeabur design system
+(``ui/styles/vendor/zeabur-design-system/src/tokens.css``) and the local overrides in
+``ui/styles/app.css``, both as ``:root`` custom properties, so the numbers follow the
+stylesheets instead of a copy. Values may be ``R, G, B`` palette triplets,
+``rgb()``, ``#hex``, ``var()`` and ``light-dark(<light>, <dark>)``; each theme takes
+its side of ``light-dark()``. Each pair names the template that renders it.
 
 Colour pipeline:
 
-1. OKLCH to linear sRGB with the OKLab matrices of B. Ottosson, "A perceptual
-   color space for image processing", 2020,
-   https://bottosson.github.io/posts/oklab/, then clipped to the sRGB gamut.
+1. sRGB values decoded to linear light.
 2. Alpha (a token's own alpha times a Tailwind ``/NN`` modifier) is composited
-   in gamma-encoded sRGB, as browsers do.
+   in gamma-encoded sRGB, as browsers do (Tailwind mixes ``/NN`` in OKLab; the
+   difference is well under the margins below).
 3. Contrast ratio from relative luminance,
    https://www.w3.org/TR/WCAG22/#dfn-contrast-ratio.
 
 Requirements: text 4.5:1 (1.4.3); component boundaries and focus indicators 3:1
 (1.4.11, 2.4.13). Not checked, because WCAG does not require them: disabled
-controls, the decorative separator line beside "or", and the card outline
-(``ring-foreground/10``), which is not a control. Not checked, because no page
-renders them: the ``aria-invalid`` styles (no page passes ``error`` to
-``ui::field``), the card footer, and button variants other than default and
-outline. Add a pair when a page starts rendering one.
+controls, the decorative separator lines beside "or", the card's edge, which is not
+a control, the Zeabur mark, and the edges of the buttons, which their text and icon
+identify (Understanding 1.4.11, "Active User Interface Components").
+Not checked, because no page renders them: the ``aria-invalid`` styles (no page
+passes ``error`` to ``ui::field``) and the placeholder colour (no field has one).
+Add a pair when a page starts rendering one.
 
 Usage, from the repository root inside ``nix develop``::
 
     python3 .claude/skills/zeabur-identity-ui/contrast.py
-    python3 .claude/skills/zeabur-identity-ui/contrast.py --set light:border='oklch(0.6 0 0)'
+    python3 .claude/skills/zeabur-identity-ui/contrast.py --set light:input='rgb(126, 122, 133)'
 
 Exit status: 0 when every pair passes, 1 when any fails, 2 on bad input.
 """
@@ -35,7 +38,6 @@ from __future__ import annotations
 
 import argparse
 import enum
-import math
 import re
 import sys
 from collections.abc import Iterable, Sequence
@@ -45,64 +47,48 @@ from pathlib import Path
 type Rgb = tuple[float, float, float]
 """Linear-light sRGB, each channel in ``[0, 1]``."""
 
-type Tokens = dict[str, Oklch]
+type Tokens = dict[str, Colour]
 """Colour custom properties of one theme, keyed without the leading ``--``."""
 
 type Layers = tuple[Paint, ...]
 """Paints from the bottom up; the first is opaque."""
 
-DEFAULT_CSS = Path("ui/styles/app.css")
+DEFAULT_CSS = (
+    Path("ui/styles/vendor/zeabur-design-system/src/tokens.css"),
+    Path("ui/styles/app.css"),
+)
 THEMES = ("light", "dark")
+# base.html <body class="bg-zGray-50 dark:bg-zGray-950">
+PAGE = {"light": "zGray-50", "dark": "zGray-950"}
 
-_OKLCH = re.compile(r"oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*(?:/\s*([\d.]+)(%?))?\s*\)")
-_ROOT_BLOCK = re.compile(r"(?P<dark>@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*)?:root\s*\{(?P<body>[^}]*)\}")
-_DECLARATION = re.compile(r"--(?P<name>[\w-]+)\s*:\s*(?P<value>oklch\([^)]*\))")
+_ROOT_BLOCK = re.compile(r"(?<![\w.-]):root\s*\{(?P<body>[^}]*)\}")
+_DECLARATION = re.compile(r"--(?P<name>[\w-]+)\s*:\s*(?P<value>[^;]+);")
+_HEX = re.compile(r"#([0-9a-fA-F]{6})")
+_RGB = re.compile(r"rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)\s*(?:[,/]\s*([\d.]+)(%?))?\s*\)")
+_TRIPLET = re.compile(r"\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*")
 
 
 # Colour science
 
 
 @dataclass(frozen=True, slots=True)
-class Oklch:
-    """A CSS ``oklch()`` colour; ``alpha`` is in ``[0, 1]``."""
+class Colour:
+    """An sRGB colour, stored in linear light; ``alpha`` is in ``[0, 1]``."""
 
-    lightness: float
-    chroma: float
-    hue: float
+    linear: Rgb
     alpha: float = 1.0
 
     @classmethod
-    def parse(cls, text: str) -> Oklch:
-        """Parse ``oklch(L C H)`` or ``oklch(L C H / A)``, ``A`` a number or percentage.
+    def from_srgb(cls, r: float, g: float, b: float, alpha: float = 1.0) -> Colour:
+        """From gamma-encoded channels in ``[0, 255]``.
 
-        >>> Oklch.parse("oklch(1 0 0 / 45%)")
-        Oklch(lightness=1.0, chroma=0.0, hue=0.0, alpha=0.45)
+        >>> Colour.from_srgb(255, 255, 255).linear
+        (1.0, 1.0, 1.0)
         """
-        match = _OKLCH.fullmatch(text.strip())
-        if match is None:
-            raise ValueError(f"not an oklch() colour: {text!r}")
-        lightness, chroma, hue, alpha, percent = match.groups()
-        a = 1.0 if alpha is None else float(alpha) / (100 if percent else 1)
-        return cls(float(lightness), float(chroma), float(hue), a)
+        return cls(_clip(_decode(c / 255) for c in (r, g, b)), alpha)
 
     def to_linear_srgb(self) -> Rgb:
-        """Convert to linear sRGB, clipped to the gamut; alpha is ignored.
-
-        >>> Oklch(1, 0, 0).to_linear_srgb() == (1.0, 1.0, 1.0)
-        True
-        """
-        a = self.chroma * math.cos(math.radians(self.hue))
-        b = self.chroma * math.sin(math.radians(self.hue))
-        long = (self.lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3
-        medium = (self.lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3
-        short = (self.lightness - 0.0894841775 * a - 1.2914855480 * b) ** 3
-        return _clip(
-            (
-                4.0767416621 * long - 3.3077115913 * medium + 0.2309699292 * short,
-                -1.2684380046 * long + 2.6097574011 * medium - 0.3413193965 * short,
-                -0.0041960863 * long - 0.7034186147 * medium + 1.7076147010 * short,
-            )
-        )
+        return self.linear
 
 
 def _clip(rgb: Iterable[float]) -> Rgb:
@@ -154,14 +140,19 @@ class Paint:
 
     def over(self, below: Rgb, tokens: Tokens) -> Rgb:
         """Draw this paint, including its token's own alpha, over an opaque colour."""
-        colour = tokens[self.token]
+        colour = lookup(tokens, self.token)
         return composite(colour.to_linear_srgb(), below, colour.alpha * self.opacity)
+
+
+def lookup(tokens: Tokens, token: str) -> Colour:
+    """A token's colour, or a literal ``#rrggbb`` (the button surfaces' fixed gradients)."""
+    return parse_colour(token, {}) if token.startswith("#") else tokens[token]
 
 
 def flatten(layers: Layers, tokens: Tokens) -> Rgb:
     """Composite ``layers`` into the opaque colour a viewer sees."""
     base, *rest = layers
-    colour = tokens[base.token]
+    colour = lookup(tokens, base.token)
     if colour.alpha * base.opacity != 1:
         raise ValueError(f"bottom layer {base} is not opaque")
     rgb = colour.to_linear_srgb()
@@ -213,182 +204,55 @@ def stack(*paints: Paint) -> Layers:
 
 # Inventory. Keep in step with crates/zeabur-identity-ui/templates and ui/styles/app.css.
 
-PAGE = stack(paint("muted"))  # base.html <body class="bg-muted">
+PAGE_BG = stack(paint("page"))  # base.html body: bg-zGray-50 dark:bg-zGray-950
 CARD = stack(paint("card"))  # ui.html card: bg-card
-LIGHT_OUTLINE_FILL = stack(paint("card"), paint("background"))  # outline button: bg-background
-DARK_FIELD = stack(paint("card"), paint("input", 0.3))  # input and outline button: dark:bg-input/30
+ALERT = stack(paint("card"), paint("v2-surface-hover"))  # alert default: bg-v2-surface-hover
+ALERT_WARN = stack(paint("card"), paint("amber", 0.08))  # alert warn: bg-amber/8
+ALERT_FAIL = stack(paint("card"), paint("zOrangered-500", 0.06))  # alert destructive: bg-zOrangered-500/6
+# button-primary (utilities.css): a gradient from #8340ff to #7327ff, hover #7a33ff to #6820f0; the
+# lightest stop is the worst case for its white text.
+PRIMARY_LIGHTEST = stack(paint("#8340ff"))
 
 COMMON: tuple[Pair, ...] = (
-    Pair(
-        name="card text",
-        kind=Kind.TEXT,
-        fg=paint("card-foreground"),
-        bg=CARD,
-        source="ui.html card, field label, alert title",
-    ),
-    Pair(
-        name="muted text on card",
-        kind=Kind.TEXT,
-        fg=paint("muted-foreground"),
-        bg=CARD,
-        source="card and field descriptions, #status, separator text, alert description",
-    ),
-    Pair(
-        name="error text on card",
-        kind=Kind.TEXT,
-        fg=paint("destructive"),
-        bg=CARD,
-        source="login/setup #error, error.html destructive alert",
-    ),
-    Pair(
-        name="primary button text",
-        kind=Kind.TEXT,
-        fg=paint("primary-foreground"),
-        bg=stack(paint("card"), paint("primary")),
-        source="button_cls default",
-    ),
-    Pair(
-        name="primary button text, hover",
-        kind=Kind.TEXT,
-        fg=paint("primary-foreground"),
-        bg=stack(paint("card"), paint("primary", 0.8)),
-        source="button_cls default hover:bg-primary/80",
-    ),
-    Pair(
-        name="language link",
-        kind=Kind.TEXT,
-        fg=paint("foreground", 0.7),
-        bg=PAGE,
-        source="base.html nav text-foreground/70",
-    ),
-    Pair(
-        name="language link, current",
-        kind=Kind.TEXT,
-        fg=paint("foreground"),
-        bg=PAGE,
-        source="base.html aria-[current]:text-foreground",
-    ),
-    Pair(
-        name="primary button against card",
-        kind=Kind.BOUNDARY,
-        fg=paint("primary"),
-        bg=CARD,
-        source="button_cls default bg-primary",
-    ),
-    Pair(
-        name="input border against card",
-        kind=Kind.BOUNDARY,
-        fg=paint("input"),
-        bg=CARD,
-        source="input_cls border-input",
-    ),
-    Pair(
-        name="focus ring against card",
-        kind=Kind.FOCUS,
-        fg=paint("ring"),
-        bg=CARD,
-        source="button_cls, input_cls focus-visible:ring-ring",
-    ),
-    Pair(
-        name="focus ring against page",
-        kind=Kind.FOCUS,
-        fg=paint("ring"),
-        bg=PAGE,
-        source="base.html language link focus-visible:ring-ring",
-    ),
+    Pair(name="card text", kind=Kind.TEXT, fg=paint("text-main"), bg=CARD,
+         source="card title, field label and input text (text-main)"),
+    Pair(name="secondary text on card", kind=Kind.TEXT, fg=paint("text-secondary"), bg=CARD,
+         source="card and field descriptions, #status, separator text (text-secondary)"),
+    Pair(name="error text on card", kind=Kind.TEXT, fg=paint("fail-strong"), bg=CARD,
+         source="login/setup #error (text-fail-strong)"),
+    Pair(name="product name on page", kind=Kind.TEXT, fg=paint("text-main"), bg=PAGE_BG,
+         source="base.html header (text-main)"),
+    Pair(name="language link", kind=Kind.TEXT, fg=paint("text-secondary"), bg=PAGE_BG,
+         source="base.html nav (text-secondary)"),
+    Pair(name="alert title", kind=Kind.TEXT, fg=paint("text-main"), bg=ALERT,
+         source="ui.html alert default"),
+    Pair(name="alert description", kind=Kind.TEXT, fg=paint("text-secondary"), bg=ALERT,
+         source="ui.html alert default, description text-secondary"),
+    Pair(name="warning alert text", kind=Kind.TEXT, fg=paint("warn-strong"), bg=ALERT_WARN,
+         source="ui.html alert warn (login elevation notice), text-warn-strong"),
+    Pair(name="error alert text", kind=Kind.TEXT, fg=paint("fail-strong"), bg=ALERT_FAIL,
+         source="ui.html alert destructive (error.html), text-fail-strong"),
+    Pair(name="primary button text", kind=Kind.TEXT, fg=paint("#ffffff"), bg=PRIMARY_LIGHTEST,
+         source="button_cls primary (button-primary), lightest gradient stop"),
+    Pair(name="input border against card", kind=Kind.BOUNDARY, fg=paint("input"), bg=CARD,
+         source="input_cls border-input"),
+    Pair(name="input focus edge against card", kind=Kind.FOCUS, fg=paint("ring"), bg=CARD,
+         source="input_cls focus:border-ring"),
+    Pair(name="focus outline against card", kind=Kind.FOCUS, fg=paint("ring"), bg=CARD,
+         source="app.css :focus-visible outline var(--ring)"),
+    Pair(name="focus outline against page", kind=Kind.FOCUS, fg=paint("ring"), bg=PAGE_BG,
+         source="app.css :focus-visible, base.html language links"),
 )
 
+# button-secondary (utilities.css): light-dark() gradients; the hover's lower stop is the worst case.
 LIGHT: tuple[Pair, ...] = (
-    Pair(
-        name="input placeholder",
-        kind=Kind.TEXT,
-        fg=paint("muted-foreground"),
-        bg=CARD,
-        source="input_cls placeholder:text-muted-foreground",
-    ),
-    Pair(
-        name="outline button text",
-        kind=Kind.TEXT,
-        fg=paint("card-foreground"),
-        bg=LIGHT_OUTLINE_FILL,
-        source="button_cls outline bg-background",
-    ),
-    Pair(
-        name="outline button text, hover",
-        kind=Kind.TEXT,
-        fg=paint("foreground"),
-        bg=stack(paint("card"), paint("muted")),
-        source="button_cls outline hover:bg-muted",
-    ),
-    Pair(
-        name="outline button border against card",
-        kind=Kind.BOUNDARY,
-        fg=paint("border"),
-        bg=CARD,
-        source="upstream.html, button_cls outline border-border",
-    ),
-    Pair(
-        name="outline button border against fill",
-        kind=Kind.BOUNDARY,
-        fg=paint("border"),
-        bg=LIGHT_OUTLINE_FILL,
-        drawn_on=CARD,
-        source="upstream.html, button_cls outline border-border bg-background",
-    ),
+    Pair(name="secondary button text", kind=Kind.TEXT, fg=paint("text-main"), bg=stack(paint("#ebebec")),
+         source="upstream.html, button_cls secondary (button-secondary), hover stop #ebebec"),
 )
 
 DARK: tuple[Pair, ...] = (
-    Pair(
-        name="input text",
-        kind=Kind.TEXT,
-        fg=paint("card-foreground"),
-        bg=DARK_FIELD,
-        source="input_cls dark:bg-input/30",
-    ),
-    Pair(
-        name="input placeholder",
-        kind=Kind.TEXT,
-        fg=paint("muted-foreground"),
-        bg=DARK_FIELD,
-        source="input_cls placeholder:text-muted-foreground dark:bg-input/30",
-    ),
-    Pair(
-        name="input border against fill",
-        kind=Kind.BOUNDARY,
-        fg=paint("input"),
-        bg=DARK_FIELD,
-        drawn_on=CARD,
-        source="input_cls border-input dark:bg-input/30",
-    ),
-    Pair(
-        name="outline button text",
-        kind=Kind.TEXT,
-        fg=paint("card-foreground"),
-        bg=DARK_FIELD,
-        source="button_cls outline dark:bg-input/30",
-    ),
-    Pair(
-        name="outline button text, hover",
-        kind=Kind.TEXT,
-        fg=paint("foreground"),
-        bg=stack(paint("card"), paint("input", 0.5)),
-        source="button_cls outline dark:hover:bg-input/50",
-    ),
-    Pair(
-        name="outline button border against card",
-        kind=Kind.BOUNDARY,
-        fg=paint("input"),
-        bg=CARD,
-        source="upstream.html, button_cls outline dark:border-input",
-    ),
-    Pair(
-        name="outline button border against fill",
-        kind=Kind.BOUNDARY,
-        fg=paint("input"),
-        bg=DARK_FIELD,
-        drawn_on=CARD,
-        source="upstream.html, button_cls outline dark:border-input dark:bg-input/30",
-    ),
+    Pair(name="secondary button text", kind=Kind.TEXT, fg=paint("text-main"), bg=stack(paint("#34343a")),
+         source="upstream.html, button_cls secondary (button-secondary), hover stop #34343a"),
 )
 
 PAIRS: dict[str, tuple[Pair, ...]] = {"light": COMMON + LIGHT, "dark": COMMON + DARK}
@@ -397,35 +261,108 @@ PAIRS: dict[str, tuple[Pair, ...]] = {"light": COMMON + LIGHT, "dark": COMMON + 
 # Input and output
 
 
-def read_tokens(css: str) -> dict[str, Tokens]:
-    """Colour tokens of the light ``:root`` block and its dark-scheme override.
+def split_top_level(text: str) -> list[str]:
+    """Split at commas outside parentheses.
 
-    >>> css = ":root { --a: oklch(1 0 0); --b: oklch(0.5 0 0); }"
-    >>> css += " @media (prefers-color-scheme: dark) { :root { --a: oklch(0 0 0); } }"
-    >>> themes = read_tokens(css)
-    >>> themes["dark"]["a"].lightness, themes["dark"]["b"].lightness
-    (0.0, 0.5)
+    >>> split_top_level("rgb(1, 2, 3), #fff")
+    ['rgb(1, 2, 3)', ' #fff']
     """
-    themes: dict[str, Tokens] = {theme: {} for theme in THEMES}
-    for block in _ROOT_BLOCK.finditer(css):
-        theme = "dark" if block["dark"] else "light"
-        for declaration in _DECLARATION.finditer(block["body"]):
-            themes[theme][declaration["name"]] = Oklch.parse(declaration["value"])
-    if not themes["light"]:
-        raise ValueError("no oklch() tokens in a light :root block")
-    themes["dark"] = themes["light"] | themes["dark"]
+    parts, depth, start = [], 0, 0
+    for i, ch in enumerate(text):
+        depth += {"(": 1, ")": -1}.get(ch, 0)
+        if ch == "," and depth == 0:
+            parts.append(text[start:i])
+            start = i + 1
+    parts.append(text[start:])
+    return parts
+
+
+def side(value: str, theme: str) -> str:
+    """Pick ``theme``'s side of every ``light-dark()`` in ``value``.
+
+    >>> side("light-dark(#000000, rgb(var(--x)))", "dark")
+    'rgb(var(--x))'
+    """
+    while (start := value.find("light-dark(")) != -1:
+        depth, end = 0, start + len("light-dark")
+        for end in range(start + len("light-dark"), len(value)):
+            depth += {"(": 1, ")": -1}.get(value[end], 0)
+            if depth == 0:
+                break
+        light, dark = split_top_level(value[start + len("light-dark(") : end])
+        value = value[:start] + (light if theme == "light" else dark).strip() + value[end + 1 :]
+    return value
+
+
+def substitute(value: str, raw: dict[str, str], seen: frozenset[str] = frozenset()) -> str:
+    """Replace ``var(--name)`` by its raw value, recursively."""
+
+    def one(match: re.Match[str]) -> str:
+        name = match[1]
+        if name in seen or name not in raw:
+            raise ValueError(f"unresolvable var(--{name})")
+        return substitute(raw[name], raw, seen | {name})
+
+    return re.sub(r"var\(--([\w-]+)\)", one, value)
+
+
+def parse_colour(value: str, raw: dict[str, str]) -> Colour:
+    """Parse a resolved value: ``#rrggbb``, ``rgb()``/``rgba()`` or an ``R, G, B`` triplet.
+
+    >>> parse_colour("rgb(0 0 0 / 0.5)", {}).alpha
+    0.5
+    """
+    text = substitute(value, raw).strip()
+    if match := _HEX.fullmatch(text):
+        h = match[1]
+        return Colour.from_srgb(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+    if match := _RGB.fullmatch(text):
+        r, g, b, alpha, percent = match.groups()
+        a = 1.0 if alpha is None else float(alpha) / (100 if percent else 1)
+        return Colour.from_srgb(float(r), float(g), float(b), a)
+    if match := _TRIPLET.fullmatch(text):
+        return Colour.from_srgb(*(float(c) for c in match.groups()))
+    raise ValueError(f"not a colour: {value!r}")
+
+
+def read_tokens(stylesheets: Iterable[str]) -> dict[str, Tokens]:
+    """Colour tokens of every ``:root`` block, later declarations winning, resolved per theme.
+
+    >>> css = ":root { --a: 0, 0, 0; --b: light-dark(rgb(var(--a)), #ffffff); }"
+    >>> themes = read_tokens([css])
+    >>> themes["light"]["b"].linear, themes["dark"]["b"].linear
+    ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0))
+    """
+    declared: dict[str, str] = {}
+    for css in stylesheets:
+        css = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+        for block in _ROOT_BLOCK.finditer(css):
+            for declaration in _DECLARATION.finditer(block["body"]):
+                declared[declaration["name"]] = " ".join(declaration["value"].split())
+    themes: dict[str, Tokens] = {}
+    for theme in THEMES:
+        raw = {name: side(value, theme) for name, value in declared.items()}
+        tokens: Tokens = {}
+        for name in raw:
+            try:
+                tokens[name] = parse_colour(raw[name], raw)
+            except ValueError:
+                continue  # not a colour (sizes, shadows, fonts …)
+        if PAGE[theme] in tokens:
+            tokens["page"] = tokens[PAGE[theme]]
+        themes[theme] = tokens
     return themes
 
 
 def apply_overrides(themes: dict[str, Tokens], overrides: Iterable[str]) -> None:
-    """Apply ``THEME:TOKEN=oklch(...)`` overrides in place, to try a value before editing the CSS."""
+    """Apply ``THEME:TOKEN=<colour>`` overrides in place, to try a value before editing the CSS."""
     for override in overrides:
         target, _, value = override.partition("=")
         theme, _, token = target.partition(":")
         token = token.removeprefix("--")
         if token not in themes.get(theme, {}):
             raise ValueError(f"--set {override!r}: expected light:TOKEN or dark:TOKEN with an existing token")
-        themes[theme][token] = Oklch.parse(value)
+        themes[theme][token] = parse_colour(value, {})
 
 
 @dataclass(frozen=True, slots=True)
@@ -467,17 +404,22 @@ def report(results: Sequence[Result]) -> str:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n", 1)[0])
-    parser.add_argument("--css", type=Path, default=DEFAULT_CSS, help=f"stylesheet (default: {DEFAULT_CSS})")
+    parser.add_argument(
+        "--css",
+        type=Path,
+        action="append",
+        help="stylesheet, repeatable, later ones winning (default: the vendored tokens, then app.css)",
+    )
     parser.add_argument(
         "--set",
         action="append",
         default=[],
-        metavar="THEME:TOKEN=oklch(...)",
+        metavar="THEME:TOKEN=COLOUR",
         help="try a token value without editing the stylesheet; repeatable",
     )
     args = parser.parse_args(argv)
     try:
-        themes = read_tokens(args.css.read_text(encoding="utf-8"))
+        themes = read_tokens(path.read_text(encoding="utf-8") for path in args.css or DEFAULT_CSS)
         apply_overrides(themes, args.set)
     except (OSError, ValueError) as error:
         print(f"contrast.py: {error}", file=sys.stderr)

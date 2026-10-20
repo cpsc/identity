@@ -33,9 +33,9 @@ const ASSETS: [Asset; 4] = [
         bytes: include_bytes!("../assets/setup.js"),
     },
     Asset {
-        name: "geist-latin-wght-normal.woff2",
+        name: "Geist-Variable.woff2",
         content_type: "font/woff2",
-        bytes: include_bytes!("../assets/geist-latin-wght-normal.woff2"),
+        bytes: include_bytes!("../assets/Geist-Variable.woff2"),
     },
 ];
 

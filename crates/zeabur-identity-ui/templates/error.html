@@ -3,10 +3,10 @@
 {%- import "icons.html" as icons -%}
 {%- block title %}{{ m.error_title }}{% endblock -%}
 {%- block content %}
-{% call ui::card("w-full max-w-sm") %}
+{% call ui::card() %}
   {{ ui::card_header(m.error_title, m.error_body) }}
   {% call ui::card_content() %}
-  {% call ui::alert(m.error_detail_label, "destructive", "WarningCircle", live = "") %}<code class="break-words">{{ detail }}</code>{% endcall %}
+  {% call ui::alert(m.error_detail_label, "destructive", "WarningCircle", live = "") %}<code class="type-mono break-words">{{ detail }}</code>{% endcall %}
   {% endcall %}
 {% endcall %}
 {%- endblock %}

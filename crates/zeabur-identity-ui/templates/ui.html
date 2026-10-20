@@ -1,84 +1,71 @@
 {%- import "icons.html" as icons -%}
 {#-
-  shadcn base-nova (preset brrM) class strings, copied from
-  https://ui.shadcn.com/r/styles/base-nova/<name>.json (fetched 2026-10-11).
-  Rules: copy strings verbatim; where upstream relies on `cn()` (tailwind-merge) to drop a
-  conflicting utility, the conflict is resolved by hand and marked "MERGED".
-  Local a11y overrides are marked "A11Y" (kept out of the verbatim strings so the drift check stays clean).
+  Zeabur design system class strings (ui/styles/vendor/zeabur-design-system, components in the
+  design system's src/components/<name>.tsx at the vendored commit), written out for askama.
+  Where a component's `cva` variants or `cn()` would merge classes, the result is written by hand.
+  Local accessibility changes are marked "A11Y"; the contrast of each pair is checked by
+  .claude/skills/zeabur-identity-ui/contrast.py.
 -#}
 
-{#- ---------- Button (button.json) ---------- -#}
-{%- macro button_cls(variant = "default", size = "default") -%}
-group/button inline-flex shrink-0 items-center justify-center rounded-lg border bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4
-{#- MERGED: upstream base has `border-transparent`; cn() drops it for outline. -#}
-{%- if variant != "outline" %} border-transparent{% endif -%}
-{%- if variant == "default" %} bg-primary text-primary-foreground hover:bg-primary/80
-{%- else if variant == "outline" %} border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50
-{%- else if variant == "secondary" %} bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground
-{%- else if variant == "ghost" %} hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50
-{%- else if variant == "destructive" %} bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40
-{%- else if variant == "link" %} text-primary underline-offset-4 hover:underline
-{%- endif -%}
-{%- if size == "default" %} h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2
-{%- else if size == "sm" %} h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5
-{%- else if size == "lg" %} h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2
-{%- else if size == "icon" %} size-8
-{%- endif -%}
+{#- ---------- Button (button.tsx), size lg ----------
+  `primary`: the violet gradient (button-primary); `secondary`: the white one (button-secondary).
+  Focus is the page's :focus-visible outline (app.css). -#}
+{%- macro button_cls(variant = "primary") -%}
+group/button inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md px-5 text-sm font-medium whitespace-nowrap transition-colors duration-150 select-none active:translate-y-px disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4
+{%- if variant == "primary" %} button-primary{% else %} button-secondary{% endif -%}
 {%- endmacro -%}
 
-{#- ---------- Input (input.json) ---------- -#}
+{#- ---------- Input (input.tsx), size lg ---------- -#}
 {%- macro input_cls() -%}
-h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40
+h-10 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-base text-main transition-[border-color,box-shadow,background-color] duration-150 outline-none placeholder:text-tertiary focus:border-ring focus:ring-1 focus:ring-ring/20 disabled:cursor-not-allowed disabled:bg-v2-surface-active disabled:text-secondary aria-invalid:border-destructive aria-invalid:focus:ring-destructive/20 sm:text-sm
 {%- endmacro -%}
 
-{#- ---------- Card (card.json) ---------- -#}
+{#- ---------- Card (card.tsx), as Zeabur's sign-in card: wider padding, raised. ---------- -#}
 {%- macro card(cls = "") -%}
-<div data-slot="card" data-size="default" class="group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/10 [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl {{ cls }}">{{ caller() }}</div>
+<div data-slot="card" class="group/card flex flex-col gap-5 rounded-xl border border-v2-border bg-card p-6 text-card-foreground shadow-xs sm:px-7 {{ cls }}">{{ caller() }}</div>
 {%- endmacro -%}
 
 {%- macro card_header(title, description = "") -%}
-<div data-slot="card-header" class="group/card-header @container/card-header grid auto-rows-min items-start gap-1 rounded-t-xl px-(--card-spacing) has-data-[slot=card-action]:grid-cols-[1fr_auto] has-data-[slot=card-description]:grid-rows-[auto_auto] [.border-b]:pb-(--card-spacing)">
-  {#- registry has `cn-font-heading`; the CLI rewrites it to `font-heading` -#}
-  <h1 data-slot="card-title" class="font-heading text-base leading-snug font-medium group-data-[size=sm]/card:text-sm">{{ title }}</h1>
+<div data-slot="card-header" class="flex flex-col gap-1 text-center">
+  <h1 data-slot="card-title" class="text-xl leading-7 font-semibold tracking-[-0.01em] text-main">{{ title }}</h1>
   {%- if !description.is_empty() %}
-  <p data-slot="card-description" class="text-sm text-muted-foreground">{{ description }}</p>
+  <p data-slot="card-description" class="text-[0.8125rem] leading-5 text-pretty text-secondary">{{ description }}</p>
   {%- endif %}
 </div>
 {%- endmacro -%}
 
 {%- macro card_content() -%}
-<div data-slot="card-content" class="px-(--card-spacing)">{{ caller() }}</div>
+<div data-slot="card-content">{{ caller() }}</div>
 {%- endmacro -%}
 
-{%- macro card_footer() -%}
-<div data-slot="card-footer" class="flex items-center rounded-b-xl border-t bg-muted/50 p-(--card-spacing)">{{ caller() }}</div>
-{%- endmacro -%}
-
-{#- ---------- Alert (alert.json) ----------
+{#- ---------- Alert (alert.tsx) ----------
+  `variant`: "default" | "warn" | "destructive".
   `live`: "alert" (assertive; server error on POST result) | "status" (polite) | "" (none).
-  Upstream hard-codes role="alert"; we make it a parameter. -#}
+  The component hard-codes role="alert"; here it is a parameter.
+  A11Y (1.4.3): the destructive icon is text-fail-strong, not zOrangered-500 (3.86:1 light). -#}
 {%- macro alert(title, variant = "default", icon_name = "WarningCircle", id = "", live = "alert", cls = "") -%}
-<div data-slot="alert"{% if !live.is_empty() %} role="{{ live }}"{% endif %}{% if !id.is_empty() %} id="{{ id }}"{% endif %} class="group/alert relative grid w-full gap-0.5 rounded-lg border px-2.5 py-2 text-left text-sm has-data-[slot=alert-action]:relative has-data-[slot=alert-action]:pr-18 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4
-  {%- if variant == "destructive" %} bg-card text-destructive *:data-[slot=alert-description]:text-destructive *:[svg]:text-current{% else %} bg-card text-card-foreground{% endif %} {{ cls }}">
+<div data-slot="alert"{% if !live.is_empty() %} role="{{ live }}"{% endif %}{% if !id.is_empty() %} id="{{ id }}"{% endif %} class="group/alert relative grid w-full gap-0.5 rounded-lg border px-4 py-3 text-left text-[0.8125rem] leading-5 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2.5 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4
+  {%- if variant == "destructive" %} border-zOrangered-500/30 bg-zOrangered-500/6 text-fail-strong *:data-[slot=alert-description]:text-current
+  {%- else if variant == "warn" %} border-amber/40 bg-amber/8 text-warn-strong *:data-[slot=alert-description]:text-current
+  {%- else %} border-v2-border bg-v2-surface-hover text-main{% endif %} {{ cls }}">
   {{- icons::icon(icon_name) -}}
-  <div data-slot="alert-title" class="font-medium group-has-[>svg]/alert:col-start-2 [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground">{{ title }}</div>
-  <div data-slot="alert-description" class="text-sm text-balance text-muted-foreground md:text-pretty [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground [&_p:not(:last-child)]:mb-4">{{ caller() }}</div>
+  <div data-slot="alert-title" class="text-sm leading-5 font-medium group-has-[>svg]/alert:col-start-2">{{ title }}</div>
+  <div data-slot="alert-description" class="leading-relaxed text-pretty text-secondary group-has-[>svg]/alert:col-start-2">{{ caller() }}</div>
 </div>
 {%- endmacro -%}
 
-{#- ---------- Field (field.json + label.json) ----------
+{#- ---------- Field (field.tsx + label.tsx) ----------
   The control itself is the call body (so the page decides type/name/autocomplete).
   The page must give the control id=`id` and aria-describedby="{{ id }}-desc {{ id }}-err" (see field_describedby). -#}
 {%- macro field(id, label, description = "", error = "") -%}
-<div role="group" data-slot="field" data-orientation="vertical"{% if !error.is_empty() %} data-invalid="true"{% endif %} class="group/field flex w-full gap-2 data-[invalid=true]:text-destructive flex-col *:w-full [&>.sr-only]:w-auto">
-  {#- MERGED: Label's `leading-none` dropped in favour of FieldLabel's `leading-snug` (cn() does this). -#}
-  <label data-slot="field-label" for="{{ id }}" class="items-center text-sm font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50">{{ label }}</label>
+<div role="group" data-slot="field"{% if !error.is_empty() %} data-invalid="true"{% endif %} class="group/field flex min-w-0 flex-col gap-1.5">
+  <label data-slot="field-label" for="{{ id }}" class="w-fit text-[0.8125rem] leading-5 font-medium text-main">{{ label }}</label>
   {{ caller() }}
   {%- if !description.is_empty() %}
-  <p id="{{ id }}-desc" data-slot="field-description" class="text-left text-sm leading-normal font-normal text-muted-foreground [&>a]:underline [&>a]:underline-offset-4 [&>a:hover]:text-primary">{{ description }}</p>
+  <p id="{{ id }}-desc" data-slot="field-description" class="text-[0.8125rem] leading-5 text-secondary">{{ description }}</p>
   {%- endif %}
   {%- if !error.is_empty() %}
-  <p id="{{ id }}-err" data-slot="field-error" class="text-sm font-normal text-destructive">{{ error }}</p>
+  <p id="{{ id }}-err" data-slot="field-error" class="text-xs leading-4 text-fail-strong">{{ error }}</p>
   {%- endif %}
 </div>
 {%- endmacro -%}
@@ -90,10 +77,11 @@ h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 tex
 {%- endif %}{% if !error.is_empty() %} aria-invalid="true"{% endif -%}
 {%- endmacro -%}
 
-{#- ---------- FieldSeparator (field.json + separator.json) ---------- -#}
+{#- ---------- Separator with a word in the middle (separator.tsx), as Zeabur's sign-in "or" ---------- -#}
 {%- macro field_separator(text) -%}
-<div data-slot="field-separator" data-content="true" class="relative -my-2 h-5 text-sm">
-  <div role="separator" aria-orientation="horizontal" data-orientation="horizontal" data-slot="separator" class="shrink-0 bg-border data-horizontal:h-px data-horizontal:w-full absolute inset-0 top-1/2"></div>
-  <span data-slot="field-separator-content" class="relative mx-auto block w-fit bg-card px-2 text-muted-foreground">{{ text }}</span>
+<div data-slot="field-separator" class="flex items-center gap-3 text-xs leading-4 text-secondary">
+  <div role="separator" aria-orientation="horizontal" data-slot="separator" class="h-px flex-1 bg-v2-border"></div>
+  <span data-slot="field-separator-content">{{ text }}</span>
+  <div aria-hidden="true" class="h-px flex-1 bg-v2-border"></div>
 </div>
 {%- endmacro -%}

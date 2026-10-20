@@ -9,7 +9,7 @@ caller.
 - `pages`: renders the sign-in, enrolment, error and notice pages from askama templates in
   `templates/`. askama compiles templates at build time and escapes HTML by default, so the
   client name, `login_hint` and error details cannot inject markup.
-- `assets`: serves the embedded CSS, scripts and font at `/assets/{name}` by exact name, cached
+- `assets`: serves the embedded CSS, scripts and font (Geist) at `/assets/{name}` by exact name, cached
   as immutable and versioned by the first 16 hex digits of their SHA-256.
 - `i18n`: English, Traditional Chinese (Taiwan) and Simplified Chinese. The language is the
   `?lang=` switcher, then the client's `ui_locales` where the caller has it, then
@@ -21,9 +21,12 @@ page routes) and the `zeabur-identity` server.
 
 ## Frontend source and build
 
-The sources live in `ui/` at the repository root: `ui/styles/app.css` (theme tokens and local
-accessibility overrides marked `A11Y`), `ui/styles/shadcn.css` (vendored shadcn/ui base styles)
-and the TypeScript in `ui/src/`. `scripts/build-ui.sh` runs Tailwind CSS v4 over `app.css`,
+The sources live in `ui/` at the repository root: `ui/styles/app.css` (the theme setup and local
+accessibility overrides marked `A11Y`), `ui/styles/vendor/zeabur-design-system/` (the tokens,
+utilities and base styles of Zeabur's design system, vendored; its README names the commit) and
+the TypeScript in `ui/src/`. The pages look like Zeabur's own sign-in: the Zeabur mark over a
+centred card, Geist, the violet gradient button and the white one, on zGray-50 (zGray-950 in
+dark mode). `scripts/build-ui.sh` runs Tailwind CSS v4 over `app.css`,
 which scans the templates for class names, and `bun build --minify` over `login.ts` and
 `setup.ts`. The output in `assets/` is committed and embedded with `include_bytes!`, so
 `cargo build` needs no Node, bun or Tailwind and nothing is loaded from another origin. CI
@@ -50,29 +53,30 @@ request is shown with status 400 and no redirect ([RFC 6749 §4.1.2.1][rfc6749])
 ## Accessibility
 
 The pages target [WCAG 2.2][wcag] AA, follow the operating system's dark mode without script,
-honour reduced motion, and keep a focus outline in forced-colours mode. Contrast ratios were
-computed from the OKLCH tokens (`OKLab` to gamut-clipped sRGB, alpha composited in sRGB as browsers
-do, WCAG relative luminance); where the upstream theme fails, `app.css` overrides it:
+honour reduced motion, and keep a focus outline in forced-colours mode. Contrast ratios are
+computed from the design system's sRGB tokens (alpha composited in sRGB as browsers do, WCAG
+relative luminance) by `.claude/skills/zeabur-identity-ui/contrast.py`; where the design system
+falls short, `app.css` overrides it:
 
 | Pair | Light | Dark | Needed |
 |---|---|---|---|
-| Foreground on card | 19.79 | 17.16 | 4.5 |
-| Muted foreground on card / on muted | 6.00 / 5.50 (upstream 4.34 on muted) | 6.91 / 5.83 | 4.5 |
-| Destructive text on card | 4.76 | 6.19 | 4.5 |
-| Primary button text | 17.16 | 14.22 | 4.5 |
-| Language links (foreground at 70 %) | 7.33 | 7.82 | 4.5 |
-| Input border on card | 3.95 (upstream 1.26) | 4.50 (upstream 1.57) | 3 |
-| Focus ring on card | 4.73 (upstream 2.59) | 6.91 (upstream 1.87) | 3 |
+| Text on card | 21.00 | 17.68 | 4.5 |
+| Secondary text on card / on the page | 6.04 / 5.51 | 8.64 / 9.40 | 4.5 |
+| Error text on card (`fail-strong`, not `destructive`: 3.86:1 light) | 6.49 | 9.40 | 4.5 |
+| Elevation notice (warning alert) | 5.67 | 10.40 | 4.5 |
+| Primary button text (lightest gradient stop) | 5.07 | 5.07 | 4.5 |
+| Input border on card | 4.19 (upstream 1.19) | 4.22 (upstream 1.27) | 3 |
+| Focus outline on card | 7.06 (upstream 2.27) | 5.09 (upstream 1.84) | 3 |
 
-The destructive button variant (destructive text on its own 10 % tint: 3.99:1 light, 5.46:1
-dark) does not meet 4.5:1 in light mode; no page uses it.
+Button edges are not checked: their text and icon identify them (WCAG 1.4.11).
 
 ## Credits
 
-Markup and class strings are copied from [shadcn/ui][shadcn] (style `base-nova`, MIT License);
-`ui/styles/shadcn.css` is its base stylesheet. Icons are inline Phosphor SVGs (MIT
-License). The [Geist][geist] font is embedded under the SIL Open Font License 1.1
-(`assets/LICENSE-Geist.txt`); Chinese text uses the system's CJK fonts.
+Styles and class strings come from [Zeabur's design system][zds] (Apache-2.0), itself built on
+[shadcn/ui][shadcn] (MIT License). The Zeabur mark is a trademark of Zeabur Inc. Icons are
+inline Phosphor SVGs (MIT License). The [Geist][geist] font (the design system's copy) is
+embedded under the SIL Open Font License 1.1 (`assets/LICENSE-Geist.txt`); Chinese text uses
+the system's CJK fonts.
 
 ## References
 
@@ -93,5 +97,6 @@ License). The [Geist][geist] font is embedded under the SIL Open Font License 1.
 [csp]: https://www.w3.org/TR/CSP3/
 [tt]: https://www.w3.org/TR/trusted-types/
 [wcag]: https://www.w3.org/TR/WCAG22/
+[zds]: https://github.com/zeabur/design-system
 [shadcn]: https://ui.shadcn.com
 [geist]: https://github.com/vercel/geist-font

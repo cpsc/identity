@@ -1,26 +1,15 @@
 {%- import "icons.html" as icons -%}
-{#-
-  Zeabur design system class strings (ui/styles/vendor/zeabur-design-system, components in the
-  design system's src/components/<name>.tsx at the vendored commit), written out for askama.
-  Where a component's `cva` variants or `cn()` would merge classes, the result is written by hand.
-  Local accessibility changes are marked "A11Y"; the contrast of each pair is checked by
-  .claude/skills/zeabur-identity-ui/contrast.py.
--#}
+{#- The design system's component classes (src/components/<name>.tsx), merged by hand for askama. -#}
 
-{#- ---------- Button (button.tsx), size lg ----------
-  `primary`: the violet gradient (button-primary); `secondary`: the white one (button-secondary).
-  Focus is the page's :focus-visible outline (app.css). -#}
 {%- macro button_cls(variant = "primary") -%}
 group/button inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md px-5 text-sm font-medium whitespace-nowrap transition-colors duration-150 select-none active:translate-y-px disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4
 {%- if variant == "primary" %} button-primary{% else %} button-secondary{% endif -%}
 {%- endmacro -%}
 
-{#- ---------- Input (input.tsx), size lg ---------- -#}
 {%- macro input_cls() -%}
 h-10 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-base text-main transition-[border-color,box-shadow,background-color] duration-150 outline-none placeholder:text-tertiary focus:border-ring focus:ring-1 focus:ring-ring/20 disabled:cursor-not-allowed disabled:bg-v2-surface-active disabled:text-secondary aria-invalid:border-destructive aria-invalid:focus:ring-destructive/20 sm:text-sm
 {%- endmacro -%}
 
-{#- ---------- Card (card.tsx), as Zeabur's sign-in card: wider padding, raised. ---------- -#}
 {%- macro card(cls = "") -%}
 <div data-slot="card" class="group/card flex flex-col gap-5 rounded-xl border border-v2-border bg-card p-6 text-card-foreground shadow-xs sm:px-7 {{ cls }}">{{ caller() }}</div>
 {%- endmacro -%}
@@ -38,11 +27,7 @@ h-10 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text
 <div data-slot="card-content">{{ caller() }}</div>
 {%- endmacro -%}
 
-{#- ---------- Alert (alert.tsx) ----------
-  `variant`: "default" | "warn" | "destructive".
-  `live`: "alert" (assertive; server error on POST result) | "status" (polite) | "" (none).
-  The component hard-codes role="alert"; here it is a parameter.
-  A11Y (1.4.3): the destructive icon is text-fail-strong, not zOrangered-500 (3.86:1 light). -#}
+{#- variant: "default" | "warn" | "destructive"; live: the role, "alert" | "status" | "" for none. -#}
 {%- macro alert(title, variant = "default", icon_name = "WarningCircle", id = "", live = "alert", cls = "") -%}
 <div data-slot="alert"{% if !live.is_empty() %} role="{{ live }}"{% endif %}{% if !id.is_empty() %} id="{{ id }}"{% endif %} class="group/alert relative grid w-full gap-0.5 rounded-lg border px-4 py-3 text-left text-[0.8125rem] leading-5 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2.5 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4
   {%- if variant == "destructive" %} border-zOrangered-500/30 bg-zOrangered-500/6 text-fail-strong *:data-[slot=alert-description]:text-current
@@ -54,9 +39,7 @@ h-10 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text
 </div>
 {%- endmacro -%}
 
-{#- ---------- Field (field.tsx + label.tsx) ----------
-  The control itself is the call body (so the page decides type/name/autocomplete).
-  The page must give the control id=`id` and aria-describedby="{{ id }}-desc {{ id }}-err" (see field_describedby). -#}
+{#- The call body is the control; give it id=`id` and field_describedby(id, …). -#}
 {%- macro field(id, label, description = "", error = "") -%}
 <div role="group" data-slot="field"{% if !error.is_empty() %} data-invalid="true"{% endif %} class="group/field flex min-w-0 flex-col gap-1.5">
   <label data-slot="field-label" for="{{ id }}" class="w-fit text-[0.8125rem] leading-5 font-medium text-main">{{ label }}</label>
@@ -77,7 +60,6 @@ h-10 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text
 {%- endif %}{% if !error.is_empty() %} aria-invalid="true"{% endif -%}
 {%- endmacro -%}
 
-{#- ---------- Separator with a word in the middle (separator.tsx), as Zeabur's sign-in "or" ---------- -#}
 {%- macro field_separator(text) -%}
 <div data-slot="field-separator" class="flex items-center gap-3 text-xs leading-4 text-secondary">
   <div role="separator" aria-orientation="horizontal" data-slot="separator" class="h-px flex-1 bg-v2-border"></div>

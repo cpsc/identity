@@ -1,30 +1,11 @@
 #!/usr/bin/env python3
 """WCAG 2.2 contrast of every colour pair the sign-in pages render.
 
-Reads the colour tokens from the vendored Zeabur design system
-(``ui/styles/vendor/zeabur-design-system/src/tokens.css``) and the local overrides in
-``ui/styles/app.css``, both as ``:root`` custom properties, so the numbers follow the
-stylesheets instead of a copy. Values may be ``R, G, B`` palette triplets,
-``rgb()``, ``#hex``, ``var()`` and ``light-dark(<light>, <dark>)``; each theme takes
-its side of ``light-dark()``. Each pair names the template that renders it.
-
-Colour pipeline:
-
-1. sRGB values decoded to linear light.
-2. Alpha (a token's own alpha times a Tailwind ``/NN`` modifier) is composited
-   in gamma-encoded sRGB, as browsers do (Tailwind mixes ``/NN`` in OKLab; the
-   difference is well under the margins below).
-3. Contrast ratio from relative luminance,
-   https://www.w3.org/TR/WCAG22/#dfn-contrast-ratio.
-
-Requirements: text 4.5:1 (1.4.3); component boundaries and focus indicators 3:1
-(1.4.11, 2.4.13). Not checked, because WCAG does not require them: disabled
-controls, the decorative separator lines beside "or", the card's edge, which is not
-a control, the Zeabur mark, and the edges of the buttons, which their text and icon
-identify (Understanding 1.4.11, "Active User Interface Components").
-Not checked, because no page renders them: the ``aria-invalid`` styles (no page
-passes ``error`` to ``ui::field``) and the placeholder colour (no field has one).
-Add a pair when a page starts rendering one.
+Reads the ``:root`` colour tokens of the vendored design system and ``ui/styles/app.css``.
+Alpha is composited in gamma-encoded sRGB, as browsers do; ratios follow
+https://www.w3.org/TR/WCAG22/#dfn-contrast-ratio. Text needs 4.5:1 (1.4.3), boundaries and
+focus indicators 3:1 (1.4.11, 2.4.13). Disabled controls, decorative separators, the card's
+edge, the mark and button edges are exempt (Understanding 1.4.11) and not checked.
 
 Usage, from the repository root inside ``nix develop``::
 
@@ -66,9 +47,6 @@ _DECLARATION = re.compile(r"--(?P<name>[\w-]+)\s*:\s*(?P<value>[^;]+);")
 _HEX = re.compile(r"#([0-9a-fA-F]{6})")
 _RGB = re.compile(r"rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)\s*(?:[,/]\s*([\d.]+)(%?))?\s*\)")
 _TRIPLET = re.compile(r"\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*")
-
-
-# Colour science
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,9 +101,6 @@ def contrast(a: Rgb, b: Rgb) -> float:
     """
     hi, lo = sorted((luminance(a), luminance(b)), reverse=True)
     return (hi + 0.05) / (lo + 0.05)
-
-
-# Paints and pairs
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,15 +177,14 @@ def stack(*paints: Paint) -> Layers:
     return paints
 
 
-# Inventory. Keep in step with crates/zeabur-identity-ui/templates and ui/styles/app.css.
+# Keep in step with the templates.
 
 PAGE_BG = stack(paint("page"))  # base.html body: bg-zGray-50 dark:bg-zGray-950
 CARD = stack(paint("card"))  # ui.html card: bg-card
 ALERT = stack(paint("card"), paint("v2-surface-hover"))  # alert default: bg-v2-surface-hover
 ALERT_WARN = stack(paint("card"), paint("amber", 0.08))  # alert warn: bg-amber/8
 ALERT_FAIL = stack(paint("card"), paint("zOrangered-500", 0.06))  # alert destructive: bg-zOrangered-500/6
-# button-primary (utilities.css): a gradient from #8340ff to #7327ff, hover #7a33ff to #6820f0; the
-# lightest stop is the worst case for its white text.
+# button-primary: the lightest gradient stop.
 PRIMARY_LIGHTEST = stack(paint("#8340ff"))
 
 COMMON: tuple[Pair, ...] = (
@@ -244,7 +218,7 @@ COMMON: tuple[Pair, ...] = (
          source="design system base.css :focus-visible, base.html language links"),
 )
 
-# button-secondary (utilities.css): light-dark() gradients; the hover's lower stop is the worst case.
+# button-secondary: the hover's lower gradient stop.
 LIGHT: tuple[Pair, ...] = (
     Pair(name="secondary button text", kind=Kind.TEXT, fg=paint("text-main"), bg=stack(paint("#ebebec")),
          source="upstream.html, button_cls secondary (button-secondary), hover stop #ebebec"),
@@ -256,9 +230,6 @@ DARK: tuple[Pair, ...] = (
 )
 
 PAIRS: dict[str, tuple[Pair, ...]] = {"light": COMMON + LIGHT, "dark": COMMON + DARK}
-
-
-# Input and output
 
 
 def split_top_level(text: str) -> list[str]:

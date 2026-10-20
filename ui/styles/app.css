@@ -1,19 +1,13 @@
-/* Zeabur Identity sign-in pages. Built with `scripts/build-ui.sh`; output committed in crates/zeabur-identity-ui/assets.
-   Theme: Zeabur's design system (vendor/zeabur-design-system, its server-rendered `tokens.css` entry), dark
-   mode following the operating system. The design system's tokens meet WCAG 2.2 AA for the pairs the pages
-   draw (`.claude/skills/zeabur-identity-ui/contrast.py` checks them); the line marked A11Y is a local addition. */
+/* Built by scripts/build-ui.sh into crates/zeabur-identity-ui/assets, which are committed. */
 @import "tailwindcss" source(none);
 @source "../../crates/zeabur-identity-ui/templates";
 @import "./vendor/zeabur-design-system/tokens.css";
 
-/* Follow the operating system: `dark:` by media query, the tokens (light-dark()) by color-scheme. */
 @custom-variant dark (@media (prefers-color-scheme: dark));
 :root {
   color-scheme: light dark;
 }
 
-/* Geist, served from the embedded assets (the design system's vendor/geist). Chinese text falls back to
-   the system's CJK font (the design system's font stacks). */
 @font-face {
   font-family: "Geist";
   font-style: normal;
@@ -22,7 +16,7 @@
   src: url(/assets/Geist-Variable.woff2) format("woff2");
 }
 
-/* A11Y (forced colours): keep a visible focus outline in the system colours. */
+/* Fields show focus by their border, which forced colours override. */
 @media (forced-colors: active) {
   :focus-visible,
   :is(input, textarea, select):focus-visible {

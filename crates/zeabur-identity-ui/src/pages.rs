@@ -127,10 +127,8 @@ pub fn error_page(lang: Lang, detail: &str) -> Response {
 /// Renders the sign-in page. Without a pending request (`client` is `None`) it explains that
 /// there is nothing to sign in to; `providers` adds "Continue with …" buttons.
 ///
-/// `elevation` is the lifetime of the elevated token when the request asks for one. The page
-/// then says so before the passkey prompt: otherwise approving elevated access looks exactly
-/// like a routine sign-in, and prompt fatigue works against the user. The text stays generic,
-/// since the user's elevated groups are unknown before sign-in.
+/// `elevation` is the elevated token's lifetime when the request asks for one; the page then
+/// says so before the passkey prompt.
 #[must_use]
 pub fn login_page(
     lang: Lang,

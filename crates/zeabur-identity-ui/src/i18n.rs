@@ -1,11 +1,6 @@
 //! Interface languages: English, Traditional Chinese (Taiwan), Simplified Chinese.
 //!
-//! Messages are a typed struct with one constant per language, so a missing translation is a
-//! compile error. A runtime catalogue such as Fluent would add lookup and plural rules that a
-//! few dozen fixed strings without plurals or gendered text do not need. Wording and terms follow
-//! Zeabur's (`docs/wording.md` in the Zeabur repository): Traditional Chinese is written for
-//! Taiwan and keeps "Passkey" in Latin letters; Simplified Chinese is written for mainland China
-//! and uses 通行密钥.
+//! Wording and terms follow `docs/wording.md` in the Zeabur repository.
 
 /// A supported interface language.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

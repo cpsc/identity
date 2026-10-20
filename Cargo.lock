@@ -1284,237 +1284,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zeabur-identity"
-version = "0.0.1"
-dependencies = [
- "axum",
- "bytes",
- "clap",
- "zeabur-identity-core",
- "zeabur-identity-k8s",
- "zeabur-identity-keys",
- "zeabur-identity-oauth",
- "zeabur-identity-signin",
- "zeabur-identity-store",
- "zeabur-identity-tls",
- "zeabur-identity-ui",
- "k8s-openapi",
- "kube",
- "rustls",
- "thiserror 2.0.21",
- "tokio",
- "tokio-rustls",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "zeabur-identity-core"
-version = "0.0.1"
-dependencies = [
- "aws-lc-rs",
- "base64 0.22.1",
- "http",
- "proptest",
- "serde",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "zeabur-identity-e2e"
-version = "0.0.1"
-dependencies = [
- "axum",
- "form_urlencoded",
- "zeabur-identity-core",
- "zeabur-identity-k8s",
- "zeabur-identity-oauth",
- "zeabur-identity-signin",
- "zeabur-identity-test-support",
- "http-body-util",
- "hyper",
- "hyper-util",
- "k8s-openapi",
- "kube",
- "passkey",
- "serde_json",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "zeabur-identity-k8s"
-version = "0.0.1"
-dependencies = [
- "aws-lc-rs",
- "axum",
- "base64 0.22.1",
- "clap",
- "form_urlencoded",
- "futures-util",
- "zeabur-identity-core",
- "zeabur-identity-keys",
- "zeabur-identity-oauth",
- "zeabur-identity-store",
- "zeabur-identity-tls",
- "http-body-util",
- "k8s-openapi",
- "kube",
- "proptest",
- "rustls",
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "time",
- "tokio",
- "tokio-rustls",
- "tower",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "zeabur-identity-keys"
-version = "0.0.1"
-dependencies = [
- "aws-lc-rs",
- "base64 0.22.1",
- "bytes",
- "zeabur-identity-core",
- "jsonwebtoken",
- "proptest",
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "zeabur-identity-oauth"
-version = "0.0.1"
-dependencies = [
- "axum",
- "base64 0.22.1",
- "bytes",
- "form_urlencoded",
- "zeabur-identity-core",
- "zeabur-identity-keys",
- "zeabur-identity-store",
- "zeabur-identity-test-support",
- "zeabur-identity-ui",
- "http-body-util",
- "jsonwebtoken",
- "proptest",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "tower",
- "tracing",
-]
-
-[[package]]
-name = "zeabur-identity-signin"
-version = "0.0.1"
-dependencies = [
- "async-trait",
- "axum",
- "base64 0.22.1",
- "bytes",
- "form_urlencoded",
- "zeabur-identity-core",
- "zeabur-identity-keys",
- "zeabur-identity-oauth",
- "zeabur-identity-store",
- "zeabur-identity-test-support",
- "zeabur-identity-ui",
- "http-body-util",
- "hyper",
- "hyper-rustls",
- "hyper-util",
- "passkey",
- "passkey-types",
- "public-suffix",
- "rustls",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "tower",
- "tracing",
- "url",
- "webauthn-rs",
-]
-
-[[package]]
-name = "zeabur-identity-store"
-version = "0.0.1"
-dependencies = [
- "zeabur-identity-core",
- "zeabur-identity-keys",
- "schemars 1.2.2",
- "serde",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "zeabur-identity-test-support"
-version = "0.0.1"
-dependencies = [
- "async-trait",
- "passkey",
- "public-suffix",
- "serde_json",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "zeabur-identity-tls"
-version = "0.0.1"
-dependencies = [
- "axum",
- "zeabur-identity-core",
- "rcgen",
- "rustls",
- "rustls-native-certs",
- "thiserror 2.0.21",
- "time",
- "tokio",
- "tokio-rustls",
- "tracing",
-]
-
-[[package]]
-name = "zeabur-identity-ui"
-version = "0.0.1"
-dependencies = [
- "askama",
- "axum",
- "form_urlencoded",
- "zeabur-identity-core",
- "tracing",
-]
-
-[[package]]
-name = "zeabur-identityctl"
-version = "0.0.1"
-dependencies = [
- "clap",
- "zeabur-identity-core",
- "zeabur-identity-k8s",
- "zeabur-identity-keys",
- "kube",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "getrandom"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4547,6 +4316,237 @@ dependencies = [
  "quote",
  "syn 3.0.6",
  "synstructure 0.14.0",
+]
+
+[[package]]
+name = "zeabur-identity"
+version = "0.0.1"
+dependencies = [
+ "axum",
+ "bytes",
+ "clap",
+ "k8s-openapi",
+ "kube",
+ "rustls",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "zeabur-identity-core",
+ "zeabur-identity-k8s",
+ "zeabur-identity-keys",
+ "zeabur-identity-oauth",
+ "zeabur-identity-signin",
+ "zeabur-identity-store",
+ "zeabur-identity-tls",
+ "zeabur-identity-ui",
+]
+
+[[package]]
+name = "zeabur-identity-core"
+version = "0.0.1"
+dependencies = [
+ "aws-lc-rs",
+ "base64 0.22.1",
+ "http",
+ "proptest",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "zeabur-identity-e2e"
+version = "0.0.1"
+dependencies = [
+ "axum",
+ "form_urlencoded",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "k8s-openapi",
+ "kube",
+ "passkey",
+ "serde_json",
+ "tokio",
+ "url",
+ "zeabur-identity-core",
+ "zeabur-identity-k8s",
+ "zeabur-identity-oauth",
+ "zeabur-identity-signin",
+ "zeabur-identity-test-support",
+]
+
+[[package]]
+name = "zeabur-identity-k8s"
+version = "0.0.1"
+dependencies = [
+ "aws-lc-rs",
+ "axum",
+ "base64 0.22.1",
+ "clap",
+ "form_urlencoded",
+ "futures-util",
+ "http-body-util",
+ "k8s-openapi",
+ "kube",
+ "proptest",
+ "rustls",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tokio-rustls",
+ "tower",
+ "tracing",
+ "url",
+ "zeabur-identity-core",
+ "zeabur-identity-keys",
+ "zeabur-identity-oauth",
+ "zeabur-identity-store",
+ "zeabur-identity-tls",
+]
+
+[[package]]
+name = "zeabur-identity-keys"
+version = "0.0.1"
+dependencies = [
+ "aws-lc-rs",
+ "base64 0.22.1",
+ "bytes",
+ "jsonwebtoken",
+ "proptest",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "zeabur-identity-core",
+]
+
+[[package]]
+name = "zeabur-identity-oauth"
+version = "0.0.1"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "form_urlencoded",
+ "http-body-util",
+ "jsonwebtoken",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tower",
+ "tracing",
+ "zeabur-identity-core",
+ "zeabur-identity-keys",
+ "zeabur-identity-store",
+ "zeabur-identity-test-support",
+ "zeabur-identity-ui",
+]
+
+[[package]]
+name = "zeabur-identity-signin"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "form_urlencoded",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
+ "passkey",
+ "passkey-types",
+ "public-suffix",
+ "rustls",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tower",
+ "tracing",
+ "url",
+ "webauthn-rs",
+ "zeabur-identity-core",
+ "zeabur-identity-keys",
+ "zeabur-identity-oauth",
+ "zeabur-identity-store",
+ "zeabur-identity-test-support",
+ "zeabur-identity-ui",
+]
+
+[[package]]
+name = "zeabur-identity-store"
+version = "0.0.1"
+dependencies = [
+ "schemars 1.2.2",
+ "serde",
+ "thiserror 2.0.21",
+ "zeabur-identity-core",
+ "zeabur-identity-keys",
+]
+
+[[package]]
+name = "zeabur-identity-test-support"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "passkey",
+ "public-suffix",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "zeabur-identity-tls"
+version = "0.0.1"
+dependencies = [
+ "axum",
+ "rcgen",
+ "rustls",
+ "rustls-native-certs",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+ "zeabur-identity-core",
+]
+
+[[package]]
+name = "zeabur-identity-ui"
+version = "0.0.1"
+dependencies = [
+ "askama",
+ "axum",
+ "form_urlencoded",
+ "tracing",
+ "zeabur-identity-core",
+]
+
+[[package]]
+name = "zeabur-identityctl"
+version = "0.0.1"
+dependencies = [
+ "clap",
+ "kube",
+ "serde_json",
+ "tokio",
+ "zeabur-identity-core",
+ "zeabur-identity-k8s",
+ "zeabur-identity-keys",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 /* Zeabur Identity sign-in pages. Built with `scripts/build-ui.sh`; output committed in crates/zeabur-identity-ui/assets.
    Theme: Zeabur's design system (vendor/zeabur-design-system, its server-rendered `tokens.css` entry), dark
-   mode following the operating system. Lines marked A11Y are local WCAG 2.2 fixes (contrast table in the
-   zeabur-identity-ui docs; `.claude/skills/zeabur-identity-ui/contrast.py` checks them). */
+   mode following the operating system. The design system's tokens meet WCAG 2.2 AA for the pairs the pages
+   draw (`.claude/skills/zeabur-identity-ui/contrast.py` checks them); the line marked A11Y is a local addition. */
 @import "tailwindcss" source(none);
 @source "../../crates/zeabur-identity-ui/templates";
 @import "./vendor/zeabur-design-system/tokens.css";
@@ -20,20 +20,6 @@
   font-display: swap;
   font-weight: 100 900;
   src: url(/assets/Geist-Variable.woff2) format("woff2");
-}
-
-:root {
-  /* A11Y (1.4.11): a field's edge is the design system's --v2-border, 1.19:1 light and 1.27:1 dark
-     against the card; zGray-500 gives 4.19:1 light and 4.22:1 dark. */
-  --input: rgb(var(--zGray-500));
-}
-
-/* A11Y (2.4.7, 2.4.13): the design system's focus outline is the ring colour at 40 %, 2.27:1 light and
-   1.84:1 dark against the card; drawn solid, 2px wide and 2px out, it gives 7.06:1 and 5.09:1 (6.44:1
-   and 5.54:1 against the page). Fields keep their own focus edge (border-ring). */
-:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
 }
 
 /* A11Y (forced colours): keep a visible focus outline in the system colours. */

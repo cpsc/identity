@@ -27,8 +27,8 @@
 
 /* Geist at 13px on 20px. */
 body {
-  font-size: var(--type-body);
-  line-height: var(--type-body-leading);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -40,16 +40,17 @@ html {
 
 /* Zeabur's selection: a violet wash. */
 ::selection {
-  background: color-mix(in srgb, rgb(var(--zViolet-500)) 22%, transparent);
+  background: var(--selection);
 }
 
-/* Keyboard focus is a soft violet ring outside the control (Zeabur's `ring-2 ring-zViolet-500/40`).
-   Fields show focus by their edge instead (their own `focus:` classes), so they draw no ring. */
+/* Keyboard focus is a solid 2px violet outline outside the control (`--focus-ring`, 3:1 or more
+   against what is around it; the dashboard's 40% ring was about 2.3:1). Fields show focus by
+   their edge instead (their own `focus:` classes), so they draw no ring. */
 :focus {
   outline: none;
 }
 :focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--ring) 40%, transparent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 :is(input, textarea, select, [contenteditable]):focus-visible,

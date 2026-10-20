@@ -238,10 +238,10 @@ COMMON: tuple[Pair, ...] = (
          source="input_cls border-input"),
     Pair(name="input focus edge against card", kind=Kind.FOCUS, fg=paint("ring"), bg=CARD,
          source="input_cls focus:border-ring"),
-    Pair(name="focus outline against card", kind=Kind.FOCUS, fg=paint("ring"), bg=CARD,
-         source="app.css :focus-visible outline var(--ring)"),
-    Pair(name="focus outline against page", kind=Kind.FOCUS, fg=paint("ring"), bg=PAGE_BG,
-         source="app.css :focus-visible, base.html language links"),
+    Pair(name="focus outline against card", kind=Kind.FOCUS, fg=paint("focus-ring"), bg=CARD,
+         source="design system base.css :focus-visible outline var(--focus-ring)"),
+    Pair(name="focus outline against page", kind=Kind.FOCUS, fg=paint("focus-ring"), bg=PAGE_BG,
+         source="design system base.css :focus-visible, base.html language links"),
 )
 
 # button-secondary (utilities.css): light-dark() gradients; the hover's lower stop is the worst case.

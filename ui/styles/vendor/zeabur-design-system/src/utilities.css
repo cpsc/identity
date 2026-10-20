@@ -1,132 +1,140 @@
 /* ── Utilities ── the type roles, Zeabur's button surfaces and navigation rows (for pages that are
    not React too), motion, patterns and the brand marks. Values come from src/tokens.css. */
 
-/* The type roles. */
+/* The type roles: each sets its `--text-<role>` size, line height, and weight and tracking where
+   the role has them (src/tokens.css). Components and apps write these rather than `text-<role>`,
+   which `cn` would take for a colour. */
 
 /* A page's heading: 24px at 600. */
 @utility type-title {
-  font-size: var(--type-title);
-  line-height: var(--type-title-leading);
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: var(--text-title);
+  line-height: var(--text-title--line-height);
+  font-weight: var(--text-title--font-weight);
+  letter-spacing: var(--text-title--letter-spacing);
 }
 /* An object's name at the head of its page (a project, a service): 20px at 500. */
 @utility type-name {
-  font-size: var(--type-name);
-  line-height: var(--type-name-leading);
-  font-weight: 500;
+  font-size: var(--text-name);
+  line-height: var(--text-name--line-height);
+  font-weight: var(--text-name--font-weight);
 }
 /* A dialog's, a card's or a section's heading: 16px at 600. */
 @utility type-heading {
-  font-size: var(--type-heading);
-  line-height: var(--type-heading-leading);
-  font-weight: 600;
+  font-size: var(--text-heading);
+  line-height: var(--text-heading--line-height);
+  font-weight: var(--text-heading--font-weight);
 }
-/* Body text and navigation: 13px. */
+/* Body text and navigation: 13px on 20. */
 @utility type-body {
-  font-size: var(--type-body);
-  line-height: var(--type-body-leading);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
 }
 /* Descriptions, meta, a table's heading: 12px. */
 @utility type-meta {
-  font-size: var(--type-meta);
-  line-height: var(--type-meta-leading);
+  font-size: var(--text-meta);
+  line-height: var(--text-meta--line-height);
 }
 /* A section label over a group of rows (the sidebar's, a settings page's): 11px, uppercase, wide
    tracking, in the tertiary colour. */
 @utility type-label {
-  font-size: var(--type-label);
-  line-height: var(--type-label-leading);
-  font-weight: 500;
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  font-weight: var(--text-label--font-weight);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--text-label--letter-spacing);
   color: var(--text-tertiary);
 }
 /* Hints, counts, a person's email under their name: 11px. */
 @utility type-micro {
-  font-size: var(--type-micro);
-  line-height: var(--type-micro-leading);
+  font-size: var(--text-micro);
+  line-height: var(--text-micro--line-height);
 }
-/* The smallest text: counts in a tab's bubble, chart axes, key hints. Never a sentence. */
+/* The smallest text: a badge, counts in a tab's bubble, chart axes. Never a sentence. */
 @utility type-nano {
-  font-size: var(--type-nano);
-  line-height: var(--type-nano-leading);
+  font-size: var(--text-nano);
+  line-height: var(--text-nano--line-height);
+}
+/* A key cap's keys (Kbd): 10px on 15, 500. */
+@utility type-kbd {
+  font-size: var(--text-kbd);
+  line-height: var(--text-kbd--line-height);
+  font-weight: var(--text-kbd--font-weight);
 }
 /* A key figure (Stat): 20px at 500. */
 @utility type-figure {
-  font-size: var(--type-figure);
-  line-height: var(--type-figure-leading);
-  font-weight: 500;
+  font-size: var(--text-figure);
+  line-height: var(--text-figure--line-height);
+  font-weight: var(--text-figure--font-weight);
 }
-/* Machine values only: names, images, hosts, keys. Never labels. */
+/* Machine values only: names, images, hosts, keys. Never labels. Keeps the line height around it. */
 @utility type-mono {
   font-family: var(--font-mono);
-  font-size: var(--type-mono);
+  font-size: var(--text-mono);
 }
 
 /* Zeabur's button surfaces: a vertical gradient, a light inner edge (2px, its bottom side clear)
    and a one-pixel outline drawn as a shadow. The Button component uses them; a page without React
    puts one on a <button> with its own size (`h-9 rounded-md px-4 text-sm font-medium`). */
 @utility button-primary {
-  color: #fff;
-  background-image: linear-gradient(to bottom, #8340ff, #7327ff);
-  border: 2px solid rgb(255 255 255 / 0.3);
+  color: var(--on-primary);
+  background-image: linear-gradient(to bottom, var(--primary-from), var(--primary-to));
+  border: 2px solid var(--button-edge);
   border-bottom: 1px solid transparent;
   background-origin: border-box;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.13);
+  box-shadow: 0 0 0 1px var(--button-outline);
   &:hover:not(:disabled) {
-    background-image: linear-gradient(to bottom, #7a33ff, #6820f0);
+    background-image: linear-gradient(
+      to bottom,
+      var(--primary-hover-from),
+      var(--primary-hover-to)
+    );
   }
 }
 @utility button-secondary {
   color: var(--text-main);
-  background-image: linear-gradient(
-    to bottom,
-    light-dark(#ffffff, #2c2c30),
-    light-dark(#f5f5f5, #222225)
-  );
-  border: 2px solid light-dark(#ffffff, rgb(255 255 255 / 0.06));
+  background-image: linear-gradient(to bottom, var(--secondary-from), var(--secondary-to));
+  border: 2px solid var(--secondary-edge);
   border-bottom: 1px solid transparent;
   background-origin: border-box;
-  box-shadow: 0 0 0 1px light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.5));
+  box-shadow: 0 0 0 1px var(--secondary-outline);
   &:hover:not(:disabled),
   &[aria-expanded="true"],
   &[data-popup-open] {
     background-image: linear-gradient(
       to bottom,
-      light-dark(#f5f5f5, #34343a),
-      light-dark(#ebebec, #2a2a2e)
+      var(--secondary-hover-from),
+      var(--secondary-hover-to)
     );
   }
 }
 @utility button-destructive {
-  color: #fff;
-  background-image: linear-gradient(to bottom, #ff5b5b, #e5484d);
-  border: 2px solid rgb(255 255 255 / 0.3);
+  color: var(--on-primary);
+  background-image: linear-gradient(to bottom, var(--destructive-from), var(--destructive-to));
+  border: 2px solid var(--button-edge);
   border-bottom: 1px solid transparent;
   background-origin: border-box;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.13);
+  box-shadow: 0 0 0 1px var(--button-outline);
   &:hover:not(:disabled) {
-    background-image: linear-gradient(to bottom, #f04749, #d83a3e);
+    background-image: linear-gradient(
+      to bottom,
+      var(--destructive-hover-from),
+      var(--destructive-hover-to)
+    );
   }
 }
 @utility button-secondary-destructive {
-  color: rgb(var(--zOrangered-500));
-  background-image: linear-gradient(
-    to bottom,
-    light-dark(#ffffff, #2c2c30),
-    light-dark(#f5f5f5, #222225)
-  );
-  border: 2px solid light-dark(#ffffff, rgb(255 255 255 / 0.06));
+  color: var(--danger);
+  background-image: linear-gradient(to bottom, var(--secondary-from), var(--secondary-to));
+  border: 2px solid var(--secondary-edge);
   border-bottom: 1px solid transparent;
   background-origin: border-box;
-  box-shadow: 0 0 0 1px light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.5));
+  box-shadow: 0 0 0 1px var(--secondary-outline);
   &:hover:not(:disabled) {
-    color: rgb(var(--zOrangered-600));
+    color: var(--danger-hover);
     background-image: linear-gradient(
       to bottom,
-      light-dark(#fef2f2, #3a2626),
-      light-dark(#fee2e2, #2d1e1e)
+      var(--secondary-danger-from),
+      var(--secondary-danger-to)
     );
   }
 }
@@ -134,17 +142,22 @@
 /* The raised white pill of the current navigation row (the sidebar's), and of a segmented
    control's chosen item: a faint gradient, a white edge and soft shadows to both sides. */
 @utility nav-active {
-  border-color: light-dark(#ffffff, rgb(255 255 255 / 0.1));
-  background-image: linear-gradient(
-    to bottom,
-    light-dark(#fefefe, rgb(var(--zGray-800))),
-    light-dark(#f8f8f8, rgb(var(--zGray-850)))
-  );
+  border-color: var(--nav-pill-edge);
+  background-image: linear-gradient(to bottom, var(--nav-pill-from), var(--nav-pill-to));
   box-shadow:
-    0 2px 4px light-dark(rgb(0 0 0 / 0.05), rgb(0 0 0 / 0.35)),
-    0 0 0 1px light-dark(rgb(0 0 0 / 0.04), rgb(255 255 255 / 0.06)),
-    -2px 0 5px -1px light-dark(rgb(0 0 0 / 0.045), rgb(0 0 0 / 0.32)),
-    2px 0 5px -1px light-dark(rgb(0 0 0 / 0.045), rgb(0 0 0 / 0.32));
+    0 2px 4px var(--nav-pill-drop),
+    0 0 0 1px var(--nav-pill-ring),
+    -2px 0 5px -1px var(--nav-pill-side),
+    2px 0 5px -1px var(--nav-pill-side);
+}
+/* The current child of a folding menu: the same pill without the side shadows, which would spill
+   over the tree rail (the dashboard's sub-item). */
+@utility nav-active-sub {
+  border-color: var(--nav-pill-edge);
+  background-image: linear-gradient(to bottom, var(--nav-pill-from), var(--nav-pill-to));
+  box-shadow:
+    0 2px 4px var(--nav-pill-drop),
+    0 0 0 1px var(--nav-pill-ring);
 }
 /* The 3px violet bar of the current row in a tree (a folding menu's child). */
 @utility nav-accent-bar {
@@ -153,7 +166,7 @@
   height: 1rem;
   flex-shrink: 0;
   border-radius: 1px;
-  background-image: linear-gradient(to bottom, #8340ff, #7327ff);
+  background-image: linear-gradient(to bottom, var(--primary-from), var(--primary-to));
 }
 
 /* A 1.5px ring, between `ring-1` and `ring-2`: the outline of an idle marker (a scheduled job, an
@@ -269,12 +282,9 @@
 /* Zeabur's frosted surface for tooltips and dropdown lists: translucent white (zGray-900 on dark)
    over a blur, a light edge and a soft shadow. */
 @utility surface-glass {
-  border: 1px solid light-dark(rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.06));
-  background-color: light-dark(rgb(255 255 255 / 0.65), rgb(25 24 27 / 0.65));
-  box-shadow:
-    0 0 0 1px light-dark(rgb(0 0 0 / 0.04), rgb(255 255 255 / 0.04)),
-    0 10px 15px -3px light-dark(rgb(0 0 0 / 0.08), rgb(0 0 0 / 0.4)),
-    0 4px 6px -4px light-dark(rgb(0 0 0 / 0.08), rgb(0 0 0 / 0.4));
+  border: 1px solid var(--glass-edge);
+  background-color: var(--glass);
+  box-shadow: var(--shadow-glass);
   backdrop-filter: blur(16px) saturate(1.5);
   -webkit-backdrop-filter: blur(16px) saturate(1.5);
 }
@@ -289,3 +299,41 @@
     opacity: 1;
   }
 }
+
+/* A white icon on a tile fading towards its foot. */
+@utility mask-fade-down {
+  mask-image: linear-gradient(to bottom, black, transparent);
+}
+
+/* SegmentedBar's cells: the bar's colours (`--bar`, one gradient with hard stops) cut into cells by
+   a repeating mask, each `--cell` wide with a gap as wide. */
+@utility segmented-cells {
+  background-image: var(--bar);
+  mask-image: repeating-linear-gradient(
+    to right,
+    black 0 var(--cell),
+    transparent var(--cell) calc(var(--cell) * 2)
+  );
+}
+
+/* A chart tooltip's dashed indicator: a 1.5px dashed edge. */
+@utility indicator-dashed {
+  border-width: 1.5px;
+  border-style: dashed;
+}
+
+/* Card's inner padding, which its parts read as `px-(--card-px)`: 20px, 16px at `size="sm"`. */
+@utility card-padding {
+  --card-px: --spacing(5);
+  &[data-size="sm"] {
+    --card-px: --spacing(4);
+  }
+}
+
+/* A ToggleGroup's gap, from the `--gap` its `spacing` prop sets (in spacing steps). */
+@utility toggle-gap {
+  gap: --spacing(var(--gap));
+}
+
+/* Inside vertical Tabs: its list is a column of the dashboard's sidebar rows. */
+@custom-variant tabs-vertical (&:is(:where(.group\/tabs):where([data-orientation="vertical"]) *));

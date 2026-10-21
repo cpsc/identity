@@ -49,7 +49,7 @@ use zeabur_identity_store::{
     Client, CreateGrant, Directory, Grant, GrantStore, NewGrant, Rotation, User,
 };
 use zeabur_identity_ui::i18n::Lang;
-use zeabur_identity_ui::pages::{accept_language, error_page};
+use zeabur_identity_ui::pages::{ErrorReason, accept_language, error_page};
 
 use super::authorize::{self, Authentication, Flow, Rejection, response_location};
 use super::client_auth::{AuthFailure, authenticate};
@@ -108,9 +108,9 @@ fn redirect(location: &str) -> Response {
 
 /// The error page for requests whose client or redirect URI cannot be trusted
 /// (RFC 6749 §4.1.2.1): shown to the user, never redirected.
-fn local_error(lang: Lang, error: &OAuthError) -> Response {
-    let detail = format!("{} ({})", error.error_description, error.error.as_str());
-    error_page(lang, &detail)
+fn local_error(lang: Lang, reason: ErrorReason, error: &OAuthError) -> Response {
+    let detail = format!("{}: {}", error.error.as_str(), error.error_description);
+    error_page(lang, reason, &detail)
 }
 
 fn is_form(headers: &HeaderMap) -> bool {
@@ -145,7 +145,7 @@ async fn authorize_post<D: Directory, G: GrantStore, C: Clock>(
 ) -> Response {
     let lang = Lang::negotiate(None, accept_language(&headers));
     if !is_form(&headers) {
-        return local_error(lang, &NOT_FORM);
+        return local_error(lang, ErrorReason::MalformedRequest, &NOT_FORM);
     }
     authorize(&server, lang, &body).await
 }
@@ -166,7 +166,7 @@ async fn authorize<D: Directory, G: GrantStore, C: Clock>(
 ) -> Response {
     let params = match Params::parse(input) {
         Ok(params) => params,
-        Err(error) => return local_error(lang, &error),
+        Err(error) => return local_error(lang, ErrorReason::MalformedRequest, &error),
     };
     // OIDC Core §3.1.2.1 `ui_locales`: the client's preference wins over the browser's.
     let lang = params
@@ -177,7 +177,7 @@ async fn authorize<D: Directory, G: GrantStore, C: Clock>(
         None => params,
         Some(uri) => match resolve_pushed(server, &params, uri) {
             Ok(params) => params,
-            Err(error) => return local_error(lang, &error),
+            Err(error) => return local_error(lang, ErrorReason::RequestExpired, &error),
         },
     };
     let client = match params.get("client_id") {
@@ -186,14 +186,21 @@ async fn authorize<D: Directory, G: GrantStore, C: Clock>(
             Ok(client) => client,
             Err(error) => {
                 tracing::error!(%error, reason = "storage_failed", "client lookup failed");
-                return local_error(lang, &OAuthError::server());
+                return local_error(lang, ErrorReason::ServerError, &OAuthError::server());
             }
         },
     };
     let elevation = server.lifetimes.elevated_token.is_some();
     let request = match authorize::validate(&params, client.as_ref(), elevation) {
         Ok(request) => request,
-        Err(Rejection::Local(error)) => return local_error(lang, &error),
+        Err(Rejection::Local(error)) => {
+            let reason = if client.is_some() {
+                ErrorReason::RedirectUri
+            } else {
+                ErrorReason::UnknownClient
+            };
+            return local_error(lang, reason, &error);
+        }
         Err(Rejection::Redirect {
             redirect_uri,
             state,
@@ -221,7 +228,7 @@ async fn authorize<D: Directory, G: GrantStore, C: Clock>(
         .ok()
         .and_then(|json| server.sealer.seal(FLOW_PURPOSE, &json).ok());
     let Some(sealed) = sealed else {
-        return local_error(lang, &OAuthError::server());
+        return local_error(lang, ErrorReason::ServerError, &OAuthError::server());
     };
     let mut response = redirect(LOGIN_PATH);
     let cookie = format!(

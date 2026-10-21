@@ -42,10 +42,10 @@ use zeabur_identity_store::{
     external_credential_name,
 };
 use zeabur_identity_ui::i18n::Lang;
-use zeabur_identity_ui::pages::{accept_language, error_page, notice_page};
+use zeabur_identity_ui::pages::{ErrorReason, accept_language, error_page, notice_page};
 
 use self::http::HttpClient;
-use self::provider::{Exchange, Kind, Provider};
+use self::provider::{Exchange, Kind, Provider, UpstreamError};
 use crate::problem::Problem;
 use crate::{
     NO_REQUEST, SignIn, check_request, clear_cookie, cookie, internal, json, parse,
@@ -221,11 +221,30 @@ where
     result.unwrap_or_else(IntoResponse::into_response)
 }
 
-/// A failed callback: an HTML page in the user's language, never the provider's text.
-fn failure(lang: Lang, detail: &str) -> Response {
-    let mut response = error_page(lang, detail);
+/// A failed callback: an HTML page in the user's language, never the provider's text. The
+/// detail names the audit log's `reason`, so an administrator can find the matching entry.
+fn failure(lang: Lang, reason: ErrorReason, detail: &str) -> Response {
+    let mut response = error_page(lang, reason, detail);
     clear_cookie(&mut response, UPSTREAM_COOKIE, "Lax");
     response
+}
+
+/// Why a callback failed: the audit `reason`, what the page says, and a note for the details.
+type Failure = (&'static str, ErrorReason, Option<String>);
+
+/// A provider answer that did not verify. An ID token outside its validity window usually means
+/// this server's clock is off. HTTP errors are not shown: they can carry the provider's text.
+fn verification_failure(error: &UpstreamError) -> Failure {
+    let reason = "provider_verification_failed";
+    match error {
+        UpstreamError::IdToken("expired" | "issued in the future") => {
+            (reason, ErrorReason::ClockSkew, Some(error.to_string()))
+        }
+        UpstreamError::IdToken(_) | UpstreamError::Protocol(_) => {
+            (reason, ErrorReason::ProviderFailed, Some(error.to_string()))
+        }
+        UpstreamError::Http(_) => (reason, ErrorReason::ProviderFailed, None),
+    }
 }
 
 #[expect(
@@ -257,7 +276,7 @@ where
     let mut link_user = None;
     // Keep the protocol checks in order, but emit only after the complete operation has a result.
     // The error carries a controlled reason and the existing localized browser response.
-    let result: Result<Response, (&str, &str)> = async {
+    let result: Result<Response, Failure> = async {
         let params: Vec<(String, String)> =
             form_urlencoded::parse(query.unwrap_or_default().as_bytes())
                 .into_owned()
@@ -273,7 +292,7 @@ where
             .and_then(|json| serde_json::from_slice(&json).ok());
         let pending = pending
             .filter(|p| p.expires_at > now && p.provider == provider)
-            .ok_or(("invalid_pending", m.upstream_failed))?;
+            .ok_or(("invalid_pending", ErrorReason::StateMismatch, None))?;
         event = if pending.link.is_some() {
             "auth.account_link"
         } else {
@@ -281,10 +300,10 @@ where
         };
         let provider = Kind::from_id(&pending.provider)
             .and_then(|kind| service.providers.iter().find(|p| p.kind() == kind))
-            .ok_or(("provider_unavailable", m.upstream_failed))?;
+            .ok_or(("provider_unavailable", ErrorReason::ProviderFailed, None))?;
         // The provider refused, or the user cancelled (RFC 6749 §4.1.2.1).
         let (Some(code), Some(state)) = (param("code"), param("state")) else {
-            return Err(("provider_denied", m.upstream_failed));
+            return Err(("provider_denied", ErrorReason::ProviderDenied, None));
         };
         if !ct_eq(state.as_bytes(), pending.state.as_bytes())
             || service
@@ -292,7 +311,7 @@ where
                 .first_use(&pending.id, pending.expires_at, "", now)
                 != Use::First
         {
-            return Err(("invalid_state", m.upstream_failed));
+            return Err(("invalid_state", ErrorReason::StateMismatch, None));
         }
         let exchange = Exchange {
             code,
@@ -305,7 +324,7 @@ where
             .await
             .map_err(|error| {
                 tracing::warn!(reason = "provider_verification_failed", %error, "upstream provider verification failed");
-                ("provider_verification_failed", m.upstream_failed)
+                verification_failure(&error)
             })?;
         let issuer = provider.kind().issuer();
         let name = external_credential_name(issuer, &subject);
@@ -319,25 +338,25 @@ where
                     %error,
                     "credential lookup failed"
                 );
-                ("credential_lookup_failed", m.generic_error)
+                ("credential_lookup_failed", ErrorReason::ServerError, None)
             })?;
         let Some(token) = pending.link else {
-            let user = linked.ok_or(("account_unlinked", m.upstream_not_linked))?;
+            let user = linked.ok_or(("account_unlinked", ErrorReason::AccountNotLinked, None))?;
             identity = oauth
                 .directory
                 .user(&user)
                 .await
                 .map_err(|error| {
                     tracing::warn!(reason = "user_lookup_failed", %error, "upstream user lookup failed");
-                    ("user_lookup_failed", m.upstream_failed)
+                    ("user_lookup_failed", ErrorReason::ServerError, None)
                 })?;
             let user = identity
                 .as_ref()
-                .ok_or(("user_unavailable", m.upstream_failed))?;
+                .ok_or(("user_unavailable", ErrorReason::UserUnavailable, None))?;
             if user.disabled {
-                return Err(("user_unavailable", m.upstream_failed));
+                return Err(("user_unavailable", ErrorReason::UserUnavailable, None));
             }
-            let flow = cookie(&headers, FLOW_COOKIE).ok_or(("missing_flow", m.upstream_failed))?;
+            let flow = cookie(&headers, FLOW_COOKIE).ok_or(("missing_flow", ErrorReason::RequestExpired, None))?;
             let authentication = Authentication {
                 user: user.name.clone(),
                 auth_time: now,
@@ -346,7 +365,7 @@ where
             let location = complete_authorization(oauth, flow, authentication)
                 .map_err(|error| {
                     tracing::warn!(reason = "authorization_failed", ?error, "upstream authorization failed");
-                    ("authorization_failed", m.upstream_failed)
+                    ("authorization_failed", ErrorReason::RequestExpired, None)
                 })?;
             let mut response = StatusCode::SEE_OTHER.into_response();
             if let Ok(value) = HeaderValue::try_from(location) {
@@ -361,22 +380,24 @@ where
         };
         // Linking with an enrolment link: same single-use gate as enrolling a passkey.
         if linked.is_some() {
-            return Err(("account_already_linked", m.upstream_already_linked));
+            return Err(("account_already_linked", ErrorReason::AccountAlreadyLinked, None));
         }
         let stored = valid_setup_token(&sign_in.setup, &token, now)
             .await
-            .map_err(|_problem| ("invalid_setup", m.setup_invalid))?;
+            .map_err(|_problem| ("invalid_setup", ErrorReason::SetupLinkInvalid, None))?;
         link_user = Some(stored.user.clone());
         match sign_in.setup.consume(&stored).await {
             Ok(Consume::Consumed) => {}
-            Ok(Consume::AlreadyUsed) => return Err(("setup_already_used", m.setup_invalid)),
+            Ok(Consume::AlreadyUsed) => {
+                return Err(("setup_already_used", ErrorReason::SetupLinkInvalid, None));
+            }
             Err(error) => {
                 tracing::error!(
                     reason = "setup_consume_failed",
                     %error,
                     "consuming the enrolment token failed"
                 );
-                return Err(("setup_consume_failed", m.generic_error));
+                return Err(("setup_consume_failed", ErrorReason::ServerError, None));
             }
         }
         let external = NewExternal {
@@ -388,13 +409,18 @@ where
         };
         match sign_in.credentials.link(&external).await {
             Ok(CreateCredential::Created) => {
-                let mut response =
-                    notice_page(lang, m.upstream_linked_title, m.upstream_linked_body);
+                let apps = crate::pages::apps(&oauth.directory).await;
+                let mut response = notice_page(
+                    lang,
+                    m.upstream_linked_title,
+                    m.upstream_linked_body,
+                    &crate::pages::links(&apps),
+                );
                 clear_cookie(&mut response, UPSTREAM_COOKIE, "Lax");
                 Ok(response)
             }
             Ok(CreateCredential::AlreadyExists) => {
-                Err(("account_already_linked", m.upstream_already_linked))
+                Err(("account_already_linked", ErrorReason::AccountAlreadyLinked, None))
             }
             Err(error) => {
                 tracing::error!(
@@ -402,7 +428,7 @@ where
                     %error,
                     "linking the account failed"
                 );
-                Err(("credential_link_failed", m.generic_error))
+                Err(("credential_link_failed", ErrorReason::ServerError, None))
             }
         }
     }
@@ -417,9 +443,14 @@ where
             tracing::info!(target: "zeabur_identity::audit", event, outcome = "success", method = "upstream", provider = normalized_provider, user, subject, "upstream operation completed");
             response
         }
-        Err((reason, detail)) => {
+        Err((reason, kind, note)) => {
             tracing::warn!(target: "zeabur_identity::audit", event, outcome = "failure", method = "upstream", provider = normalized_provider, reason, user, subject, "upstream operation failed");
-            failure(lang, detail)
+            let provider = normalized_provider.unwrap_or("unknown");
+            let mut detail = format!("{reason} ({provider})");
+            if let Some(note) = note {
+                detail = format!("{detail}: {note}");
+            }
+            failure(lang, kind, &detail)
         }
     }
 }

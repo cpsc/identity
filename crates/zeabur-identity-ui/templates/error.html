@@ -1,12 +1,22 @@
 {%- extends "base.html" -%}
 {%- import "ui.html" as ui -%}
-{%- import "icons.html" as icons -%}
-{%- block title %}{{ m.error_title }}{% endblock -%}
+{%- block title %}{{ text.title }}{% endblock -%}
 {%- block content %}
 {% call ui::card() %}
-  {{ ui::card_header(m.error_title, m.error_body) }}
+  {{ ui::card_header(text.title, text.cause) }}
   {% call ui::card_content() %}
-  {% call ui::alert(m.error_detail_label, "destructive", "WarningCircle", live = "") %}<code class="type-mono break-words">{{ detail }}</code>{% endcall %}
+  <div class="flex flex-col gap-4">
+    {%- if new_link %}
+    {{ ui::new_link(m, setup_link_command) }}
+    {%- endif %}
+    {%- if !text.next.is_empty() %}
+    <p class="text-[0.8125rem] leading-5 text-pretty text-main">{{ text.next }}</p>
+    {%- endif %}
+    {%- if let Some(command) = command %}
+    {{ ui::command(command) }}
+    {%- endif %}
+    {% call ui::disclosure(m.error_detail_label) %}{{ ui::command(detail, false) }}{% endcall %}
+  </div>
   {% endcall %}
 {% endcall %}
 {%- endblock %}

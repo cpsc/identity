@@ -2,11 +2,13 @@
 {%- import "icons.html" as icons -%}
 {%- macro buttons(providers, m) -%}
 {%- if !providers.is_empty() %}
-{{ ui::field_separator(m.upstream_or) }}
-<div id="upstream" class="flex flex-col gap-3">
-  {%- for p in providers %}
-  <button type="button" data-provider="{{ p.id }}" class="{{ ui::button_cls("secondary") }} w-full">{{ icons::icon(p.icon) }}{{ m.continue_with.replace("%provider%", p.label) }}</button>
-  {%- endfor %}
+<div id="upstream" class="flex flex-col gap-5">
+  {{ ui::field_separator(m.upstream_or) }}
+  <div class="flex flex-col gap-3">
+    {%- for p in providers %}
+    <button type="button" data-provider="{{ p.id }}" class="{{ ui::button_cls("secondary") }} w-full">{{ icons::icon(p.icon) }}{{ m.continue_with.replace("%provider%", p.label) }}</button>
+    {%- endfor %}
+  </div>
 </div>
 {%- endif %}
 {%- endmacro -%}

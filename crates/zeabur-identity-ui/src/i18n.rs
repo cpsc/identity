@@ -100,6 +100,17 @@ fn qvalue(value: &str) -> Option<u16> {
     }
 }
 
+/// What the error page says for one kind of failure.
+#[derive(Debug, Clone, Copy)]
+pub struct ErrorText {
+    /// The situation.
+    pub title: &'static str,
+    /// What happened, in the reader's terms.
+    pub cause: &'static str,
+    /// What to do next; empty when the page shows the steps another way.
+    pub next: &'static str,
+}
+
 /// Every string the sign-in pages show.
 #[derive(Debug)]
 #[expect(
@@ -145,9 +156,32 @@ pub struct Messages {
     pub upstream_or: &'static str,
     pub upstream_linked_title: &'static str,
     pub upstream_linked_body: &'static str,
-    pub upstream_not_linked: &'static str,
-    pub upstream_failed: &'static str,
-    pub upstream_already_linked: &'static str,
+    pub use_username: &'static str,
+    pub lost_passkey_title: &'static str,
+    pub lost_passkey_body: &'static str,
+    pub lost_passkey_note: &'static str,
+    pub new_link_title: &'static str,
+    pub new_link_body: &'static str,
+    pub new_link_admin: &'static str,
+    pub no_request_apps_body: &'static str,
+    /// `%app%` is replaced with the application's name.
+    pub open_app: &'static str,
+    pub backup_title: &'static str,
+    pub backup_body: &'static str,
+    pub backup_new_link: &'static str,
+    pub err_request_expired: ErrorText,
+    pub err_state_mismatch: ErrorText,
+    pub err_malformed: ErrorText,
+    pub err_unknown_client: ErrorText,
+    pub err_redirect_uri: ErrorText,
+    pub err_provider_denied: ErrorText,
+    pub err_provider_failed: ErrorText,
+    pub err_clock_skew: ErrorText,
+    pub err_account_not_linked: ErrorText,
+    pub err_account_already_linked: ErrorText,
+    pub err_user_unavailable: ErrorText,
+    pub err_setup_link: ErrorText,
+    pub err_server: ErrorText,
 }
 
 /// English.
@@ -169,7 +203,7 @@ pub const EN: Messages = Messages {
     no_request_title: "Nothing to sign in to",
     no_request_body: "Start from the app or command you want to use, such as kubectl. It opens this page when you need to sign in.",
     elevated_title: "Elevated access requested",
-    elevated_body: "%app% is requesting elevated access for %minutes%\u{a0}min. Continue only if you started this sign-in from %app%.",
+    elevated_body: "%app% is requesting elevated access: your admin rights on the cluster, such as changing or deleting what runs on it. It ends by itself after %minutes%\u{a0}min. Continue only if you started this sign-in from %app%.",
     working: "Waiting for the passkey…",
     generic_error: "Unable to complete the request. Try again. If it keeps failing, contact your administrator.",
     setup_title: "Set up a passkey",
@@ -179,7 +213,7 @@ pub const EN: Messages = Messages {
     setup_create: "Create passkey",
     setup_done_title: "Passkey created",
     setup_done_body: "Sign in with this passkey from your app or kubectl. You can close this page.",
-    setup_invalid: "This setup link is invalid, already used, or expired. Ask your cluster administrator for a new link.",
+    setup_invalid: "This setup link is invalid, already used, or expired.",
     setup_missing_token: "This setup link is incomplete. Open the full link, including the part after “#”.",
     error_title: "Unable to continue sign-in",
     error_body: "Go back to the app and start again. If this keeps happening, contact your administrator.",
@@ -188,9 +222,83 @@ pub const EN: Messages = Messages {
     upstream_or: "or",
     upstream_linked_title: "Account linked",
     upstream_linked_body: "You can now sign in with this account. You can close this page.",
-    upstream_not_linked: "This account isn’t linked to any user. Ask your administrator for an invitation link, open it, and link the account there.",
-    upstream_failed: "Unable to finish signing in with the provider. Start again from your app or invitation link.",
-    upstream_already_linked: "This account is already linked to a user. Sign in with it, or link a different account.",
+    use_username: "Use a username",
+    lost_passkey_title: "Lost your passkey?",
+    lost_passkey_body: "An administrator can create a reset link for you in Zeabur, under Members. If you’re the only administrator, run this on the server:",
+    lost_passkey_note: "It removes your old passkeys and signs out every session, then prints a link for a new passkey.",
+    new_link_title: "Get a new link",
+    new_link_body: "If you already created a passkey with this link, sign in with it. Otherwise, whoever runs the server can make a new link by running this there:",
+    new_link_admin: "An administrator can also create one in Zeabur, under Members.",
+    no_request_apps_body: "Open an app below. It brings you here when you need to sign in.",
+    open_app: "Open %app%",
+    backup_title: "Add a backup passkey",
+    backup_body: "Unless this passkey syncs to your other devices, add a second one on another device, such as your phone, so losing one device doesn’t lock you out.",
+    backup_new_link: "This link works only once. For another, an administrator creates an invitation in Zeabur, under Members, or whoever runs the server runs this there:",
+    err_request_expired: ErrorText {
+        title: "This sign-in expired",
+        cause: "The sign-in request timed out, was already used, or was started in another browser.",
+        next: "Go back to the app and sign in again.",
+    },
+    err_state_mismatch: ErrorText {
+        title: "This sign-in doesn’t match this browser",
+        cause: "The provider’s answer doesn’t match a sign-in started here. This happens when the sign-in took more than 10 minutes, started in another browser, or the page was reloaded after it finished.",
+        next: "Start again from the app in this browser. If it keeps happening, allow cookies for this site.",
+    },
+    err_malformed: ErrorText {
+        title: "The app’s sign-in request can’t be used",
+        cause: "The request is incomplete or not in the format Zeabur Identity expects.",
+        next: "Go back to the app and try again. If it keeps happening, the app’s sign-in settings need fixing; the details below say what is wrong.",
+    },
+    err_unknown_client: ErrorText {
+        title: "This app isn’t registered",
+        cause: "Zeabur Identity has no client with the ID the app sent, so it can’t send you back to the app safely.",
+        next: "An administrator needs to register the app as a client, or fix the client ID in the app’s settings.",
+    },
+    err_redirect_uri: ErrorText {
+        title: "This app’s return address isn’t registered",
+        cause: "The app asked to come back to an address that isn’t one of its registered redirect URIs, so Zeabur Identity won’t send you there.",
+        next: "An administrator needs to add the app’s redirect URI to its client registration, or fix it in the app’s settings.",
+    },
+    err_provider_denied: ErrorText {
+        title: "Sign-in was cancelled",
+        cause: "The provider came back without signing you in, for example because you cancelled or denied access there.",
+        next: "Start again from the app, or sign in with a passkey.",
+    },
+    err_provider_failed: ErrorText {
+        title: "Unable to verify the provider’s answer",
+        cause: "Zeabur Identity couldn’t reach the provider, or couldn’t verify what it sent back.",
+        next: "Try again in a minute. If it keeps failing, whoever runs the server can check Zeabur Identity’s logs:",
+    },
+    err_clock_skew: ErrorText {
+        title: "The server’s clock looks wrong",
+        cause: "The provider’s sign-in token looks expired or issued in the future. This happens when the server’s clock is off by more than a minute.",
+        next: "Whoever runs the server can check that its clock is synchronized:",
+    },
+    err_account_not_linked: ErrorText {
+        title: "This account isn’t linked",
+        cause: "No user signs in with this account yet.",
+        next: "Sign in with a passkey, or open an invitation link and link the account there. An administrator creates invitations in Zeabur, under Members.",
+    },
+    err_account_already_linked: ErrorText {
+        title: "This account is already linked",
+        cause: "A user already signs in with this account, so it can’t be linked again.",
+        next: "Sign in with it, or link a different account.",
+    },
+    err_user_unavailable: ErrorText {
+        title: "This user can’t sign in",
+        cause: "The user linked to this account is turned off or no longer exists.",
+        next: "Ask an administrator to turn the user back on, or to invite you again.",
+    },
+    err_setup_link: ErrorText {
+        title: "This setup link no longer works",
+        cause: "The link is invalid, already used, or expired.",
+        next: "",
+    },
+    err_server: ErrorText {
+        title: "Zeabur Identity couldn’t finish",
+        cause: "Something failed on the server, for example Kubernetes didn’t answer in time.",
+        next: "Try again in a minute. If it keeps failing, whoever runs the server can check Zeabur Identity’s logs:",
+    },
 };
 
 /// Traditional Chinese (Taiwan).
@@ -212,7 +320,7 @@ pub const ZH_TW: Messages = Messages {
     no_request_title: "目前沒有登入要求",
     no_request_body: "請從要使用的應用程式或指令（例如 kubectl）開始。需要登入時，它會開啟這個頁面。",
     elevated_title: "要求提升權限",
-    elevated_body: "%app% 要求提升權限，有效 %minutes%\u{a0}分鐘。如果這次登入不是你自己從 %app% 發起的，請不要繼續。",
+    elevated_body: "%app% 要求提升權限，也就是使用你在叢集上的管理員權限，例如變更或刪除叢集上執行的內容。權限會在 %minutes%\u{a0}分鐘後自動失效。如果這次登入不是你自己從 %app% 發起的，請不要繼續。",
     working: "正在等待通行密鑰…",
     generic_error: "無法完成操作。再試一次；如果仍然失敗，請聯絡管理員。",
     setup_title: "設定通行密鑰",
@@ -222,7 +330,7 @@ pub const ZH_TW: Messages = Messages {
     setup_create: "建立通行密鑰",
     setup_done_title: "已建立通行密鑰",
     setup_done_body: "之後在應用程式或 kubectl 中用這個通行密鑰登入。現在可以關閉這個頁面。",
-    setup_invalid: "這個設定連結無效、已使用過或已過期。請向叢集管理員索取新的連結。",
+    setup_invalid: "這個設定連結無效、已使用過或已過期。",
     setup_missing_token: "設定連結不完整。開啟完整的連結，含「#」之後的部分。",
     error_title: "無法繼續登入",
     error_body: "回到應用程式重新開始。如果一直發生，請聯絡管理員。",
@@ -231,9 +339,83 @@ pub const ZH_TW: Messages = Messages {
     upstream_or: "或",
     upstream_linked_title: "已連結帳號",
     upstream_linked_body: "之後可以用這個帳號登入。現在可以關閉這個頁面。",
-    upstream_not_linked: "這個帳號沒有連結到任何使用者。請向管理員索取邀請連結，開啟後在那裡連結這個帳號。",
-    upstream_failed: "無法透過外部帳號完成登入。從應用程式或邀請連結重新開始。",
-    upstream_already_linked: "這個帳號已經連結到某位使用者。直接用它登入，或改連結其他帳號。",
+    use_username: "輸入使用者名稱",
+    lost_passkey_title: "通行密鑰遺失了？",
+    lost_passkey_body: "管理員可以在 Zeabur 的「成員」為你建立重設連結。如果你是唯一的管理員，在伺服器上執行：",
+    lost_passkey_note: "這會移除舊的通行密鑰並登出所有工作階段，再印出建立新通行密鑰的連結。",
+    new_link_title: "取得新的連結",
+    new_link_body: "如果已經用這個連結建立了通行密鑰，直接用它登入。否則，管理伺服器的人可以在伺服器上執行這個指令，產生新的連結：",
+    new_link_admin: "管理員也可以在 Zeabur 的「成員」建立新的連結。",
+    no_request_apps_body: "開啟下方的應用程式，需要登入時它會帶你回到這裡。",
+    open_app: "開啟 %app%",
+    backup_title: "新增備用通行密鑰",
+    backup_body: "如果這個通行密鑰不會同步到你的其他裝置，建議在另一台裝置（例如手機）上再建立一個。這樣遺失一台裝置時，仍然可以登入。",
+    backup_new_link: "這個連結只能用一次。要再取得連結，管理員可以在 Zeabur 的「成員」建立邀請，或由管理伺服器的人在伺服器上執行：",
+    err_request_expired: ErrorText {
+        title: "這次登入已過期",
+        cause: "登入要求已逾時、已使用過，或是在其他瀏覽器開始的。",
+        next: "回到應用程式重新登入。",
+    },
+    err_state_mismatch: ErrorText {
+        title: "登入與這個瀏覽器不符",
+        cause: "外部帳號傳回的結果，與這個瀏覽器開始的登入不符。登入超過 10 分鐘、在其他瀏覽器開始，或完成後重新載入頁面，都會發生這種情況。",
+        next: "在這個瀏覽器中從應用程式重新開始。如果一直發生，請允許這個網站使用 Cookie。",
+    },
+    err_malformed: ErrorText {
+        title: "無法使用應用程式的登入要求",
+        cause: "要求不完整，或格式不符合 Zeabur Identity 的要求。",
+        next: "回到應用程式再試一次。如果一直發生，代表應用程式的登入設定需要修正，下方的詳細資訊會說明問題。",
+    },
+    err_unknown_client: ErrorText {
+        title: "這個應用程式尚未註冊",
+        cause: "Zeabur Identity 找不到應用程式傳來的用戶端 ID，因此無法安全地帶你回到應用程式。",
+        next: "需要管理員把應用程式註冊為用戶端，或修正應用程式設定中的用戶端 ID。",
+    },
+    err_redirect_uri: ErrorText {
+        title: "應用程式的返回位址尚未註冊",
+        cause: "應用程式要求返回的位址不在已註冊的重新導向 URI 中，因此 Zeabur Identity 不會把你送到那裡。",
+        next: "需要管理員把應用程式的重新導向 URI 加入用戶端註冊，或修正應用程式設定。",
+    },
+    err_provider_denied: ErrorText {
+        title: "已取消登入",
+        cause: "外部帳號沒有完成登入就返回了，例如你在那裡取消或拒絕了存取。",
+        next: "從應用程式重新開始，或改用通行密鑰登入。",
+    },
+    err_provider_failed: ErrorText {
+        title: "無法驗證外部帳號的回應",
+        cause: "Zeabur Identity 無法連線到外部帳號的服務，或無法驗證它傳回的內容。",
+        next: "過一分鐘再試。如果仍然失敗，管理伺服器的人可以檢視 Zeabur Identity 的記錄檔：",
+    },
+    err_clock_skew: ErrorText {
+        title: "伺服器的時鐘可能不準",
+        cause: "外部帳號的登入權杖看起來已過期或簽發於未來。伺服器時鐘誤差超過一分鐘時，就會發生這種情況。",
+        next: "管理伺服器的人可以檢查時鐘是否已同步：",
+    },
+    err_account_not_linked: ErrorText {
+        title: "這個帳號尚未連結",
+        cause: "目前沒有任何使用者以這個帳號登入。",
+        next: "改用通行密鑰登入，或開啟邀請連結，在那裡連結這個帳號。管理員可以在 Zeabur 的「成員」建立邀請。",
+    },
+    err_account_already_linked: ErrorText {
+        title: "這個帳號已經連結",
+        cause: "已有使用者以這個帳號登入，因此無法再次連結。",
+        next: "直接用它登入，或改連結其他帳號。",
+    },
+    err_user_unavailable: ErrorText {
+        title: "這位使用者無法登入",
+        cause: "與這個帳號連結的使用者已停用或不存在。",
+        next: "請管理員重新啟用這位使用者，或再次邀請你。",
+    },
+    err_setup_link: ErrorText {
+        title: "這個設定連結已無法使用",
+        cause: "連結無效、已使用過或已過期。",
+        next: "",
+    },
+    err_server: ErrorText {
+        title: "Zeabur Identity 無法完成操作",
+        cause: "伺服器發生錯誤，例如 Kubernetes 沒有及時回應。",
+        next: "過一分鐘再試。如果仍然失敗，管理伺服器的人可以檢視 Zeabur Identity 的記錄檔：",
+    },
 };
 
 /// Simplified Chinese.
@@ -255,7 +437,7 @@ pub const ZH_CN: Messages = Messages {
     no_request_title: "当前没有登录请求",
     no_request_body: "请从要使用的应用或命令（例如 kubectl）开始。需要登录时，它会打开此页面。",
     elevated_title: "请求提升权限",
-    elevated_body: "%app% 请求提升权限，有效期 %minutes%\u{a0}分钟。如果这次登录不是你自己从 %app% 发起的，不要继续。",
+    elevated_body: "%app% 请求提升权限，即使用你在集群上的管理员权限，例如修改或删除集群上运行的内容。权限会在 %minutes%\u{a0}分钟后自动失效。如果这次登录不是你自己从 %app% 发起的，不要继续。",
     working: "正在等待通行密钥…",
     generic_error: "无法完成操作。再试一次；如果仍然失败，请联系管理员。",
     setup_title: "设置通行密钥",
@@ -265,7 +447,7 @@ pub const ZH_CN: Messages = Messages {
     setup_create: "创建通行密钥",
     setup_done_title: "已创建通行密钥",
     setup_done_body: "之后在应用或 kubectl 中用此通行密钥登录。现在可以关闭此页面。",
-    setup_invalid: "设置链接无效、已使用或已过期。请向集群管理员索取新链接。",
+    setup_invalid: "设置链接无效、已使用或已过期。",
     setup_missing_token: "设置链接不完整。打开完整链接，含“#”之后的部分。",
     error_title: "无法继续登录",
     error_body: "返回应用重新开始。如果一直出现，请联系管理员。",
@@ -274,9 +456,83 @@ pub const ZH_CN: Messages = Messages {
     upstream_or: "或",
     upstream_linked_title: "已关联账号",
     upstream_linked_body: "之后可以用这个账号登录。现在可以关闭此页面。",
-    upstream_not_linked: "这个账号没有关联到任何用户。请向管理员索取邀请链接，打开后在那里关联此账号。",
-    upstream_failed: "无法通过外部账号完成登录。从应用或邀请链接重新开始。",
-    upstream_already_linked: "这个账号已关联到某个用户。直接用它登录，或改为关联其他账号。",
+    use_username: "输入用户名",
+    lost_passkey_title: "通行密钥丢失了？",
+    lost_passkey_body: "管理员可以在 Zeabur 的“成员”中为你创建重置链接。如果你是唯一的管理员，在服务器上运行：",
+    lost_passkey_note: "这会移除旧的通行密钥并退出所有会话，然后输出创建新通行密钥的链接。",
+    new_link_title: "获取新链接",
+    new_link_body: "如果已经用此链接创建了通行密钥，直接用它登录。否则，管理服务器的人可以在服务器上运行此命令，生成新链接：",
+    new_link_admin: "管理员也可以在 Zeabur 的“成员”中创建新链接。",
+    no_request_apps_body: "打开下方的应用，需要登录时它会带你回到这里。",
+    open_app: "打开 %app%",
+    backup_title: "添加备用通行密钥",
+    backup_body: "如果此通行密钥不会同步到你的其他设备，建议在另一台设备（例如手机）上再创建一个。这样丢失一台设备时，仍然可以登录。",
+    backup_new_link: "此链接只能使用一次。要再获取链接，管理员可以在 Zeabur 的“成员”中创建邀请，或由管理服务器的人在服务器上运行：",
+    err_request_expired: ErrorText {
+        title: "本次登录已过期",
+        cause: "登录请求已超时、已使用过，或是在其他浏览器中发起的。",
+        next: "返回应用重新登录。",
+    },
+    err_state_mismatch: ErrorText {
+        title: "登录与此浏览器不符",
+        cause: "外部账号返回的结果与此浏览器中发起的登录不符。登录超过 10 分钟、在其他浏览器中发起，或完成后重新加载页面，都会出现这种情况。",
+        next: "在此浏览器中从应用重新开始。如果一直出现，请允许此网站使用 Cookie。",
+    },
+    err_malformed: ErrorText {
+        title: "无法使用应用的登录请求",
+        cause: "请求不完整，或格式不符合 Zeabur Identity 的要求。",
+        next: "返回应用再试一次。如果一直出现，说明应用的登录配置需要修正，下方的详细信息会说明问题。",
+    },
+    err_unknown_client: ErrorText {
+        title: "此应用尚未注册",
+        cause: "Zeabur Identity 找不到应用发来的客户端 ID，因此无法安全地带你返回应用。",
+        next: "需要管理员将应用注册为客户端，或修正应用配置中的客户端 ID。",
+    },
+    err_redirect_uri: ErrorText {
+        title: "应用的返回地址尚未注册",
+        cause: "应用要求返回的地址不在已注册的重定向 URI 中，因此 Zeabur Identity 不会把你送到那里。",
+        next: "需要管理员将应用的重定向 URI 加入客户端注册，或修正应用配置。",
+    },
+    err_provider_denied: ErrorText {
+        title: "已取消登录",
+        cause: "外部账号未完成登录就返回了，例如你在那里取消或拒绝了访问。",
+        next: "从应用重新开始，或改用通行密钥登录。",
+    },
+    err_provider_failed: ErrorText {
+        title: "无法验证外部账号的响应",
+        cause: "Zeabur Identity 无法连接外部账号的服务，或无法验证其返回的内容。",
+        next: "过一分钟再试。如果仍然失败，管理服务器的人可以查看 Zeabur Identity 的日志：",
+    },
+    err_clock_skew: ErrorText {
+        title: "服务器时钟可能不准",
+        cause: "外部账号的登录令牌看起来已过期或签发于未来。服务器时钟误差超过一分钟时，就会出现这种情况。",
+        next: "管理服务器的人可以检查时钟是否已同步：",
+    },
+    err_account_not_linked: ErrorText {
+        title: "此账号尚未关联",
+        cause: "目前没有任何用户使用此账号登录。",
+        next: "改用通行密钥登录，或打开邀请链接，在那里关联此账号。管理员可以在 Zeabur 的“成员”中创建邀请。",
+    },
+    err_account_already_linked: ErrorText {
+        title: "此账号已关联",
+        cause: "已有用户使用此账号登录，因此无法再次关联。",
+        next: "直接用它登录，或改为关联其他账号。",
+    },
+    err_user_unavailable: ErrorText {
+        title: "此用户无法登录",
+        cause: "与此账号关联的用户已停用或不存在。",
+        next: "请管理员重新启用此用户，或再次邀请你。",
+    },
+    err_setup_link: ErrorText {
+        title: "此设置链接已无法使用",
+        cause: "链接无效、已使用过或已过期。",
+        next: "",
+    },
+    err_server: ErrorText {
+        title: "Zeabur Identity 无法完成操作",
+        cause: "服务器出错，例如 Kubernetes 没有及时响应。",
+        next: "过一分钟再试。如果仍然失败，管理服务器的人可以查看 Zeabur Identity 的日志：",
+    },
 };
 
 #[cfg(test)]
@@ -343,6 +599,7 @@ mod tests {
                 "{lang:?}"
             );
             assert!(m.continue_with.contains("%provider%"), "{lang:?}");
+            assert!(m.open_app.contains("%app%"), "{lang:?}");
         }
     }
 }

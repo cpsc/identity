@@ -10,6 +10,11 @@ for (const link of document.querySelectorAll<HTMLAnchorElement>("a[data-lang-lin
   link.hash = window.location.hash;
 }
 
+function invalid(): void {
+  say("error", messages.msgInvalid ?? "");
+  document.getElementById("new-link")?.removeAttribute("hidden");
+}
+
 async function register(event: SubmitEvent): Promise<void> {
   event.preventDefault();
   if (!token) return;
@@ -19,7 +24,8 @@ async function register(event: SubmitEvent): Promise<void> {
     const started = await post("/setup/options", { token });
     if (!started.ok) {
       say("status", "");
-      say("error", problem(started) === "setup-invalid" ? messages.msgInvalid ?? "" : messages.msgError ?? "");
+      if (problem(started) === "setup-invalid") invalid();
+      else say("error", messages.msgError ?? "");
       return;
     }
     const credential = await navigator.credentials.create({ publicKey: creationOptions(started.body) });
@@ -29,12 +35,14 @@ async function register(event: SubmitEvent): Promise<void> {
     say("status", "");
     if (!finished.ok) {
       const kind = problem(finished);
-      say("error", kind === "setup-invalid" ? messages.msgInvalid ?? "" : kind === "passkey-failed" ? messages.msgFailed ?? "" : messages.msgError ?? "");
+      if (kind === "setup-invalid") invalid();
+      else say("error", kind === "passkey-failed" ? messages.msgFailed ?? "" : messages.msgError ?? "");
       return;
     }
     // Done: forget the token in the address bar and history, show the result.
     window.history.replaceState(null, "", window.location.pathname + window.location.search);
     if (form) form.hidden = true;
+    document.getElementById("upstream")?.setAttribute("hidden", "");
     const done = document.getElementById("done");
     done?.removeAttribute("hidden");
     done?.focus();
@@ -46,13 +54,14 @@ async function register(event: SubmitEvent): Promise<void> {
 
 if (form) {
   // Linking an upstream account works without passkey support.
-  if (token) upstreamButtons(() => ({ token }), messages);
+  if (token) upstreamButtons(() => ({ token }), messages, invalid);
   else document.getElementById("upstream")?.setAttribute("hidden", "");
   if (!supported()) {
     document.getElementById("unsupported")?.removeAttribute("hidden");
     form.hidden = true;
   } else if (!token) {
     say("error", messages.msgMissing ?? "");
+    document.getElementById("new-link")?.removeAttribute("hidden");
     form.hidden = true;
   } else {
     form.addEventListener("submit", (event) => void register(event));

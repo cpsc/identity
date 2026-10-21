@@ -25,6 +25,7 @@ mod tests {
     use zeabur_identity_ui::CSP;
 
     const CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+    const HOME: &str = "https://dashboard.example.com/";
 
     async fn app() -> Router {
         app_with(&[]).await
@@ -47,7 +48,7 @@ mod tests {
             secret_hash: None,
             id_token_alg: Algorithm::Es256,
             allow_elevation: true,
-            home_url: None,
+            home_url: Some(HOME.into()),
         });
         let server = Arc::new(AuthorizationServer {
             issuer: BaseUrl::parse("issuer", "https://login.example.com").unwrap(),
@@ -122,9 +123,11 @@ mod tests {
         ] {
             assert!(!html.contains(attribute), "inline handler {attribute}");
         }
-        // Nothing loads from, links to, or submits to another origin. (An SVG namespace is a name,
-        // never fetched.)
-        let html = html.replace("xmlns=\"http://www.w3.org/2000/svg\"", "");
+        // Nothing loads from, links to, or submits to another origin, except a registered
+        // application's home URL. (An SVG namespace is a name, never fetched.)
+        let html = html
+            .replace("xmlns=\"http://www.w3.org/2000/svg\"", "")
+            .replace(&format!("<a href=\"{HOME}\""), "");
         assert!(
             !html.contains("http://") && !html.contains("https://"),
             "absolute URL in page"
@@ -140,6 +143,10 @@ mod tests {
         assert!(page.body.contains("<html lang=\"en\""));
         assert!(page.body.contains("Nothing to sign in to"));
         assert!(!page.body.contains("id=\"sign-in\""));
+        // Clients with a home URL are offered by their display name.
+        assert!(page.body.contains(&format!("<a href=\"{HOME}\"")));
+        assert!(page.body.contains("Open Cluster Dashboard"));
+        assert!(!page.body.contains("Lost your passkey?"));
     }
 
     #[tokio::test]
@@ -170,6 +177,17 @@ mod tests {
         assert!(page.body.contains("Cluster Dashboard"));
         assert!(page.body.contains("autocomplete=\"username webauthn\""));
         assert!(page.body.contains("value=\"alice\""));
+        // With a login hint the username stays in view: nothing to fold.
+        assert!(!page.body.contains("data-collapsible"));
+        assert!(!page.body.contains("id=\"use-username\""));
+        assert!(page.body.contains("Lost your passkey?"));
+        assert!(
+            page.body
+                .replace("<span class=\"inline-block max-w-full\">", "")
+                .replace("</span>", "")
+                .contains("zeabur-identityctl setup-link --username &#60;name&#62; --reset")
+        );
+        assert!(!page.body.contains("Open Cluster Dashboard"));
         assert!(page.body.contains("<noscript>"));
         assert!(page.body.contains("id=\"unsupported\""));
         assert!(page.body.contains("type=\"module\""));
@@ -252,7 +270,35 @@ mod tests {
         assert!(!page.headers.contains_key(header::LOCATION));
         assert_hardened(&page);
         assert!(page.body.contains("<html lang=\"zh-CN\""));
-        assert!(page.body.contains("invalid_"));
+        assert!(page.body.contains("此应用尚未注册"));
+        assert!(page.body.contains("<details"));
+        assert!(
+            page.body
+                .contains("invalid_request: The client_id is missing or not registered.")
+        );
+
+        let page = get(
+            &app,
+            "/authorize?response_type=code&client_id=dashboard&redirect_uri=https%3A%2F%2Fevil.example%2F",
+            &[("accept-language", "en")],
+        )
+        .await;
+        assert_eq!(page.status, StatusCode::BAD_REQUEST);
+        assert_hardened(&page);
+        assert!(
+            page.body
+                .contains("This app’s return address isn’t registered")
+        );
+        assert!(!page.body.contains("evil.example"), "input is never echoed");
+
+        let page = get(
+            &app,
+            "/authorize?client_id=dashboard&request_uri=urn%3Aietf%3Aparams%3Aoauth%3Arequest_uri%3Aforged",
+            &[],
+        )
+        .await;
+        assert_eq!(page.status, StatusCode::BAD_REQUEST);
+        assert!(page.body.contains("This sign-in expired"));
     }
 
     #[tokio::test]
@@ -342,12 +388,14 @@ mod tests {
             (
                 "openid+elevate",
                 "en",
-                Some("Cluster Dashboard is requesting elevated access for 5\u{a0}min."),
+                Some(
+                    "Cluster Dashboard is requesting elevated access: your admin rights on the cluster, such as changing or deleting what runs on it. It ends by itself after 5\u{a0}min.",
+                ),
             ),
             (
                 "openid+elevate",
                 "zh-TW",
-                Some("Cluster Dashboard 要求提升權限，有效 5\u{a0}分鐘。"),
+                Some("權限會在 5\u{a0}分鐘後自動失效。"),
             ),
         ] {
             let reply = get(

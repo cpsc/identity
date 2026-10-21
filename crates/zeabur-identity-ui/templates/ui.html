@@ -67,3 +67,46 @@ h-10 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text
   <div aria-hidden="true" class="h-px flex-1 bg-v2-border"></div>
 </div>
 {%- endmacro -%}
+
+{#- A command to run, selected whole on click so it copies in one step. Lines break only between
+    words, unless a word is wider than the block; `words = false` keeps raw text as one run. -#}
+{%- macro command(text, words = true) -%}
+<pre data-slot="command" class="type-mono rounded-md border border-v2-border bg-v2-surface-hover px-3 py-2 break-words whitespace-pre-wrap text-main select-all"><code>
+{%- if words -%}
+{%- for word in text.split(' ') %}{% if !loop.first %} {% endif %}<span class="inline-block max-w-full">{{ word }}</span>{% endfor -%}
+{%- else -%}
+{{ text }}
+{%- endif -%}
+</code></pre>
+{%- endmacro -%}
+
+{#- A collapsed disclosure; the call body is its content. -#}
+{%- macro disclosure(summary, id = "", center = false) -%}
+<details data-slot="disclosure"{% if !id.is_empty() %} id="{{ id }}"{% endif %} class="group/disclosure flex flex-col text-[0.8125rem] leading-5">
+  <summary class="{% if center %}self-center {% else %}self-start {% endif %}inline-flex cursor-pointer list-none items-center gap-1.5 rounded-md text-secondary select-none hover:text-main [&::-webkit-details-marker]:hidden">
+    {{- icons::icon("CaretRight", "size-3.5 transition-transform duration-150 group-open/disclosure:rotate-90 motion-reduce:transition-none") }}{{ summary -}}
+  </summary>
+  <div class="mt-2 flex flex-col gap-2 text-pretty text-secondary">{{ caller() }}</div>
+</details>
+{%- endmacro -%}
+
+{#- "Open <app>" for each application with a home URL. -#}
+{%- macro app_links(apps, m) -%}
+{%- if !apps.is_empty() %}
+<div data-slot="apps" class="flex flex-col gap-3">
+  {%- for app in apps %}
+  <a href="{{ app.url }}" class="{{ button_cls("secondary") }} w-full"><span class="truncate">{{ m.open_app.replace("%app%", app.name) }}</span>{{ icons::icon("ArrowUpRight") }}</a>
+  {%- endfor %}
+</div>
+{%- endif %}
+{%- endmacro -%}
+
+{#- How to get another enrolment link when this one no longer works. -#}
+{%- macro new_link(m, setup_link_command) -%}
+<div data-slot="new-link" class="flex flex-col gap-2 text-[0.8125rem] leading-5 text-pretty text-secondary">
+  <p class="text-sm leading-5 font-medium text-main">{{ m.new_link_title }}</p>
+  <p>{{ m.new_link_body }}</p>
+  {{ command(setup_link_command) }}
+  <p>{{ m.new_link_admin }}</p>
+</div>
+{%- endmacro -%}

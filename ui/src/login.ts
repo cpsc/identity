@@ -4,6 +4,16 @@ import { assertionJson, cancelled, post, problem, requestOptions, say, supported
 const form = document.getElementById("sign-in") as HTMLFormElement | null;
 const messages = form?.dataset ?? {};
 let autofill: AbortController | null = null;
+const usernameField = document.getElementById("username-field");
+const useUsername = document.getElementById("use-username");
+
+// Without a login hint the field is only where the browser lists passkeys, so it stays folded
+// behind "Use a username" while the browser can offer them there.
+function fold(folded: boolean): void {
+  if (!usernameField?.hasAttribute("data-collapsible") || !useUsername) return;
+  usernameField.hidden = folded;
+  useUsername.hidden = !folded;
+}
 
 async function finish(credential: Credential | null): Promise<void> {
   if (!(credential instanceof PublicKeyCredential)) throw new DOMException("no credential", "NotAllowedError");
@@ -28,7 +38,10 @@ async function options(): Promise<PublicKeyCredentialRequestOptions | null> {
 
 async function startAutofill(): Promise<void> {
   const available = await PublicKeyCredential.isConditionalMediationAvailable?.();
-  if (!available) return;
+  if (!available) {
+    fold(false);
+    return;
+  }
   const publicKey = await options();
   if (!publicKey) return;
   autofill = new AbortController();
@@ -67,6 +80,11 @@ if (form) {
     form.hidden = true;
   } else {
     form.addEventListener("submit", (event) => void signIn(event));
+    useUsername?.addEventListener("click", () => {
+      fold(false);
+      document.getElementById("username")?.focus();
+    });
+    fold(typeof PublicKeyCredential.isConditionalMediationAvailable === "function");
     void startAutofill();
   }
 }

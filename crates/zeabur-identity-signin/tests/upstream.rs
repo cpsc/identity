@@ -656,7 +656,8 @@ mod tests {
         assert_eq!(reply.status, StatusCode::BAD_REQUEST);
         assert_audit(&reply, "auth.sign_in", Some("account_unlinked"), None, None);
         assert!(
-            reply.body.contains("isn’t linked to any user"),
+            reply.body.contains("This account isn’t linked")
+                && reply.body.contains("account_unlinked (github)"),
             "{}",
             reply.body
         );
@@ -664,6 +665,11 @@ mod tests {
         link(&h, Kind::Google, GOOGLE_SUB, "zed").await;
         let reply = sign_in(&h, "google", "code-2").await;
         assert_eq!(reply.status, StatusCode::BAD_REQUEST, "disabled user");
+        assert!(
+            reply.body.contains("This user can’t sign in"),
+            "{}",
+            reply.body
+        );
         assert_audit(
             &reply,
             "auth.sign_in",
@@ -712,6 +718,11 @@ mod tests {
         );
         let forged = callback(&h, "github", "code=code-4&state=forged", &cookies).await;
         assert_eq!(forged.status, StatusCode::BAD_REQUEST);
+        assert!(
+            forged
+                .body
+                .contains("This sign-in doesn’t match this browser")
+        );
         assert_audit(&forged, "auth.sign_in", Some("invalid_state"), None, None);
         let no_cookie = callback(&h, "github", "code=code-4&state=x", "").await;
         assert_eq!(no_cookie.status, StatusCode::BAD_REQUEST);
@@ -799,6 +810,12 @@ mod tests {
             *h.fake.id_token_overrides.lock().unwrap() = json!({ claim: value });
             let reply = sign_in(&h, "google", &format!("code-{claim}")).await;
             assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{claim}={value}");
+            // A token outside its validity window points at this server's clock.
+            assert_eq!(
+                reply.body.contains("The server’s clock looks wrong"),
+                matches!(claim, "exp" | "iat"),
+                "{claim}={value}"
+            );
             assert_audit(
                 &reply,
                 "auth.sign_in",

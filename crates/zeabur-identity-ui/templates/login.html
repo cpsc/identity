@@ -10,7 +10,12 @@
   {% call ui::card_content() %}
   <div class="flex flex-col gap-5">
     {%- if client.is_none() %}
+    {%- if apps.is_empty() %}
     {% call ui::alert(m.no_request_title, "default", "WarningCircle", live = "") %}{{ m.no_request_body }}{% endcall %}
+    {%- else %}
+    {% call ui::alert(m.no_request_title, "default", "WarningCircle", live = "") %}{{ m.no_request_apps_body }}{% endcall %}
+    {{ ui::app_links(apps, m) }}
+    {%- endif %}
     {%- else %}
     {%- if let Some(notice) = elevation_notice %}
     {% call ui::alert(m.elevated_title, "warn", "Key", id = "elevation", live = "") %}{{ notice }}{% endcall %}
@@ -25,15 +30,29 @@
     <form id="sign-in" class="flex flex-col gap-5" novalidate
           data-msg-failed="{{ m.passkey_failed }}" data-msg-cancelled="{{ m.passkey_cancelled }}"
           data-msg-working="{{ m.working }}" data-msg-error="{{ m.generic_error }}">
+      {#- Without a login hint the script folds this away when the browser offers passkeys itself. -#}
+      <div id="username-field"{% if login_hint.is_none() %} data-collapsible{% endif %}>
       {% call ui::field("username", m.login_username, m.login_username_hint) %}
       <input id="username" name="username" type="text" class="{{ ui::input_cls() }}"
              autocomplete="username webauthn" autocapitalize="none" spellcheck="false"
              value="{{ login_hint.unwrap_or_default() }}"
              {{- ui::field_describedby("username", m.login_username_hint) }}>
       {% endcall %}
-      <button type="submit" class="{{ ui::button_cls("primary") }} w-full">{{ icons::icon("Fingerprint") }}{{ m.login_passkey }}</button>
+      </div>
+      <div class="flex flex-col gap-2">
+        <button type="submit" class="{{ ui::button_cls("primary") }} w-full">{{ icons::icon("Fingerprint") }}{{ m.login_passkey }}</button>
+        {%- if login_hint.is_none() %}
+        <button type="button" id="use-username" hidden aria-controls="username-field"
+                class="inline-flex min-h-8 items-center self-center rounded-md px-2 text-[0.8125rem] leading-5 text-secondary underline-offset-4 hover:text-main hover:underline">{{ m.use_username }}</button>
+        {%- endif %}
+      </div>
     </form>
     {{ upstream::buttons(providers, m) }}
+    {% call ui::disclosure(m.lost_passkey_title, center = true) %}
+    <p>{{ m.lost_passkey_body }}</p>
+    {{ ui::command(reset_command) }}
+    <p>{{ m.lost_passkey_note }}</p>
+    {% endcall %}
     {%- endif %}
   </div>
   {% endcall %}

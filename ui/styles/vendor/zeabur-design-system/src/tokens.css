@@ -359,8 +359,9 @@
   --transition-property-rotate: rotate;
   --transition-property-width: width;
   --transition-property-visibility: visibility;
-  --ease-popup: cubic-bezier(0.16, 1, 0.3, 1);
-  --animate-skeleton: skeleton-pulse 1.4s ease-in-out infinite;
+  --ease-popup: var(--ease-site);
+  --animate-skeleton:
+    skeleton-in 150ms ease-out 300ms backwards, skeleton-pulse 1.4s ease-in-out 450ms infinite;
 
   --shadow-segmented: 0 1px 2px rgb(0 0 0 / 0.06);
   --shadow-switch-track: inset 0 1px 3px rgb(0 0 0 / 0.35);
@@ -387,6 +388,12 @@
 }
 
 @theme static {
+  --transition-duration-micro: 80ms;
+  --transition-duration-quick: 150ms;
+  --transition-duration-fast: 250ms;
+  --transition-duration-medium: 350ms;
+  --blur-swap: 2px;
+
   --color-zGray-50: rgb(var(--zGray-50));
   --color-zGray-100: rgb(var(--zGray-100));
   --color-zGray-150: rgb(var(--zGray-150));

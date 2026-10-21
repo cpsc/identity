@@ -5,7 +5,7 @@ its tokens, type roles, utilities and base styles, without components, `@font-fa
 `ui/styles/app.css` imports `tokens.css` right after Tailwind CSS.
 
 - Source: `github.com/zeabur/design-system` at commit
-  `6780ab5705dcd0e6a3045130206a157c94b92082`.
+  `03fb2b32058921b58f7a1626c48111c95db5cc98`.
 - Files: `tokens.css`, `src/tokens.css`, `src/utilities.css`, `src/base.css` and `LICENSE`, copied
   verbatim. Update them only as a whole, from a newer commit, and change the commit above.
 - Licence: Apache License 2.0 (`LICENSE`).

@@ -17,3 +17,6 @@ askama.workspace = true
 axum.workspace = true
 form_urlencoded.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

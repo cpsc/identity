@@ -54,6 +54,7 @@ fn client_create(args: ClientCreateArgs) -> ExitCode {
         redirect_uris: args.redirect_uris,
         audiences: args.audiences,
         allow_elevation: args.allow_elevation,
+        home_url: args.home_url,
     };
     let registration = match zeabur_identity_k8s::clients::register(new, &args.namespace) {
         Ok(registration) => registration,

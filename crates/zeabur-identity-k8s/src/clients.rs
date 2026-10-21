@@ -53,6 +53,11 @@ pub enum ClientError {
     /// An empty or overlong audience.
     #[error("audience {0:?} must be between 1 and {MAX_AUDIENCE} characters")]
     InvalidAudience(String),
+    /// A home URL that is not `https://` with a host, as a browser writes it.
+    #[error(
+        "home URL {0:?} must be https:// with a host, written as a browser normalizes it, with no fragment or user information, at most {MAX_REDIRECT_URI} characters"
+    )]
+    InvalidHomeUrl(String),
     /// Randomness failed.
     #[error("unable to generate the client secret")]
     Crypto,
@@ -75,6 +80,8 @@ pub struct NewClient {
     pub id_token_signing_alg: Option<Algorithm>,
     /// Whether the client may request the `elevate` scope.
     pub allow_elevation: bool,
+    /// Where people open the application; the sign-in page links to it.
+    pub home_url: Option<String>,
 }
 
 /// A registered client, ready for `kubectl apply`.
@@ -118,6 +125,7 @@ pub fn register(new: NewClient, namespace: &str) -> Result<Registration, ClientE
                 .map(|secret| hash_secret(secret.as_bytes())),
             id_token_signing_alg: new.id_token_signing_alg,
             allow_elevation: new.allow_elevation,
+            home_url: new.home_url,
         },
     };
     Ok(Registration { client, secret })
@@ -153,6 +161,13 @@ fn validate(new: &NewClient) -> Result<(), ClientError> {
         .find(|audience| audience.is_empty() || audience.chars().count() > MAX_AUDIENCE)
     {
         return Err(ClientError::InvalidAudience(audience.clone()));
+    }
+    if let Some(url) = new
+        .home_url
+        .as_ref()
+        .filter(|url| !url.starts_with("https://") || !redirect_uri_allowed(url))
+    {
+        return Err(ClientError::InvalidHomeUrl(url.clone()));
     }
     Ok(())
 }
@@ -229,6 +244,7 @@ mod tests {
             audiences: vec!["kubernetes".into()],
             id_token_signing_alg: None,
             allow_elevation: false,
+            home_url: None,
         }
     }
 
@@ -342,6 +358,17 @@ mod tests {
             with(|new| new.display_name = Some("x".repeat(MAX_DISPLAY_NAME + 1))),
             ClientError::DisplayNameTooLong
         );
+        assert_eq!(
+            with(|new| new.home_url = Some("http://127.0.0.1/".into())),
+            ClientError::InvalidHomeUrl("http://127.0.0.1/".into())
+        );
+        assert_eq!(
+            with(|new| new.home_url = Some("https://Zeabur.example.com".into())),
+            ClientError::InvalidHomeUrl("https://Zeabur.example.com".into())
+        );
+        let mut new = new_client(ClientType::Public);
+        new.home_url = Some("https://zeabur.example.com/".into());
+        assert!(register(new, "ns").is_ok());
         for id in [
             "",
             "Dashboard",

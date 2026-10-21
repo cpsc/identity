@@ -461,6 +461,7 @@ mod tests {
                             secret_hash: None,
                             id_token_signing_alg: None,
                             allow_elevation: client_id == "kubectl",
+                            home_url: None,
                         },
                     ),
                 )

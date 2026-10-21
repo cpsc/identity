@@ -134,6 +134,7 @@ mod tests {
             secret_hash: None,
             id_token_alg: Algorithm::Es256,
             allow_elevation: true,
+            home_url: None,
         });
         directory.put_client(Client {
             id: "web".into(),
@@ -144,6 +145,7 @@ mod tests {
             secret_hash: Some(hash_secret(WEB_SECRET.as_bytes())),
             id_token_alg: Algorithm::Rs256,
             allow_elevation: false,
+            home_url: None,
         });
         for (name, disabled) in [("alice", false), ("bob", true)] {
             directory.put_user(User {
@@ -1406,6 +1408,7 @@ mod tests {
             secret_hash: None,
             id_token_alg: Algorithm::Es256,
             allow_elevation,
+            home_url: None,
         }
     }
 

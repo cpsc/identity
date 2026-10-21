@@ -211,6 +211,7 @@ mod tests {
             secret_hash: None,
             id_token_alg: Algorithm::Es256,
             allow_elevation: true,
+            home_url: None,
         });
         for (name, disabled) in [("alice", false), ("dana", false), ("zed", true)] {
             directory.put_user(User {

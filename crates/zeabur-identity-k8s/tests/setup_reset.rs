@@ -143,6 +143,7 @@ mod tests {
             secret_hash: None,
             id_token_alg: Algorithm::Es256,
             allow_elevation: true,
+            home_url: None,
         });
         directory.put_user(User {
             name: "alice".into(),

@@ -361,6 +361,7 @@ mod tests {
                     secret_hash: secret.map(Into::into),
                     id_token_signing_alg: None,
                     allow_elevation: false,
+                    home_url: None,
                 },
             )
         };
@@ -516,6 +517,7 @@ mod tests {
                     secret_hash: None,
                     id_token_signing_alg: None,
                     allow_elevation: false,
+                    home_url: None,
                 },
             );
             let admitted = match clients.create(&dry_run, &client).await {
@@ -1044,6 +1046,7 @@ mod tests {
                         secret_hash: None,
                         id_token_signing_alg: None,
                         allow_elevation: false,
+                        home_url: None,
                     },
                 ),
             )
@@ -1061,6 +1064,7 @@ mod tests {
                 audiences: vec!["kubernetes".into()],
                 id_token_signing_alg: None,
                 allow_elevation: false,
+                home_url: None,
             },
             &env.namespace,
         )

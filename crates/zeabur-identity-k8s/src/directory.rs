@@ -21,11 +21,11 @@
 
 use std::borrow::Cow;
 use std::fmt::Debug;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use futures_util::StreamExt as _;
-use kube::api::Api;
+use kube::api::{Api, ListParams};
 use kube::core::{NamespaceResourceScope, PartialObjectMeta};
 use kube::runtime::WatchStreamExt as _;
 use kube::runtime::reflector::store::Writer;
@@ -35,7 +35,7 @@ use kube::{Resource, ResourceExt as _};
 use serde::de::DeserializeOwned;
 use tokio::task::JoinHandle;
 use zeabur_identity_keys::Algorithm;
-use zeabur_identity_store::{Client, Directory, StoreError, User};
+use zeabur_identity_store::{App, Client, Directory, StoreError, User};
 
 use crate::crd::client::OAuthClient;
 use crate::crd::user::User as UserObject;
@@ -45,6 +45,14 @@ use crate::crd::user::User as UserObject;
 /// Deployment startup protection must outlast this deadline before liveness may restart a pod.
 pub const INITIAL_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// How long the sign-in page's application list is reused. Anyone can load that page, so it
+/// must not cost an API request each time; a new home URL shows up within this time.
+const APPS_TTL: Duration = Duration::from_mins(1);
+/// Clients read for the application list.
+const APPS_LIST_LIMIT: u32 = 200;
+
+type CachedApps = (Instant, Vec<App>);
+
 /// Locates clients and user subjects through metadata, then reads current API objects.
 #[derive(Clone)]
 pub struct KubeDirectory {
@@ -52,6 +60,7 @@ pub struct KubeDirectory {
     users: Api<UserObject>,
     client_index: Store<PartialObjectMeta<OAuthClient>>,
     user_index: Store<PartialObjectMeta<UserObject>>,
+    apps: Arc<Mutex<Option<CachedApps>>>,
     _watcher: Arc<WatchTask>,
 }
 
@@ -113,6 +122,7 @@ impl KubeDirectory {
             users,
             client_index,
             user_index,
+            apps: Arc::default(),
             _watcher: watcher,
         })
     }
@@ -215,24 +225,34 @@ impl Directory for KubeDirectory {
             return Ok(None);
         };
         let result = api.get_opt(id).await;
-        Ok(result.map_err(|e| backend(&e))?.map(|object| {
-            let id = object.name_any();
-            let spec = object.spec;
-            Client {
-                id,
-                display_name: spec.display_name,
-                kind: spec.kind,
-                redirect_uris: spec.redirect_uris,
-                audiences: spec.audiences,
-                secret_hash: spec.secret_hash,
-                id_token_alg: spec.id_token_signing_alg.unwrap_or(Algorithm::Es256),
-                allow_elevation: spec.allow_elevation,
-            }
-        }))
+        Ok(result.map_err(|e| backend(&e))?.map(client))
     }
 
     async fn user(&self, name: &str) -> Result<Option<User>, StoreError> {
         Self::read_user(&self.users, name).await
+    }
+
+    async fn apps(&self) -> Result<Vec<App>, StoreError> {
+        let cached = self
+            .apps
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .filter(|(at, _)| at.elapsed() < APPS_TTL)
+            .map(|(_, apps)| apps.clone());
+        if let Some(apps) = cached {
+            return Ok(apps);
+        }
+        let list = self
+            .clients
+            .list(&ListParams::default().limit(APPS_LIST_LIMIT))
+            .await
+            .map_err(|e| backend(&e))?;
+        let clients: Vec<Client> = list.items.into_iter().map(client).collect();
+        let apps = zeabur_identity_store::apps(&clients);
+        *self.apps.lock().unwrap_or_else(PoisonError::into_inner) =
+            Some((Instant::now(), apps.clone()));
+        Ok(apps)
     }
 
     async fn user_by_subject(&self, subject: &str) -> Result<Option<User>, StoreError> {
@@ -253,6 +273,22 @@ impl Directory for KubeDirectory {
         Ok(Self::read_user(&api, name)
             .await?
             .filter(|user| user.subject == subject))
+    }
+}
+
+fn client(object: OAuthClient) -> Client {
+    let id = object.name_any();
+    let spec = object.spec;
+    Client {
+        id,
+        display_name: spec.display_name,
+        kind: spec.kind,
+        redirect_uris: spec.redirect_uris,
+        audiences: spec.audiences,
+        secret_hash: spec.secret_hash,
+        id_token_alg: spec.id_token_signing_alg.unwrap_or(Algorithm::Es256),
+        allow_elevation: spec.allow_elevation,
+        home_url: spec.home_url,
     }
 }
 

@@ -37,6 +37,11 @@ The options:
 - **`--allow-elevation`** lets the client ask for admin rights (the user's elevated groups, after
   a fresh passkey sign-in). Leave it off unless the client is for administering the cluster,
   like `kubectl`. See [Admin rights](managing-users.md#admin-rights).
+- **`--home-url`** is where people open the application, such as
+  `https://zeabur.example.com/`. With it, the sign-in page offers "Open <display name>" when
+  someone reaches it with nothing to sign in to, and after they set up a passkey. Anyone who
+  can load the sign-in page sees these names and addresses. `https://` only, written as for
+  redirect URIs.
 
 ### Redirect URIs
 

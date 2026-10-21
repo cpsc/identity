@@ -34,6 +34,12 @@ pub const REDIRECT_URI_RULE: &str = concat!(
     " : url(u).getScheme() == 'http' && url(u).getHostname() in ['127.0.0.1', '::1']",
     " && url(u).getEscapedPath() != ''))",
 );
+/// The admission rule for the home URL: `https` with a host, printable ASCII, no user
+/// information, as for redirect URIs.
+pub const HOME_URL_RULE: &str = concat!(
+    "self.matches('^[!-~]+$') && isURL(self) && !self.matches('^[^/]*//[^/?]*@')",
+    " && url(self).getScheme() == 'https' && url(self).getHostname() != ''",
+);
 /// The stored secret: [`zeabur_identity_core::crypto::hash_secret`]'s output.
 pub const SECRET_HASH_PATTERN: &str = r"^sha256:[0-9a-f]{64}$";
 
@@ -105,4 +111,14 @@ pub struct OAuthClientSpec {
     /// only for clients meant for administration, such as an admin `kubectl` context.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub allow_elevation: bool,
+
+    /// Where people open this application, for example `https://zeabur.example.com/`. When set,
+    /// the sign-in page offers "Open <display name>" with this address to anyone who reaches it
+    /// with nothing to sign in to, and after someone sets up a passkey.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(max = MAX_REDIRECT_URI))]
+    #[x_kube(validation = Rule::new(HOME_URL_RULE).message(
+        "the home URL must be https:// with a host; printable ASCII, no user information"
+    ))]
+    pub home_url: Option<String>,
 }

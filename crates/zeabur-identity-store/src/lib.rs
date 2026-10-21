@@ -61,6 +61,48 @@ pub struct Client {
     /// Whether the client may request the `elevate` scope. Off unless the administrator turns it
     /// on, so signing users in never implies obtaining their elevated groups.
     pub allow_elevation: bool,
+    /// Where people open the application. The sign-in page links to it.
+    pub home_url: Option<String>,
+}
+
+impl Client {
+    /// The name people see: the display name, or the `client_id` without one.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        self.display_name
+            .as_deref()
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or(&self.id)
+    }
+}
+
+/// An application the sign-in page offers to open: a client with a home URL.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct App {
+    /// [`Client::name`].
+    pub name: String,
+    /// [`Client::home_url`].
+    pub url: String,
+}
+
+/// At most this many applications are listed.
+pub const MAX_APPS: usize = 8;
+
+/// The clients with a home URL as [`App`]s, sorted by name, at most [`MAX_APPS`].
+#[must_use]
+pub fn apps<'a>(clients: impl IntoIterator<Item = &'a Client>) -> Vec<App> {
+    let mut apps: Vec<App> = clients
+        .into_iter()
+        .filter_map(|client| {
+            client.home_url.as_ref().map(|url| App {
+                name: client.name().to_owned(),
+                url: url.clone(),
+            })
+        })
+        .collect();
+    apps.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.url.cmp(&b.url)));
+    apps.truncate(MAX_APPS);
+    apps
 }
 
 /// A user, as needed to issue tokens.
@@ -98,6 +140,9 @@ pub trait Directory: Send + Sync + 'static {
         &self,
         subject: &str,
     ) -> impl Future<Output = Result<Option<User>, StoreError>> + Send;
+    /// The applications the sign-in page offers to open (see [`apps`]). Adapters may cache
+    /// the answer briefly: anyone can load the page, and nothing here is authorization data.
+    fn apps(&self) -> impl Future<Output = Result<Vec<App>, StoreError>> + Send;
 }
 
 /// A refresh-token family to create.
@@ -303,6 +348,11 @@ impl Directory for MemoryDirectory {
         };
         drop(users);
         future::ready(result)
+    }
+
+    fn apps(&self) -> impl Future<Output = Result<Vec<App>, StoreError>> + Send {
+        let clients = self.clients.lock().unwrap_or_else(PoisonError::into_inner);
+        future::ready(Ok(apps(clients.values())))
     }
 }
 
@@ -700,5 +750,54 @@ impl SetupStore for MemorySetupStore {
         };
         drop(slot);
         future::ready(Ok(outcome))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn client(id: &str, display_name: Option<&str>, home_url: Option<&str>) -> Client {
+        Client {
+            id: id.into(),
+            display_name: display_name.map(Into::into),
+            kind: ClientType::Public,
+            redirect_uris: vec![],
+            audiences: vec![],
+            secret_hash: None,
+            id_token_alg: zeabur_identity_keys::Algorithm::Es256,
+            allow_elevation: false,
+            home_url: home_url.map(Into::into),
+        }
+    }
+
+    #[test]
+    fn apps_are_clients_with_a_home_url_by_name() {
+        let clients = [
+            client("kubectl", None, None),
+            client(
+                "zeabur",
+                Some("Zeabur"),
+                Some("https://zeabur.example.com/"),
+            ),
+            client("argocd", Some(" "), Some("https://argocd.example.com/")),
+        ];
+        assert_eq!(
+            apps(&clients),
+            [
+                App {
+                    name: "Zeabur".into(),
+                    url: "https://zeabur.example.com/".into()
+                },
+                App {
+                    name: "argocd".into(),
+                    url: "https://argocd.example.com/".into()
+                },
+            ]
+        );
+        let many: Vec<Client> = (0..20)
+            .map(|i| client(&format!("app{i:02}"), None, Some("https://e.com/")))
+            .collect();
+        assert_eq!(apps(&many).len(), MAX_APPS);
     }
 }

@@ -99,6 +99,7 @@ mod tests {
                 secret_hash: None,
                 id_token_alg: zeabur_identity_keys::Algorithm::Es256,
                 allow_elevation: false,
+                home_url: None,
             };
             prop_assert!(zeabur_identity_oauth::authorize::redirect_uri_allowed(
                 &client,

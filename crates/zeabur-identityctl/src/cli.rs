@@ -78,8 +78,8 @@ pub(crate) struct ClientCreateArgs {
     /// Name shown on the sign-in pages.
     #[arg(long)]
     pub display_name: Option<String>,
-    /// Where people open the application (`https://` only). The sign-in page then offers
-    /// "Open <display name>" to anyone who reaches it with nothing to sign in to.
+    /// Where people open the application (`https://` only). The sign-in page then links here,
+    /// labelled with the display name, for anyone who reaches it with nothing to sign in to.
     #[arg(long)]
     pub home_url: Option<String>,
     /// Let the client request the `elevate` scope (short tokens with the user's `elevated:`

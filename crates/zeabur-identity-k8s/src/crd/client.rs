@@ -113,8 +113,8 @@ pub struct OAuthClientSpec {
     pub allow_elevation: bool,
 
     /// Where people open this application, for example `https://zeabur.example.com/`. When set,
-    /// the sign-in page offers "Open <display name>" with this address to anyone who reaches it
-    /// with nothing to sign in to, and after someone sets up a passkey.
+    /// the sign-in page links here, labelled with the display name, for anyone who reaches it with
+    /// nothing to sign in to, and after someone sets up a passkey.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(length(max = MAX_REDIRECT_URI))]
     #[x_kube(validation = Rule::new(HOME_URL_RULE).message(

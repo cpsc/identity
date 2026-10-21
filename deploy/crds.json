@@ -348,7 +348,7 @@
                         "type": "string"
                       },
                       "homeUrl": {
-                        "description": "Where people open this application, for example `https://zeabur.example.com/`. When set,\nthe sign-in page offers \"Open <display name>\" with this address to anyone who reaches it\nwith nothing to sign in to, and after someone sets up a passkey.",
+                        "description": "Where people open this application, for example `https://zeabur.example.com/`. When set,\nthe sign-in page links here, labelled with the display name, for anyone who reaches it with\nnothing to sign in to, and after someone sets up a passkey.",
                         "maxLength": 2048,
                         "nullable": true,
                         "type": "string",

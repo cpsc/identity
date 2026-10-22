@@ -194,6 +194,7 @@ pub struct Messages {
     pub passkey_exists: &'static str,
     pub last_passkey_error: &'static str,
     pub changed_error: &'static str,
+    pub passkey_gone_error: &'static str,
     pub signed_out_error: &'static str,
     pub confirm_working: &'static str,
     pub sessions_title: &'static str,
@@ -202,6 +203,8 @@ pub struct Messages {
     pub session_this: &'static str,
     /// `%date%` is replaced with a date.
     pub session_signed_in: &'static str,
+    /// `%name%` is replaced with the passkey's label.
+    pub session_passkey: &'static str,
     pub sign_out_others: &'static str,
     pub manage_passkeys: &'static str,
     pub err_request_expired: ErrorText,
@@ -289,8 +292,9 @@ pub const EN: Messages = Messages {
     last_passkey_note: "This is your only passkey, so it can’t be removed.",
     add_passkey: "Add a passkey",
     passkey_exists: "This passkey is already registered.",
-    last_passkey_error: "You can’t remove your only passkey. Add another first.",
-    changed_error: "Your passkeys changed in the meantime. Reload the page and try again.",
+    last_passkey_error: "Your other passkeys were removed in the meantime. Add another before removing this one.",
+    changed_error: "Your passkeys changed in the meantime. Check the list and try again.",
+    passkey_gone_error: "This passkey was already removed.",
     signed_out_error: "Your session ended. Reload the page and sign in again.",
     confirm_working: "Confirm with a passkey…",
     sessions_title: "Sessions",
@@ -298,6 +302,7 @@ pub const EN: Messages = Messages {
     session_account: "Account page",
     session_this: "This session",
     session_signed_in: "Signed in %date%",
+    session_passkey: "Passkey: %name%",
     sign_out_others: "Sign out everywhere else",
     manage_passkeys: "Manage your passkeys",
     err_request_expired: ErrorText {
@@ -437,8 +442,9 @@ pub const ZH_TW: Messages = Messages {
     last_passkey_note: "這是你唯一的通行密鑰，因此無法移除。",
     add_passkey: "新增通行密鑰",
     passkey_exists: "這個通行密鑰已經註冊過了。",
-    last_passkey_error: "無法移除唯一的通行密鑰。請先新增另一個。",
-    changed_error: "通行密鑰在這段期間有變動。重新載入頁面後再試一次。",
+    last_passkey_error: "其他通行密鑰在這段期間已移除。請先新增另一個，再移除這個。",
+    changed_error: "通行密鑰在這段期間有變動。確認清單後再試一次。",
+    passkey_gone_error: "這個通行密鑰已經移除了。",
     signed_out_error: "工作階段已結束。重新載入頁面並再次登入。",
     confirm_working: "請用通行密鑰確認…",
     sessions_title: "工作階段",
@@ -446,6 +452,7 @@ pub const ZH_TW: Messages = Messages {
     session_account: "帳號頁面",
     session_this: "目前的工作階段",
     session_signed_in: "%date% 登入",
+    session_passkey: "通行密鑰：%name%",
     sign_out_others: "登出其他所有工作階段",
     manage_passkeys: "管理通行密鑰",
     err_request_expired: ErrorText {
@@ -585,8 +592,9 @@ pub const ZH_CN: Messages = Messages {
     last_passkey_note: "这是你唯一的通行密钥，因此无法移除。",
     add_passkey: "添加通行密钥",
     passkey_exists: "此通行密钥已经注册过了。",
-    last_passkey_error: "无法移除唯一的通行密钥。请先添加另一个。",
-    changed_error: "通行密钥在此期间有变动。重新加载页面后再试一次。",
+    last_passkey_error: "其他通行密钥在此期间已移除。请先添加另一个，再移除这个。",
+    changed_error: "通行密钥在此期间有变动。确认列表后再试一次。",
+    passkey_gone_error: "此通行密钥已经移除了。",
     signed_out_error: "会话已结束。重新加载页面并再次登录。",
     confirm_working: "请用通行密钥确认…",
     sessions_title: "会话",
@@ -594,6 +602,7 @@ pub const ZH_CN: Messages = Messages {
     session_account: "账号页面",
     session_this: "当前会话",
     session_signed_in: "%date% 登录",
+    session_passkey: "通行密钥：%name%",
     sign_out_others: "退出其他所有会话",
     manage_passkeys: "管理通行密钥",
     err_request_expired: ErrorText {
@@ -729,6 +738,7 @@ mod tests {
             assert!(m.continue_with.contains("%provider%"), "{lang:?}");
             assert!(m.open_app.contains("%app%"), "{lang:?}");
             assert!(m.signed_in_as.contains("%user%"), "{lang:?}");
+            assert!(m.session_passkey.contains("%name%"), "{lang:?}");
             for dated in [m.passkey_added, m.passkey_last_used, m.session_signed_in] {
                 assert!(dated.contains("%date%"), "{lang:?}");
             }

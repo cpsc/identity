@@ -8,7 +8,7 @@
      data-msg-failed="{{ m.passkey_failed }}" data-msg-cancelled="{{ m.passkey_cancelled }}"
      data-msg-working="{{ m.working }}" data-msg-error="{{ m.generic_error }}" data-msg-confirm="{{ m.confirm_working }}"
      data-msg-exists="{{ m.passkey_exists }}" data-msg-last="{{ m.last_passkey_error }}"
-     data-msg-changed="{{ m.changed_error }}" data-msg-signed-out="{{ m.signed_out_error }}">
+     data-msg-changed="{{ m.changed_error }}" data-msg-gone="{{ m.passkey_gone_error }}" data-msg-signed-out="{{ m.signed_out_error }}">
 {%- match view %}
 {%- when None %}
 {% call ui::card() %}
@@ -58,8 +58,8 @@
           {{ icons::icon("Key", "size-4") }}
         </div>
         <div class="flex min-w-0 flex-1 flex-col gap-1">
-          <div class="flex min-w-0 items-center gap-2">
-            <p class="truncate text-sm leading-5 font-medium text-main">{{ p.label }}</p>
+          <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <p class="min-w-0 text-sm leading-5 font-medium break-words text-main">{{ p.label }}</p>
             {%- if p.this_device %}
             <span class="shrink-0 rounded-sm border border-v2-border px-1.5 text-xs leading-4 text-secondary">{{ m.passkey_this_device }}</span>
             {%- endif %}
@@ -93,6 +93,8 @@
               <button type="button" data-action="cancel" class="{{ ui::button_cls("secondary", "sm") }}">{{ m.cancel }}</button>
             </div>
           </div>
+          <p data-status role="status" aria-live="polite" class="empty:sr-only text-[0.8125rem] leading-5 text-secondary"></p>
+          <p data-error role="alert" class="empty:sr-only text-[0.8125rem] leading-5 text-pretty text-fail-strong"></p>
         </div>
       </li>
       {%- endfor %}
@@ -117,14 +119,14 @@
       {%- for s in view.sessions %}
       <li data-session="{{ s.name }}" class="flex items-center gap-3 py-3 first:pt-0">
         <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-          <div class="flex min-w-0 items-center gap-2">
-            <p class="truncate text-sm leading-5 font-medium text-main">{{ s.title }}</p>
+          <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <p class="min-w-0 text-sm leading-5 font-medium break-words text-main">{{ s.title }}</p>
             {%- if s.current %}
             <span class="shrink-0 rounded-sm border border-v2-border px-1.5 text-xs leading-4 text-secondary">{{ m.session_this }}</span>
             {%- endif %}
           </div>
-          <p class="truncate text-[0.8125rem] leading-5 text-secondary"><time datetime="{{ s.signed_in.iso }}" data-format="{{ m.session_signed_in }}">{{ m.session_signed_in.replace("%date%", s.signed_in.text) }}</time>
-            {%- if let Some(credential) = s.credential %} · {{ credential }}{% endif %}</p>
+          <p class="text-[0.8125rem] leading-5 break-words text-secondary"><time datetime="{{ s.signed_in.iso }}" data-format="{{ m.session_signed_in }}">{{ m.session_signed_in.replace("%date%", s.signed_in.text) }}</time>
+            {%- if let Some(credential) = s.credential %}<br>{{ m.session_passkey.replace("%name%", credential) }}{% endif %}</p>
         </div>
         <button type="button" data-action="revoke" class="{{ ui::button_cls("secondary", "sm") }}">{{ m.sign_out }}</button>
       </li>

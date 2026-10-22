@@ -10,7 +10,6 @@ import {
   type Reply,
   registrationJson,
   requestOptions,
-  say,
   signal,
   supported,
 } from "./webauthn";
@@ -24,13 +23,50 @@ const errors: Record<string, string | undefined> = {
   "passkey-exists": messages.msgExists,
   "last-passkey": messages.msgLast,
   conflict: messages.msgChanged,
+  "not-found": messages.msgGone,
   "signed-out": messages.msgSignedOut,
 };
 
-function fail(reply: Reply | null, error?: unknown): void {
-  say("status", "");
-  if (error !== undefined) say("error", cancelled(error) ? messages.msgCancelled ?? "" : messages.msgFailed ?? "");
-  else say("error", (reply && errors[problem(reply)]) ?? messages.msgError ?? "");
+/** Where a task reports progress and failure: the page header, or a passkey's row. */
+type Place = { status: HTMLElement | null; error: HTMLElement | null };
+
+const header: Place = { status: document.getElementById("status"), error: document.getElementById("error") };
+
+/** Problems that mean the page shows a stale list: reload it from the server, then explain. */
+const stale = new Set(["last-passkey", "conflict", "not-found"]);
+
+function write(element: HTMLElement | null, text: string): void {
+  if (element) element.textContent = text;
+}
+
+function fail(place: Place, reply: Reply | null, error?: unknown): void {
+  write(place.status, "");
+  if (error !== undefined) write(place.error, cancelled(error) ? messages.msgCancelled ?? "" : messages.msgFailed ?? "");
+  else write(place.error, (reply && errors[problem(reply)]) ?? messages.msgError ?? "");
+}
+
+function refresh(code: string, passkey: string): void {
+  if (code === "not-found" && !passkey) return window.location.reload();
+  const notice = new URLSearchParams({ notice: code });
+  if (passkey) notice.set("passkey", passkey);
+  window.location.hash = notice.toString();
+  window.location.reload();
+}
+
+/** After `refresh`: shows its message on the passkey's row if it is still listed, else at the top. */
+function showNotice(): void {
+  const notice = new URLSearchParams(window.location.hash.slice(1));
+  const code = notice.get("notice");
+  if (!code || !stale.has(code)) return;
+  window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  const name = notice.get("passkey");
+  const row = [...document.querySelectorAll<HTMLElement>("[data-passkey]")].find((item) => item.dataset.passkey === name);
+  const place = row ? rowPlace(row) : header;
+  write(place.error, errors[code] ?? messages.msgError ?? "");
+}
+
+function rowPlace(item: HTMLElement): Place {
+  return { status: item.querySelector("[data-status]"), error: item.querySelector("[data-error]") };
 }
 
 async function assertion(path: string, extra: Record<string, unknown>): Promise<PublicKeyCredential> {
@@ -41,34 +77,42 @@ async function assertion(path: string, extra: Record<string, unknown>): Promise<
   return credential;
 }
 
-async function reauthenticate(): Promise<Reply> {
-  say("status", messages.msgConfirm ?? "");
+async function reauthenticate(place: Place): Promise<Reply> {
+  write(place.status, messages.msgConfirm ?? "");
   const credential = await assertion("/account/reauth/options", { csrf });
   return post("/account/reauth", { csrf, credential: assertionJson(credential) });
 }
 
 /** Runs `action`; if the server wants a fresh confirmation, gets one and runs it again. */
-async function fresh(action: () => Promise<Reply>): Promise<Reply> {
+async function fresh(place: Place, action: () => Promise<Reply>): Promise<Reply> {
   const first = await action();
   if (problem(first) !== "reauth-required") return first;
-  const confirmed = await reauthenticate();
+  const confirmed = await reauthenticate(place);
   return confirmed.ok ? action() : confirmed;
 }
 
-/** Wraps a click or submit handler: status while working, then reload or explain. */
-function run(task: () => Promise<Reply | null>): void {
-  say("error", "");
-  say("status", messages.msgWorking ?? "");
+/**
+ * Wraps a click or submit handler: status while working, then reload or explain at `place`.
+ * `passkey` names the row's passkey, so a stale-list refusal can point back at it.
+ */
+function run(task: () => Promise<Reply | null>, place: Place = header, passkey = ""): void {
+  for (const p of new Set([header, place])) write(p.error, "");
+  write(place.status, messages.msgWorking ?? "");
+  const failed = (reply: Reply): void => {
+    const code = problem(reply);
+    if (stale.has(code)) refresh(code, passkey);
+    else fail(place, reply);
+  };
   task()
     .then(async (reply) => {
       if (!reply) return;
-      if (!reply.ok) return fail(reply);
+      if (!reply.ok) return failed(reply);
       await signal(reply.body);
       window.location.reload();
     })
     .catch((error: unknown) => {
-      if (error && typeof error === "object" && "status" in error) fail(error as Reply);
-      else fail(null, error);
+      if (error && typeof error === "object" && "status" in error) failed(error as Reply);
+      else fail(place, null, error);
     });
 }
 
@@ -83,9 +127,9 @@ function addPasskey(event: SubmitEvent): void {
   event.preventDefault();
   const label = (document.getElementById("add-label") as HTMLInputElement | null)?.value.trim();
   run(async () => {
-    const started = await fresh(() => post("/account/passkeys/options", { csrf }));
+    const started = await fresh(header, () => post("/account/passkeys/options", { csrf }));
     if (!started.ok) return started;
-    say("status", messages.msgWorking ?? "");
+    write(header.status, messages.msgWorking ?? "");
     const credential = await navigator.credentials.create({ publicKey: creationOptions(started.body) });
     if (!(credential instanceof PublicKeyCredential)) throw new DOMException("no credential", "NotAllowedError");
     return post("/account/passkeys", { csrf, credential: registrationJson(credential), label: label || null });
@@ -108,15 +152,19 @@ function wirePasskey(item: HTMLElement): void {
   item.querySelector("[data-action=rename]")?.addEventListener("click", () => show(item, "rename"));
   item.querySelector("[data-action=remove]")?.addEventListener("click", () => show(item, "confirm"));
   for (const cancel of item.querySelectorAll("[data-action=cancel]")) {
-    cancel.addEventListener("click", () => show(item, null));
+    cancel.addEventListener("click", () => {
+      write(rowPlace(item).error, "");
+      show(item, null);
+    });
   }
   item.querySelector<HTMLFormElement>("[data-rename]")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const label = item.querySelector<HTMLInputElement>("[data-rename] input")?.value.trim() ?? "";
-    if (label) run(() => post("/account/passkeys/rename", { csrf, name, label }));
+    if (label) run(() => post("/account/passkeys/rename", { csrf, name, label }), rowPlace(item), name);
   });
   item.querySelector("[data-action=confirm-remove]")?.addEventListener("click", () => {
-    run(() => fresh(() => post("/account/passkeys/remove", { csrf, name })));
+    const place = rowPlace(item);
+    run(() => fresh(place, () => post("/account/passkeys/remove", { csrf, name })), place, name);
   });
 }
 
@@ -151,4 +199,5 @@ if (root) {
     for (const item of document.querySelectorAll<HTMLElement>("[data-passkey]")) wirePasskey(item);
     if (window.location.hash === "#add") document.getElementById("add-label")?.focus();
   }
+  showNotice();
 }

@@ -8,4 +8,4 @@ allow-print-in-tests = true
 avoid-breaking-exported-api = false
 
 # Proper nouns that doc_markdown would otherwise ask to wrap in backticks.
-doc-valid-idents = ["ClusterIP", "KubeSolo", "UserInfo", "OpenID", "WebAuthn", "PostgreSQL", "EdDSA", "JWKs", "GitOps", "AuthenticationConfiguration", "MacBook", ".."]
+doc-valid-idents = ["ClusterIP", "KubeSolo", "UserInfo", "OpenID", "WebAuthn", "PostgreSQL", "EdDSA", "JWKs", "GitOps", "AuthenticationConfiguration", "MacBook", "ChromeOS", ".."]

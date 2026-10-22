@@ -67,11 +67,23 @@ impl<S: Send + Sync> FromRequestParts<S> for Requester {
     }
 }
 
-/// Browser and operating system from a `User-Agent`, for a default label. Order matters: Edge
-/// and Opera also say Chrome, Chrome also says Safari, iOS also says Mac OS X.
+/// Browser and operating system from a `User-Agent`, for a default label.
+///
+/// Order matters: Edge and Opera also say Chrome, Chrome also says Safari, iOS also says Mac OS
+/// X, Android and ChromeOS also say Linux. The system is read from the platform comment, the first
+/// parenthesised part (RFC 9110 §10.1.5), so product tokens after it cannot change it.
+///
+/// The label is only as true as the header: iPadOS asks for desktop sites with a Mac user
+/// agent, and browser automation often sends a fixed one, such as Playwright's
+/// "Desktop Chrome", which says Windows on every host.
 #[must_use]
 pub fn device_name(user_agent: &str) -> Option<String> {
     let has = |needle: &str| user_agent.contains(needle);
+    let platform = user_agent
+        .split_once('(')
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .map_or(user_agent, |(comment, _)| comment);
+    let on = |needle: &str| platform.contains(needle);
     let browser = if has("Edg/") || has("EdgA/") || has("EdgiOS/") {
         "Edge"
     } else if has("OPR/") {
@@ -87,19 +99,19 @@ pub fn device_name(user_agent: &str) -> Option<String> {
     } else {
         ""
     };
-    let system = if has("iPhone") {
+    let system = if on("iPhone") {
         "iPhone"
-    } else if has("iPad") {
+    } else if on("iPad") {
         "iPad"
-    } else if has("Android") {
+    } else if on("Android") {
         "Android"
-    } else if has("CrOS") {
+    } else if on("CrOS") {
         "ChromeOS"
-    } else if has("Mac OS X") || has("Macintosh") {
+    } else if on("Mac OS X") || on("Macintosh") {
         "macOS"
-    } else if has("Windows") {
+    } else if on("Windows") {
         "Windows"
-    } else if has("Linux") {
+    } else if on("Linux") {
         "Linux"
     } else {
         ""
@@ -122,25 +134,82 @@ mod tests {
     fn names_common_browsers() {
         let cases = [
             (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
-                Some("Chrome (macOS)"),
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+                Some("Chrome (Linux)"),
             ),
             (
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1",
-                Some("Safari (iPhone)"),
-            ),
-            (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0",
-                Some("Edge (Windows)"),
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36",
+                Some("Chrome (Linux)"),
             ),
             (
                 "Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0",
                 Some("Firefox (Linux)"),
             ),
             (
-                "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36",
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+                Some("Safari (Linux)"),
+            ),
+            (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+                Some("Chrome (macOS)"),
+            ),
+            (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:144.0) Gecko/20100101 Firefox/144.0",
+                Some("Firefox (macOS)"),
+            ),
+            (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+                Some("Safari (macOS)"),
+            ),
+            (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+                Some("Chrome (Windows)"),
+            ),
+            (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:144.0) Gecko/20100101 Firefox/144.0",
+                Some("Firefox (Windows)"),
+            ),
+            (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0",
+                Some("Edge (Windows)"),
+            ),
+            (
+                "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36",
                 Some("Chrome (Android)"),
             ),
+            (
+                "Mozilla/5.0 (Android 15; Mobile; rv:144.0) Gecko/144.0 Firefox/144.0",
+                Some("Firefox (Android)"),
+            ),
+            (
+                "Mozilla/5.0 (Linux; Android 15; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/28.0 Chrome/130.0.0.0 Mobile Safari/537.36",
+                Some("Samsung Internet (Android)"),
+            ),
+            (
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1",
+                Some("Safari (iPhone)"),
+            ),
+            (
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/141.0.7390.41 Mobile/15E148 Safari/604.1",
+                Some("Chrome (iPhone)"),
+            ),
+            (
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/144.0 Mobile/15E148 Safari/605.1.15",
+                Some("Firefox (iPhone)"),
+            ),
+            (
+                "Mozilla/5.0 (iPad; CPU OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1",
+                Some("Safari (iPad)"),
+            ),
+            (
+                "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+                Some("Chrome (ChromeOS)"),
+            ),
+            (
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Windows-Helper/1.0",
+                Some("Chrome (Linux)"),
+            ),
+            ("Firefox/144.0", Some("Firefox")),
             ("curl/8.9.1", None),
         ];
         for (ua, expected) in cases {

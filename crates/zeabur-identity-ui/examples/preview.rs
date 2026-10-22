@@ -10,8 +10,8 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use zeabur_identity_ui::pages::{
-    AppLink, ErrorReason, ProviderButton, error_page, login_page, notice_page, page_lang,
-    setup_page,
+    AccountView, AppLink, ErrorReason, PasskeyRow, ProviderButton, SessionRow, Storage,
+    account_page, error_page, login_page, notice_page, page_lang, setup_page,
 };
 
 const PROVIDERS: [ProviderButton; 1] = [ProviderButton {
@@ -116,6 +116,9 @@ async fn index() -> Html<String> {
         "/setup",
         "/setup#token=preview",
         "/linked",
+        "/account",
+        "/account/one",
+        "/account/signed-out",
     ]
     .map(String::from);
     let errors = REASONS.iter().map(|(name, ..)| format!("/error/{name}"));
@@ -144,6 +147,72 @@ async fn login(Path(state): Path<String>, RawQuery(q): RawQuery, h: HeaderMap) -
             &[],
             &[],
         ),
+        _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+const PASSKEYS: [PasskeyRow<'static>; 3] = [
+    PasskeyRow {
+        name: "cred-1",
+        label: Some("Apple Passwords"),
+        added: Some(1_790_000_000),
+        last_used: Some(1_792_000_000),
+        storage: Storage::Synced,
+        this_device: true,
+    },
+    PasskeyRow {
+        name: "cred-2",
+        label: Some("YubiKey 5 on the office keyring, the blue one"),
+        added: Some(1_780_000_000),
+        last_used: None,
+        storage: Storage::OneDevice,
+        this_device: false,
+    },
+    PasskeyRow {
+        name: "cred-3",
+        label: None,
+        added: None,
+        last_used: None,
+        storage: Storage::Unknown,
+        this_device: false,
+    },
+];
+const SESSIONS: [SessionRow<'static>; 3] = [
+    SessionRow {
+        name: "s-1",
+        app: None,
+        signed_in: 1_792_000_000,
+        credential: Some("Apple Passwords"),
+        current: true,
+    },
+    SessionRow {
+        name: "g-1",
+        app: Some("Grafana"),
+        signed_in: 1_791_000_000,
+        credential: Some("YubiKey 5 on the office keyring, the blue one"),
+        current: false,
+    },
+    SessionRow {
+        name: "g-2",
+        app: Some("kubectl"),
+        signed_in: 1_790_500_000,
+        credential: None,
+        current: false,
+    },
+];
+
+async fn account(Path(state): Path<String>, RawQuery(q): RawQuery, h: HeaderMap) -> Response {
+    let lang = lang(q.as_deref(), &h);
+    let view = |passkeys| AccountView {
+        username: "admin",
+        csrf: "preview",
+        passkeys,
+        sessions: &SESSIONS,
+    };
+    match state.as_str() {
+        "all" => account_page(lang, Some(view(&PASSKEYS))),
+        "one" => account_page(lang, Some(view(&PASSKEYS[..1]))),
+        "signed-out" => account_page(lang, None),
         _ => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -185,6 +254,11 @@ async fn main() -> std::io::Result<()> {
             }),
         )
         .route("/setup/options", post(setup_options))
+        .route(
+            "/account",
+            get(|q: RawQuery, h: HeaderMap| account(Path("all".to_owned()), q, h)),
+        )
+        .route("/account/{state}", get(account))
         .route(
             "/linked",
             get(|RawQuery(q): RawQuery, h: HeaderMap| async move {

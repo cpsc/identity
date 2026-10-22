@@ -172,6 +172,23 @@ pub struct NewGrant {
     pub expires_at: UnixTime,
     /// `sha256:<hex>` of the first refresh token.
     pub initial_hash: String,
+    /// UID of the `User` at sign-in. Absent on grants created before it was recorded.
+    pub subject: Option<String>,
+    /// `Credential` object name the user signed in with.
+    pub credential: Option<String>,
+    /// Whether the authenticator verified the user (WebAuthn UV) at sign-in.
+    pub user_verified: bool,
+}
+
+/// One authentication of a session: at sign-in, or a later re-authentication.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Verification {
+    /// When it happened.
+    pub at: UnixTime,
+    /// `Credential` object name used.
+    pub credential: Option<String>,
+    /// Whether the authenticator verified the user.
+    pub user_verified: bool,
 }
 
 /// A stored refresh-token family.
@@ -193,6 +210,32 @@ pub struct Grant {
     /// Idle expiry: a family unused this long dies. Enforced when the family is read
     /// ([`classify`]); deleting it is only reclaiming space.
     pub idle_expires_at: UnixTime,
+    /// The latest re-authentication, if any (account sessions only).
+    pub reauth: Option<Verification>,
+}
+
+impl Grant {
+    /// The latest authentication: the re-authentication if there was one, else the sign-in.
+    #[must_use]
+    pub fn verification(&self) -> Verification {
+        self.reauth.clone().unwrap_or_else(|| Verification {
+            at: self.spec.auth_time,
+            credential: self.spec.credential.clone(),
+            user_verified: self.spec.user_verified,
+        })
+    }
+
+    /// Whether the grant belongs to `user`: same object name, and the same UID when one was
+    /// recorded.
+    #[must_use]
+    pub fn belongs_to(&self, user: &User) -> bool {
+        self.spec.user == user.name
+            && self
+                .spec
+                .subject
+                .as_ref()
+                .is_none_or(|subject| *subject == user.subject)
+    }
 }
 
 /// Outcome of [`GrantStore::create`].
@@ -250,6 +293,18 @@ pub trait GrantStore: Send + Sync + 'static {
 
     /// Deletes a family. Deleting a missing family succeeds.
     fn revoke(&self, name: &str) -> impl Future<Output = Result<(), StoreError>> + Send;
+
+    /// The families of `user` (see [`Grant::belongs_to`]), read from storage, not a cache.
+    fn list(&self, user: &User) -> impl Future<Output = Result<Vec<Grant>, StoreError>> + Send;
+
+    /// Records a re-authentication on the family `name` if `current_hash` is still its current
+    /// token, as one compare-and-swap. `false` if the family is gone or its token changed.
+    fn reauthenticate(
+        &self,
+        name: &str,
+        current_hash: &str,
+        verification: &Verification,
+    ) -> impl Future<Output = Result<bool, StoreError>> + Send;
 }
 
 /// Classifies a presented hash against a stored family. Shared by every backend so the security
@@ -293,6 +348,7 @@ pub fn rotated(grant: &Grant, next_hash: &str, idle_expires_at: UnixTime) -> Gra
         previous_hash: Some(grant.current_hash.clone()),
         current_hash: next_hash.to_owned(),
         idle_expires_at,
+        reauth: grant.reauth.clone(),
     }
 }
 
@@ -376,6 +432,7 @@ impl MemoryGrantStore {
                 current_hash: grant.initial_hash.clone(),
                 previous_hash: None,
                 idle_expires_at,
+                reauth: None,
             },
         );
         CreateGrant::Created
@@ -447,6 +504,36 @@ impl GrantStore for MemoryGrantStore {
             .remove(name);
         future::ready(Ok(()))
     }
+
+    fn list(&self, user: &User) -> impl Future<Output = Result<Vec<Grant>, StoreError>> + Send {
+        let grants = self.grants.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut list: Vec<Grant> = grants
+            .values()
+            .filter(|grant| grant.belongs_to(user))
+            .cloned()
+            .collect();
+        drop(grants);
+        list.sort_by(|a, b| a.spec.name.cmp(&b.spec.name));
+        future::ready(Ok(list))
+    }
+
+    fn reauthenticate(
+        &self,
+        name: &str,
+        current_hash: &str,
+        verification: &Verification,
+    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
+        let mut grants = self.grants.lock().unwrap_or_else(PoisonError::into_inner);
+        let recorded = match grants.get_mut(name) {
+            Some(grant) if ct_eq(grant.current_hash.as_bytes(), current_hash.as_bytes()) => {
+                grant.reauth = Some(verification.clone());
+                true
+            }
+            Some(_) | None => false,
+        };
+        drop(grants);
+        future::ready(Ok(recorded))
+    }
 }
 
 /// A passkey to store.
@@ -462,6 +549,68 @@ pub struct NewPasskey {
     pub record: String,
     /// User-chosen label.
     pub label: Option<String>,
+    /// Authenticator model (AAGUID, lowercase hyphenated), when the authenticator reports one.
+    pub aaguid: Option<String>,
+    /// Whether the credential may be synced to other devices (WebAuthn BE flag).
+    pub backup_eligible: bool,
+    /// When it was registered. Adapters with their own timestamps may ignore it.
+    pub created_at: UnixTime,
+}
+
+/// A passkey as the account page lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PasskeySummary {
+    /// `Credential` object name.
+    pub name: String,
+    /// Credential ID, base64url.
+    pub credential_id: String,
+    /// The serialized credential record.
+    pub record: String,
+    /// The label: the latest rename, else the one given at registration.
+    pub label: Option<String>,
+    /// Authenticator model (AAGUID).
+    pub aaguid: Option<String>,
+    /// When it was registered.
+    pub created_at: Option<UnixTime>,
+    /// When it last signed in, roughly (see [`CredentialStore::touch`]).
+    pub last_used_at: Option<UnixTime>,
+}
+
+/// Outcome of [`CredentialStore::rename`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rename {
+    /// Renamed.
+    Renamed,
+    /// The user has no such passkey.
+    NotFound,
+}
+
+/// Outcome of [`CredentialStore::remove`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Removal {
+    /// Deleted.
+    Removed,
+    /// It is the user's only passkey, so it stays.
+    LastPasskey,
+    /// The user has no such passkey.
+    NotFound,
+    /// The user's passkeys changed while checking; nothing was deleted. Retrying is safe.
+    Conflict,
+}
+
+/// Something a user did to their own account, recorded for administrators.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountEvent {
+    /// `User` object name.
+    pub user: String,
+    /// The `User` UID.
+    pub subject: String,
+    /// Short `UpperCamelCase` reason, for example `PasskeyAdded`.
+    pub reason: &'static str,
+    /// When it happened.
+    pub at: UnixTime,
+    /// What happened, without personal data beyond the actor, credential, address and browser.
+    pub note: String,
 }
 
 /// An upstream account to link to a user.
@@ -515,6 +664,8 @@ pub struct StoredPasskey {
     pub user: String,
     /// The serialized credential record.
     pub record: String,
+    /// When it last signed in, roughly.
+    pub last_used_at: Option<UnixTime>,
 }
 
 /// Outcome of [`CredentialStore::create`].
@@ -548,6 +699,40 @@ pub trait CredentialStore: Send + Sync + 'static {
         &self,
         name: &str,
     ) -> impl Future<Output = Result<Option<String>, StoreError>> + Send;
+
+    /// The passkeys of `user`, read from storage, not a cache. Adapters that know a credential's
+    /// owning `User` UID leave out credentials owned by another UID.
+    fn passkeys(
+        &self,
+        user: &User,
+    ) -> impl Future<Output = Result<Vec<PasskeySummary>, StoreError>> + Send;
+
+    /// Relabels one of `user`'s passkeys, as one write.
+    fn rename(
+        &self,
+        user: &User,
+        name: &str,
+        label: &str,
+    ) -> impl Future<Output = Result<Rename, StoreError>> + Send;
+
+    /// Deletes one of `user`'s passkeys unless it is their last. Two concurrent removals of
+    /// different passkeys must never both succeed when only two exist.
+    fn remove(
+        &self,
+        user: &User,
+        name: &str,
+    ) -> impl Future<Output = Result<Removal, StoreError>> + Send;
+
+    /// Records that the passkey `name` signed in at `now`. Best effort: callers skip it when
+    /// the stored time is recent and only log a failure.
+    fn touch(
+        &self,
+        name: &str,
+        now: UnixTime,
+    ) -> impl Future<Output = Result<(), StoreError>> + Send;
+
+    /// Records an [`AccountEvent`] where administrators look for it.
+    fn record(&self, event: &AccountEvent) -> impl Future<Output = Result<(), StoreError>> + Send;
 }
 
 /// The pending setup token: who it is for, its hash and expiry, and the stored version that a
@@ -595,8 +780,35 @@ pub trait SetupStore: Send + Sync + 'static {
 /// In-memory credentials, for tests and `--store memory`.
 #[derive(Debug, Default)]
 pub struct MemoryCredentialStore {
-    passkeys: Mutex<HashMap<String, StoredPasskey>>,
+    passkeys: Mutex<HashMap<String, MemoryPasskey>>,
     externals: Mutex<HashMap<String, String>>,
+    events: Mutex<Vec<AccountEvent>>,
+}
+
+#[derive(Debug, Clone)]
+struct MemoryPasskey {
+    passkey: NewPasskey,
+    label: Option<String>,
+    last_used_at: Option<UnixTime>,
+}
+
+impl MemoryCredentialStore {
+    /// The events recorded so far.
+    #[must_use]
+    pub fn events(&self) -> Vec<AccountEvent> {
+        self.events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Deletes a passkey as an administrator would, without the last-passkey check.
+    pub fn delete(&self, name: &str) {
+        self.passkeys
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(name);
+    }
 }
 
 impl CredentialStore for MemoryCredentialStore {
@@ -610,9 +822,10 @@ impl CredentialStore for MemoryCredentialStore {
         } else {
             passkeys.insert(
                 passkey.name.clone(),
-                StoredPasskey {
-                    user: passkey.user.clone(),
-                    record: passkey.record.clone(),
+                MemoryPasskey {
+                    passkey: passkey.clone(),
+                    label: passkey.label.clone(),
+                    last_used_at: None,
                 },
             );
             CreateCredential::Created
@@ -626,7 +839,11 @@ impl CredentialStore for MemoryCredentialStore {
         name: &str,
     ) -> impl Future<Output = Result<Option<StoredPasskey>, StoreError>> + Send {
         let passkeys = self.passkeys.lock().unwrap_or_else(PoisonError::into_inner);
-        future::ready(Ok(passkeys.get(name).cloned()))
+        future::ready(Ok(passkeys.get(name).map(|stored| StoredPasskey {
+            user: stored.passkey.user.clone(),
+            record: stored.passkey.record.clone(),
+            last_used_at: stored.last_used_at,
+        })))
     }
 
     fn link(
@@ -656,6 +873,96 @@ impl CredentialStore for MemoryCredentialStore {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         future::ready(Ok(externals.get(name).cloned()))
+    }
+
+    fn passkeys(
+        &self,
+        user: &User,
+    ) -> impl Future<Output = Result<Vec<PasskeySummary>, StoreError>> + Send {
+        let passkeys = self.passkeys.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut list: Vec<PasskeySummary> = passkeys
+            .values()
+            .filter(|stored| stored.passkey.user == user.name)
+            .map(|stored| PasskeySummary {
+                name: stored.passkey.name.clone(),
+                credential_id: stored.passkey.credential_id.clone(),
+                record: stored.passkey.record.clone(),
+                label: stored.label.clone(),
+                aaguid: stored.passkey.aaguid.clone(),
+                created_at: Some(stored.passkey.created_at),
+                last_used_at: stored.last_used_at,
+            })
+            .collect();
+        drop(passkeys);
+        list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.name.cmp(&b.name)));
+        future::ready(Ok(list))
+    }
+
+    fn rename(
+        &self,
+        user: &User,
+        name: &str,
+        label: &str,
+    ) -> impl Future<Output = Result<Rename, StoreError>> + Send {
+        let mut passkeys = self.passkeys.lock().unwrap_or_else(PoisonError::into_inner);
+        let outcome = match passkeys.get_mut(name) {
+            Some(stored) if stored.passkey.user == user.name => {
+                stored.label = Some(label.to_owned());
+                Rename::Renamed
+            }
+            Some(_) | None => Rename::NotFound,
+        };
+        drop(passkeys);
+        future::ready(Ok(outcome))
+    }
+
+    fn remove(
+        &self,
+        user: &User,
+        name: &str,
+    ) -> impl Future<Output = Result<Removal, StoreError>> + Send {
+        let mut passkeys = self.passkeys.lock().unwrap_or_else(PoisonError::into_inner);
+        let owned = passkeys
+            .values()
+            .filter(|stored| stored.passkey.user == user.name)
+            .count();
+        let target = passkeys
+            .get(name)
+            .is_some_and(|stored| stored.passkey.user == user.name);
+        let outcome = if !target {
+            Removal::NotFound
+        } else if owned < 2 {
+            Removal::LastPasskey
+        } else {
+            passkeys.remove(name);
+            Removal::Removed
+        };
+        drop(passkeys);
+        future::ready(Ok(outcome))
+    }
+
+    fn touch(
+        &self,
+        name: &str,
+        now: UnixTime,
+    ) -> impl Future<Output = Result<(), StoreError>> + Send {
+        if let Some(stored) = self
+            .passkeys
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get_mut(name)
+        {
+            stored.last_used_at = Some(now);
+        }
+        future::ready(Ok(()))
+    }
+
+    fn record(&self, event: &AccountEvent) -> impl Future<Output = Result<(), StoreError>> + Send {
+        self.events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(event.clone());
+        future::ready(Ok(()))
     }
 }
 

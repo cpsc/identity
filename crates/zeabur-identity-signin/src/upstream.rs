@@ -361,6 +361,8 @@ where
                 user: user.name.clone(),
                 auth_time: now,
                 amr: Vec::new(),
+                credential: Some(name.clone()),
+                user_verified: false,
             };
             let location = complete_authorization(oauth, flow, authentication)
                 .map_err(|error| {

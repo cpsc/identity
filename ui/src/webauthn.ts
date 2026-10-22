@@ -147,3 +147,27 @@ export function upstreamButtons(body: () => Json, messages: DOMStringMap, onInva
 export function cancelled(error: unknown): boolean {
   return error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "AbortError");
 }
+
+type Signals = {
+  signalAllAcceptedCredentials?: (options: Json) => Promise<void>;
+  signalUnknownCredential?: (options: Json) => Promise<void>;
+};
+
+/**
+ * Passes the server's signals to the passkey provider (WebAuthn Level 3 §5.1.10), where the
+ * browser supports them: `accepted` lists every credential the user still has, `unknownCredential`
+ * names one the server does not know. Failures are ignored; they are hints.
+ */
+export async function signal(body: Json): Promise<void> {
+  const api = window.PublicKeyCredential as unknown as Signals | undefined;
+  try {
+    if (body.accepted && typeof api?.signalAllAcceptedCredentials === "function") {
+      await api.signalAllAcceptedCredentials(body.accepted as Json);
+    }
+    if (body.unknownCredential && typeof api?.signalUnknownCredential === "function") {
+      await api.signalUnknownCredential(body.unknownCredential as Json);
+    }
+  } catch {
+    // Not supported for this provider, or refused.
+  }
+}

@@ -328,9 +328,12 @@ async fn run<S: KeyStore, D: Directory, G: GrantStore, K: CredentialStore, T: Se
     let listener = TcpListener::bind(config.listen).await?;
     tracing::info!(address = %listener.local_addr()?, issuer = %config.issuer, "listening");
 
-    let outcome = axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await;
+    let outcome = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await;
     shutdown_tx.send_replace(true);
     for task in background.into_iter().chain([rotator]) {
         if let Err(error) = task.await {

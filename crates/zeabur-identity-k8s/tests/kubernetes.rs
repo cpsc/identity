@@ -205,6 +205,9 @@ mod tests {
                 scopes: vec!["openid".into()],
                 initial_idle_expires_at: 4_000_000_000,
                 initial_hash: format!("sha256:{}", "0".repeat(64)),
+                subject: None,
+                credential: None,
+                user_verified: false,
             },
         );
         if let Some(expires_at) = expires_at {
@@ -746,6 +749,7 @@ mod tests {
                         current_hash: format!("sha256:{i:064x}"),
                         previous_hash: None,
                         idle_expires_at: 0,
+                        reauth: None,
                     });
                     barrier.wait().await;
                     replace_status_if_unchanged(&grants, &object).await.unwrap()
@@ -898,6 +902,9 @@ mod tests {
             amr: vec!["hwk".into()],
             expires_at: zeabur_identity_core::clock::UnixTime::from_secs(now + 3600),
             initial_hash: zeabur_identity_core::crypto::hash_secret(b"token-0"),
+            subject: None,
+            credential: None,
+            user_verified: false,
         }
     }
 
@@ -1137,6 +1144,8 @@ mod tests {
             user: "alice".into(),
             auth_time: zeabur_identity_core::clock::Clock::now(&SystemClock),
             amr: vec!["hwk".into()],
+            credential: None,
+            user_verified: false,
         };
         let location = complete_authorization(&server, flow, auth).unwrap();
         let code = form_urlencoded::parse(location.split_once('?').unwrap().1.as_bytes())
@@ -1293,6 +1302,9 @@ mod tests {
                 credential_id: URL_SAFE_NO_PAD.encode(generation.as_bytes()),
                 record: "{}".into(),
                 label: None,
+                aaguid: None,
+                backup_eligible: false,
+                created_at: UnixTime::from_secs(0),
             };
             credential_store.create(&passkey).await.unwrap();
             let external = NewExternal {
@@ -1486,6 +1498,9 @@ mod tests {
                 credential_id: "Y3JlZA".into(),
                 record: "{}".into(),
                 label: None,
+                aaguid: None,
+                backup_eligible: false,
+                created_at: zeabur_identity_core::clock::UnixTime::from_secs(0),
             },
         )
         .await

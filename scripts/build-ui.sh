@@ -7,6 +7,6 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 out="$root/crates/zeabur-identity-ui/assets"
 
 tailwindcss --input "$root/ui/styles/app.css" --output "$out/app.css" --minify
-for page in login setup; do
+for page in login setup account; do
   bun build "$root/ui/src/$page.ts" --target=browser --format=esm --minify --outfile "$out/$page.js" >/dev/null
 done

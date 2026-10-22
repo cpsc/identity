@@ -1058,4 +1058,586 @@ mod tests {
         assert!(fields.get("user").is_none());
         assert!(fields.get("subject").is_none());
     }
+
+    mod account {
+        use zeabur_identity_signin::account::{REAUTH_WINDOW, SESSION_COOKIE, SESSION_LIFETIME};
+        use zeabur_identity_store::{CredentialStore as _, GrantStore as _, Removal};
+
+        use super::*;
+
+        /// A signed-in browser: the session cookie and the page's CSRF token.
+        struct Session {
+            cookie: String,
+            csrf: String,
+        }
+
+        impl Session {
+            fn cookies(&self) -> [(&str, &str); 1] {
+                [(SESSION_COOKIE, self.cookie.as_str())]
+            }
+        }
+
+        async fn user(h: &Harness, name: &str) -> User {
+            h.service.oauth.directory.user(name).await.unwrap().unwrap()
+        }
+
+        async fn passkeys(h: &Harness, name: &str) -> Vec<String> {
+            let user = user(h, name).await;
+            let mut names: Vec<String> = h
+                .service
+                .credentials
+                .passkeys(&user)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|p| p.name)
+                .collect();
+            names.sort();
+            names
+        }
+
+        async fn page(h: &Harness, session: Option<&str>) -> String {
+            let mut request = Request::get("/account");
+            if let Some(cookie) = session {
+                request = request.header(header::COOKIE, format!("{SESSION_COOKIE}={cookie}"));
+            }
+            let response = h
+                .app
+                .clone()
+                .oneshot(request.body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let headers = response.headers();
+            assert_eq!(
+                headers[header::CONTENT_SECURITY_POLICY],
+                zeabur_identity_ui::CSP
+            );
+            assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let html = String::from_utf8(bytes.to_vec()).unwrap();
+            assert!(!html.contains("<script>") && !html.contains(" style=\""));
+            html
+        }
+
+        fn csrf_of(html: &str) -> String {
+            html.split_once("data-csrf=\"")
+                .unwrap()
+                .1
+                .split('"')
+                .next()
+                .unwrap()
+                .to_owned()
+        }
+
+        async fn assertion(device: &mut Device, reply: &Reply) -> (Value, String) {
+            assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+            let options: CredentialRequestOptions =
+                serde_json::from_value(reply.body.clone()).unwrap();
+            let assertion = device
+                .authenticate(&origin(), options, DefaultClientData)
+                .await
+                .unwrap();
+            (
+                serde_json::to_value(assertion).unwrap(),
+                reply.cookie(CEREMONY_COOKIE).unwrap(),
+            )
+        }
+
+        async fn sign_in_to_account(h: &Harness, device: &mut Device) -> Session {
+            let reply = post(&h.app, "/account/session/options", json!({}), &[]).await;
+            let (credential, ceremony) = assertion(device, &reply).await;
+            let reply = post(
+                &h.app,
+                "/account/session",
+                json!({ "credential": credential }),
+                &[(CEREMONY_COOKIE, &ceremony)],
+            )
+            .await;
+            assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+            let accepted = &reply.body["accepted"];
+            assert_eq!(accepted["rpId"], "login.example.com");
+            assert!(
+                accepted["allAcceptedCredentialIds"]
+                    .as_array()
+                    .is_some_and(|ids| !ids.is_empty())
+            );
+            let set_cookie = reply
+                .headers
+                .get_all(header::SET_COOKIE)
+                .iter()
+                .map(|v| v.to_str().unwrap().to_owned())
+                .find(|v| v.starts_with(SESSION_COOKIE))
+                .unwrap();
+            assert!(set_cookie.contains("HttpOnly") && set_cookie.contains("SameSite=Lax"));
+            let cookie = reply.cookie(SESSION_COOKIE).unwrap();
+            let csrf = csrf_of(&page(h, Some(&cookie)).await);
+            Session { cookie, csrf }
+        }
+
+        async fn reauth(h: &Harness, session: &Session, device: &mut Device) -> Reply {
+            let reply = post(
+                &h.app,
+                "/account/reauth/options",
+                json!({ "csrf": session.csrf }),
+                &session.cookies(),
+            )
+            .await;
+            let (credential, ceremony) = assertion(device, &reply).await;
+            post(
+                &h.app,
+                "/account/reauth",
+                json!({ "csrf": session.csrf, "credential": credential }),
+                &[
+                    (SESSION_COOKIE, &session.cookie),
+                    (CEREMONY_COOKIE, &ceremony),
+                ],
+            )
+            .await
+        }
+
+        async fn add(h: &Harness, session: &Session, device: &mut Device) -> Reply {
+            let reply = post(
+                &h.app,
+                "/account/passkeys/options",
+                json!({ "csrf": session.csrf }),
+                &session.cookies(),
+            )
+            .await;
+            if reply.status != StatusCode::OK {
+                return reply;
+            }
+            let options: CredentialCreationOptions =
+                serde_json::from_value(reply.body.clone()).unwrap();
+            let public_key = &reply.body["publicKey"];
+            assert_eq!(
+                public_key["authenticatorSelection"]["residentKey"],
+                "required"
+            );
+            assert_eq!(
+                public_key["authenticatorSelection"]["userVerification"],
+                "required"
+            );
+            let ceremony = reply.cookie(CEREMONY_COOKIE).unwrap();
+            let credential = device
+                .register(&origin(), options, DefaultClientData)
+                .await
+                .unwrap();
+            post(
+                &h.app,
+                "/account/passkeys",
+                json!({ "csrf": session.csrf, "credential": credential }),
+                &[
+                    (SESSION_COOKIE, &session.cookie),
+                    (CEREMONY_COOKIE, &ceremony),
+                ],
+            )
+            .await
+        }
+
+        async fn remove(h: &Harness, session: &Session, name: &str) -> Reply {
+            post(
+                &h.app,
+                "/account/passkeys/remove",
+                json!({ "csrf": session.csrf, "name": name }),
+                &session.cookies(),
+            )
+            .await
+        }
+
+        fn advance(h: &Harness, by: std::time::Duration) {
+            h.clock.0.fetch_add(by.as_secs(), Ordering::SeqCst);
+        }
+
+        /// Admin enrolled with one device and signed in to `/account` with it.
+        async fn signed_in() -> (Harness, Device, Session) {
+            let h = harness().await;
+            let mut first = device();
+            enrol(&h, &mut first).await;
+            let session = sign_in_to_account(&h, &mut first).await;
+            (h, first, session)
+        }
+
+        async fn enrol_dana(h: &Harness) -> Device {
+            let mut dana = device();
+            let (credential, ceremony) = start_enrolment(h, &mut dana, INVITATION).await;
+            let reply = post(
+                &h.app,
+                "/setup",
+                json!({ "token": INVITATION, "credential": credential }),
+                &[(CEREMONY_COOKIE, &ceremony)],
+            )
+            .await;
+            assert_eq!(reply.status, StatusCode::CREATED, "{}", reply.body);
+            dana
+        }
+
+        #[tokio::test]
+        async fn the_page_lists_only_the_session_users_passkeys() {
+            let (h, _first, session) = signed_in().await;
+            let _dana = enrol_dana(&h).await;
+            let html = page(&h, Some(&session.cookie)).await;
+            let [admin] = <[String; 1]>::try_from(passkeys(&h, "admin").await).unwrap();
+            let [dana] = <[String; 1]>::try_from(passkeys(&h, "dana").await).unwrap();
+            assert!(html.contains(&admin));
+            assert!(!html.contains(&dana));
+            assert!(html.contains("Laptop"));
+            assert!(html.contains("Ask an administrator for a setup link"));
+
+            let signed_out = page(&h, None).await;
+            assert!(!signed_out.contains("data-csrf"));
+            assert!(!signed_out.contains(&admin));
+        }
+
+        #[tokio::test]
+        async fn changes_cannot_reach_another_users_objects() {
+            let (h, _first, admin) = signed_in().await;
+            let mut dana_device = enrol_dana(&h).await;
+            let dana = sign_in_to_account(&h, &mut dana_device).await;
+            let [admin_passkey] = <[String; 1]>::try_from(passkeys(&h, "admin").await).unwrap();
+            let admin_session = admin.cookie.split_once('.').unwrap().0.to_owned();
+
+            let reply = post(
+                &h.app,
+                "/account/passkeys/rename",
+                json!({ "csrf": dana.csrf, "name": admin_passkey, "label": "Mine" }),
+                &dana.cookies(),
+            )
+            .await;
+            assert_eq!(reply.status, StatusCode::NOT_FOUND);
+            let reply = remove(&h, &dana, &admin_passkey).await;
+            assert_eq!(reply.status, StatusCode::NOT_FOUND);
+            let reply = post(
+                &h.app,
+                "/account/sessions/revoke",
+                json!({ "csrf": dana.csrf, "name": admin_session }),
+                &dana.cookies(),
+            )
+            .await;
+            assert_eq!(reply.status, StatusCode::NOT_FOUND);
+            assert_eq!(passkeys(&h, "admin").await, [admin_passkey]);
+            assert!(page(&h, Some(&admin.cookie)).await.contains("data-csrf"));
+
+            // Re-authenticating with someone else's passkey does not count.
+            let reply = reauth(&h, &admin, &mut dana_device).await;
+            assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
+            assert_eq!(reply.kind(), "urn:zeabur-identity:problem:passkey-failed");
+
+            // A session is tied to the user's UID: a recreated user of the same name is signed out.
+            let mut recreated = user(&h, "admin").await;
+            recreated.subject = "0f0e0d0c-0b0a-4908-8706-050403020100".into();
+            h.service.oauth.directory.put_user(recreated);
+            assert!(!page(&h, Some(&admin.cookie)).await.contains("data-csrf"));
+        }
+
+        #[tokio::test]
+        async fn adding_and_removing_need_a_recent_verified_passkey() {
+            let (h, mut first, session) = signed_in().await;
+            advance(&h, REAUTH_WINDOW);
+            let mut second = device();
+            let reply = add(&h, &session, &mut second).await;
+            assert_eq!(reply.status, StatusCode::FORBIDDEN);
+            assert_eq!(reply.kind(), "urn:zeabur-identity:problem:reauth-required");
+            let [only] = <[String; 1]>::try_from(passkeys(&h, "admin").await).unwrap();
+            assert_eq!(
+                remove(&h, &session, &only).await.kind(),
+                "urn:zeabur-identity:problem:reauth-required"
+            );
+
+            let reply = reauth(&h, &session, &mut first).await;
+            assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+            let reply = add(&h, &session, &mut second).await;
+            assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+            assert_eq!(passkeys(&h, "admin").await.len(), 2);
+            let events = h.service.credentials.events();
+            let added = events.last().unwrap();
+            assert_eq!(added.reason, "PasskeyAdded");
+            assert_eq!(added.subject, ADMIN_UID);
+            assert!(added.note.contains("actor=admin"));
+
+            // The same authenticator cannot be added twice.
+            advance(
+                &h,
+                REAUTH_WINDOW
+                    .checked_sub(std::time::Duration::from_secs(1))
+                    .unwrap(),
+            );
+            let reply = post(
+                &h.app,
+                "/account/passkeys/options",
+                json!({ "csrf": session.csrf }),
+                &session.cookies(),
+            )
+            .await;
+            assert_eq!(reply.status, StatusCode::OK);
+            assert_eq!(
+                reply.body["publicKey"]["excludeCredentials"]
+                    .as_array()
+                    .unwrap()
+                    .len(),
+                2
+            );
+            advance(&h, std::time::Duration::from_secs(1));
+            let reply = add(&h, &session, &mut device()).await;
+            assert_eq!(reply.kind(), "urn:zeabur-identity:problem:reauth-required");
+        }
+
+        #[tokio::test]
+        async fn rename_needs_the_csrf_token_and_same_origin() {
+            let (h, _first, session) = signed_in().await;
+            let [name] = <[String; 1]>::try_from(passkeys(&h, "admin").await).unwrap();
+            for csrf in ["", "0000", &"0".repeat(64)] {
+                let reply = post(
+                    &h.app,
+                    "/account/passkeys/rename",
+                    json!({ "csrf": csrf, "name": name, "label": "Phone" }),
+                    &session.cookies(),
+                )
+                .await;
+                assert_eq!(reply.status, StatusCode::FORBIDDEN);
+                assert_eq!(reply.kind(), "urn:zeabur-identity:problem:csrf");
+            }
+            let reply = call(
+                &h.app,
+                Method::POST,
+                "/account/passkeys/rename",
+                Some(json!({ "csrf": session.csrf, "name": name, "label": "Phone" })),
+                &session.cookies(),
+                Some("https://evil.example"),
+            )
+            .await;
+            assert_eq!(reply.status, StatusCode::FORBIDDEN);
+            assert!(!page(&h, Some(&session.cookie)).await.contains("Phone"));
+
+            // Rename needs no recent passkey confirmation.
+            advance(&h, REAUTH_WINDOW);
+            let reply = post(
+                &h.app,
+                "/account/passkeys/rename",
+                json!({ "csrf": session.csrf, "name": name, "label": "  Phone  " }),
+                &session.cookies(),
+            )
+            .await;
+            assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+            assert!(page(&h, Some(&session.cookie)).await.contains("Phone"));
+            let fields = &reply.audit.unwrap()["fields"];
+            assert_eq!(fields["event"], "account.passkey_renamed");
+            assert_eq!(fields["credential"], name.as_str());
+            assert_eq!(
+                h.service.credentials.events().last().unwrap().reason,
+                "PasskeyRenamed"
+            );
+        }
+
+        #[tokio::test]
+        async fn the_last_passkey_cannot_be_removed() {
+            let (h, _first, session) = signed_in().await;
+            let [only] = <[String; 1]>::try_from(passkeys(&h, "admin").await).unwrap();
+            let reply = remove(&h, &session, &only).await;
+            assert_eq!(reply.status, StatusCode::CONFLICT);
+            assert_eq!(reply.kind(), "urn:zeabur-identity:problem:last-passkey");
+            assert_eq!(passkeys(&h, "admin").await, [only]);
+        }
+
+        #[tokio::test]
+        async fn concurrent_removals_keep_one_passkey() {
+            let (h, _laptop, session) = signed_in().await;
+            let reply = add(&h, &session, &mut device()).await;
+            assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+            let [a, b] = <[String; 2]>::try_from(passkeys(&h, "admin").await).unwrap();
+            let (first, second) = tokio::join!(remove(&h, &session, &a), remove(&h, &session, &b));
+            let statuses = [first.status, second.status];
+            assert_eq!(
+                statuses.iter().filter(|s| **s == StatusCode::OK).count(),
+                1,
+                "{statuses:?}"
+            );
+            assert_eq!(passkeys(&h, "admin").await.len(), 1);
+
+            // The store itself: of two removals racing, one is refused.
+            let (h, _laptop, session) = signed_in().await;
+            let reply = add(&h, &session, &mut device()).await;
+            assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+            let [a, b] = <[String; 2]>::try_from(passkeys(&h, "admin").await).unwrap();
+            let admin = user(&h, "admin").await;
+            let store = &h.service.credentials;
+            let (first, second) = tokio::join!(store.remove(&admin, &a), store.remove(&admin, &b));
+            let mut outcomes = [first.unwrap(), second.unwrap()];
+            outcomes.sort_by_key(|o| matches!(o, Removal::LastPasskey));
+            assert!(
+                matches!(outcomes, [Removal::Removed, Removal::LastPasskey]),
+                "{outcomes:?}"
+            );
+            assert_eq!(passkeys(&h, "admin").await.len(), 1);
+        }
+
+        #[tokio::test]
+        async fn removing_a_passkey_revokes_what_it_signed_in() {
+            let (h, mut first, by_first) = signed_in().await;
+            let mut second = device();
+            let reply = add(&h, &by_first, &mut second).await;
+            assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+            let by_second = sign_in_to_account(&h, &mut second).await;
+            // An OAuth grant from the first passkey.
+            let tokens = exchange(&h, &sign_in(&h, &mut first).await).await;
+            let refresh = tokens["refresh_token"].as_str().unwrap().to_owned();
+            let admin = user(&h, "admin").await;
+            assert_eq!(h.service.oauth.grants.list(&admin).await.unwrap().len(), 3);
+
+            let first_name = h
+                .service
+                .credentials
+                .passkeys(&admin)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|p| p.label.as_deref() == Some("Laptop"))
+                .unwrap()
+                .name;
+            let reply = remove(&h, &by_second, &first_name).await;
+            assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+            assert_eq!(reply.body["signed_out"], false);
+            assert_eq!(
+                reply.body["accepted"]["allAcceptedCredentialIds"]
+                    .as_array()
+                    .unwrap()
+                    .len(),
+                1
+            );
+            let fields = &reply.audit.unwrap()["fields"];
+            assert_eq!(fields["event"], "account.passkey_removed");
+            assert_eq!(fields["revoked"], 2);
+
+            let left = h.service.oauth.grants.list(&admin).await.unwrap();
+            assert_eq!(left.len(), 1);
+            assert_eq!(
+                left[0].spec.name,
+                by_second.cookie.split_once('.').unwrap().0
+            );
+            assert!(!page(&h, Some(&by_first.cookie)).await.contains("data-csrf"));
+            let request = Request::post("/token")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "grant_type=refresh_token&client_id=kubectl&refresh_token={refresh}"
+                )))
+                .unwrap();
+            let response = h.app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let event = h.service.credentials.events().last().unwrap().clone();
+            assert_eq!(event.reason, "PasskeyRemoved");
+            assert!(event.note.contains(&first_name));
+
+            // The removed passkey is now unknown, and the browser is told so.
+            let reply = post(&h.app, "/account/session/options", json!({}), &[]).await;
+            let (credential, ceremony) = assertion(&mut first, &reply).await;
+            let reply = post(
+                &h.app,
+                "/account/session",
+                json!({ "credential": credential }),
+                &[(CEREMONY_COOKIE, &ceremony)],
+            )
+            .await;
+            assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
+            assert_eq!(reply.body["unknownCredential"]["rpId"], "login.example.com");
+            assert_eq!(
+                reply.body["unknownCredential"]["credentialId"],
+                credential["id"]
+            );
+        }
+
+        #[tokio::test]
+        async fn sessions_can_be_revoked() {
+            let (h, mut first, this) = signed_in().await;
+            let other = sign_in_to_account(&h, &mut first).await;
+            let _tokens = exchange(&h, &sign_in(&h, &mut first).await).await;
+            let admin = user(&h, "admin").await;
+            assert_eq!(h.service.oauth.grants.list(&admin).await.unwrap().len(), 3);
+
+            let reply = post(
+                &h.app,
+                "/account/sessions/revoke",
+                json!({ "csrf": this.csrf, "name": other.cookie.split_once('.').unwrap().0 }),
+                &this.cookies(),
+            )
+            .await;
+            assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+            assert!(!page(&h, Some(&other.cookie)).await.contains("data-csrf"));
+            assert_eq!(
+                h.service.credentials.events().last().unwrap().reason,
+                "SessionRevoked"
+            );
+
+            let reply = post(
+                &h.app,
+                "/account/sessions/revoke-others",
+                json!({ "csrf": this.csrf }),
+                &this.cookies(),
+            )
+            .await;
+            assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+            let left = h.service.oauth.grants.list(&admin).await.unwrap();
+            assert_eq!(left.len(), 1);
+            assert!(page(&h, Some(&this.cookie)).await.contains("data-csrf"));
+
+            let reply = post(
+                &h.app,
+                "/account/sign-out",
+                json!({ "csrf": this.csrf }),
+                &this.cookies(),
+            )
+            .await;
+            assert_eq!(reply.status, StatusCode::OK);
+            let left = h.service.oauth.grants.list(&admin).await.unwrap();
+            assert_eq!(left.len(), 0);
+        }
+
+        #[tokio::test]
+        async fn sessions_end_after_an_hour_and_with_the_user() {
+            let (h, _first, session) = signed_in().await;
+            advance(&h, SESSION_LIFETIME);
+            assert!(!page(&h, Some(&session.cookie)).await.contains("data-csrf"));
+            let reply = post(
+                &h.app,
+                "/account/sessions/revoke-others",
+                json!({ "csrf": session.csrf }),
+                &session.cookies(),
+            )
+            .await;
+            assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
+            assert_eq!(reply.kind(), "urn:zeabur-identity:problem:signed-out");
+
+            let (h, _first, session) = signed_in().await;
+            let mut admin = user(&h, "admin").await;
+            admin.disabled = true;
+            h.service.oauth.directory.put_user(admin);
+            assert!(!page(&h, Some(&session.cookie)).await.contains("data-csrf"));
+        }
+
+        #[tokio::test]
+        async fn passkey_endpoints_are_published() {
+            let h = harness().await;
+            let response = h
+                .app
+                .clone()
+                .oneshot(
+                    Request::get("/.well-known/passkey-endpoints")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
+            let body: Value =
+                serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes())
+                    .unwrap();
+            assert_eq!(
+                body,
+                json!({
+                    "enroll": "https://login.example.com/account#add",
+                    "manage": "https://login.example.com/account",
+                })
+            );
+        }
+    }
 }

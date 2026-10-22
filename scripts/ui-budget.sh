@@ -7,7 +7,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 assets="$root/crates/zeabur-identity-ui/assets"
 status=0
 printf '%-12s %8s %8s %8s\n' asset bytes brotli budget
-for entry in app.css:8192 login.js:3072 setup.js:3072; do
+for entry in app.css:8192 login.js:3072 setup.js:3072 account.js:3072; do
   name="${entry%%:*}"
   budget="${entry##*:}"
   raw=$(wc -c <"$assets/$name" | tr -d ' ')

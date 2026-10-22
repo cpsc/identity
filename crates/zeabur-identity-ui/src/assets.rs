@@ -16,7 +16,7 @@ struct Asset {
     bytes: &'static [u8],
 }
 
-const ASSETS: [Asset; 4] = [
+const ASSETS: [Asset; 5] = [
     Asset {
         name: "app.css",
         content_type: "text/css; charset=utf-8",
@@ -31,6 +31,11 @@ const ASSETS: [Asset; 4] = [
         name: "setup.js",
         content_type: "text/javascript; charset=utf-8",
         bytes: include_bytes!("../assets/setup.js"),
+    },
+    Asset {
+        name: "account.js",
+        content_type: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../assets/account.js"),
     },
     Asset {
         name: "Geist-Variable.woff2",
@@ -48,6 +53,8 @@ pub struct Versions {
     pub login_js: String,
     /// `setup.js`.
     pub setup_js: String,
+    /// `account.js`.
+    pub account_js: String,
 }
 
 /// The embedded assets' versions, hashed once.
@@ -67,6 +74,7 @@ impl Versions {
             css: version("app.css"),
             login_js: version("login.js"),
             setup_js: version("setup.js"),
+            account_js: version("account.js"),
         }
     }
 }

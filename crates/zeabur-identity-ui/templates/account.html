@@ -1,0 +1,147 @@
+{%- extends "base.html" -%}
+{%- import "ui.html" as ui -%}
+{%- import "icons.html" as icons -%}
+{%- block title %}{{ m.account_title }}{% endblock -%}
+{%- block head %}<script type="module" src="/assets/account.js?v={{ assets.account_js }}"></script>{% endblock -%}
+{%- block content %}
+<div id="account" class="flex flex-col gap-5"{% if let Some(view) = view %} data-csrf="{{ view.csrf }}"{% endif %} data-lang="{{ lang.tag() }}"
+     data-msg-failed="{{ m.passkey_failed }}" data-msg-cancelled="{{ m.passkey_cancelled }}"
+     data-msg-working="{{ m.working }}" data-msg-error="{{ m.generic_error }}" data-msg-confirm="{{ m.confirm_working }}"
+     data-msg-exists="{{ m.passkey_exists }}" data-msg-last="{{ m.last_passkey_error }}"
+     data-msg-changed="{{ m.changed_error }}" data-msg-signed-out="{{ m.signed_out_error }}">
+{%- match view %}
+{%- when None %}
+{% call ui::card() %}
+  {{ ui::card_header(m.account_title, m.account_signed_out) }}
+  {% call ui::card_content() %}
+  <div class="flex flex-col gap-5">
+    {#- Present and empty from first paint, so screen readers announce what the script writes. -#}
+    <div id="status" role="status" aria-live="polite" class="empty:sr-only text-[0.8125rem] leading-5 text-secondary"></div>
+    <div id="error" role="alert" class="empty:sr-only text-[0.8125rem] leading-5 text-pretty text-fail-strong"></div>
+    <div id="unsupported" hidden>
+      {% call ui::alert(m.passkey_unsupported_title, "default", "Key", live = "") %}{{ m.passkey_unsupported_body }}{% endcall %}
+    </div>
+    <noscript>{% call ui::alert(m.noscript_title, "default", "Key", live = "") %}{{ m.noscript_body }}{% endcall %}</noscript>
+    <button type="button" id="account-sign-in" class="{{ ui::button_cls("primary") }} w-full">{{ icons::icon("Fingerprint") }}{{ m.login_passkey }}</button>
+    {% call ui::disclosure(m.lost_passkey_title, center = true) %}
+    <p>{{ m.lost_passkey_body }}</p>
+    {{ ui::command(reset_command) }}
+    <p>{{ m.lost_passkey_note }}</p>
+    {% endcall %}
+  </div>
+  {% endcall %}
+{% endcall %}
+{%- when Some(view) %}
+{% call ui::card() %}
+  {{ ui::card_header(m.account_title, m.signed_in_as.replace("%user%", view.username)) }}
+  {% call ui::card_content() %}
+  <div class="flex flex-col gap-3">
+    {#- Present and empty from first paint, so screen readers announce what the script writes. -#}
+    <div id="status" role="status" aria-live="polite" class="empty:sr-only text-[0.8125rem] leading-5 text-secondary"></div>
+    <div id="error" role="alert" class="empty:sr-only text-[0.8125rem] leading-5 text-pretty text-fail-strong"></div>
+    <noscript>{% call ui::alert(m.noscript_title, "default", "Key", live = "") %}{{ m.noscript_body }}{% endcall %}</noscript>
+    <button type="button" id="sign-out" class="{{ ui::button_cls("secondary") }} w-full">{{ m.sign_out }}</button>
+  </div>
+  {% endcall %}
+{% endcall %}
+
+{% call ui::card() %}
+  <section aria-labelledby="passkeys-title" class="flex flex-col gap-4">
+    <h2 id="passkeys-title" class="text-base leading-6 font-semibold text-main">{{ m.passkeys_title }}</h2>
+    {%- if view.passkeys.len() == 1 %}
+    {% call ui::alert(m.backup_title, "warn", "Key", live = "") %}{{ m.backup_body }}{% endcall %}
+    {%- endif %}
+    <ul class="flex flex-col divide-y divide-v2-border">
+      {%- for p in view.passkeys %}
+      <li data-passkey="{{ p.name }}" class="flex gap-3 py-3 first:pt-0">
+        <div class="flex size-8 shrink-0 items-center justify-center rounded-md border border-v2-border bg-v2-surface-hover text-secondary">
+          {{ icons::icon("Key", "size-4") }}
+        </div>
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
+          <div class="flex min-w-0 items-center gap-2">
+            <p class="truncate text-sm leading-5 font-medium text-main">{{ p.label }}</p>
+            {%- if p.this_device %}
+            <span class="shrink-0 rounded-sm border border-v2-border px-1.5 text-xs leading-4 text-secondary">{{ m.passkey_this_device }}</span>
+            {%- endif %}
+          </div>
+          <p class="text-[0.8125rem] leading-5 text-secondary">
+            {%- if !p.storage.is_empty() %}<span>{{ p.storage }}</span>{% endif -%}
+            {%- if let Some(added) = p.added %}{% if !p.storage.is_empty() %} · {% endif %}<time datetime="{{ added.iso }}" data-format="{{ m.passkey_added }}">{{ m.passkey_added.replace("%date%", added.text) }}</time>{% endif -%}
+            {%- if let Some(used) = p.last_used %}<br><time datetime="{{ used.iso }}" data-format="{{ m.passkey_last_used }}">{{ m.passkey_last_used.replace("%date%", used.text) }}</time>{% endif -%}
+          </p>
+          <div data-actions class="mt-1 flex flex-wrap gap-2">
+            <button type="button" data-action="rename" class="{{ ui::button_cls("secondary", "sm") }}">{{ m.rename }}</button>
+            {%- if view.passkeys.len() > 1 %}
+            <button type="button" data-action="remove" class="{{ ui::button_cls("danger", "sm") }}">{{ m.remove }}</button>
+            {%- endif %}
+          </div>
+          {%- if view.passkeys.len() == 1 %}
+          <p class="text-xs leading-4 text-secondary">{{ m.last_passkey_note }}</p>
+          {%- endif %}
+          <form data-rename hidden class="mt-1 flex flex-col gap-2" novalidate>
+            <label class="sr-only" for="label-{{ loop.index }}">{{ m.setup_label }}</label>
+            <input id="label-{{ loop.index }}" name="label" type="text" maxlength="64" required autocomplete="off" value="{{ p.label }}" class="{{ ui::input_cls() }}">
+            <div class="flex gap-2">
+              <button type="submit" class="{{ ui::button_cls("primary", "sm") }}">{{ m.save }}</button>
+              <button type="button" data-action="cancel" class="{{ ui::button_cls("secondary", "sm") }}">{{ m.cancel }}</button>
+            </div>
+          </form>
+          <div data-confirm hidden class="mt-1 flex flex-col gap-2">
+            {% call ui::alert(m.remove_title, "destructive", "WarningCircle", live = "") %}{{ m.remove_body }}{% endcall %}
+            <div class="flex gap-2">
+              <button type="button" data-action="confirm-remove" class="{{ ui::button_cls("danger", "sm") }}">{{ icons::icon("Fingerprint") }}{{ m.remove }}</button>
+              <button type="button" data-action="cancel" class="{{ ui::button_cls("secondary", "sm") }}">{{ m.cancel }}</button>
+            </div>
+          </div>
+        </div>
+      </li>
+      {%- endfor %}
+    </ul>
+    <form id="add" class="flex flex-col gap-3 border-t border-v2-border pt-4" novalidate>
+      {% call ui::field("add-label", m.setup_label, m.setup_label_hint) %}
+      <input id="add-label" name="label" type="text" maxlength="64" class="{{ ui::input_cls() }}" autocomplete="off"
+             {{- ui::field_describedby("add-label", m.setup_label_hint) }}>
+      {% endcall %}
+      <button type="submit" class="{{ ui::button_cls("primary") }} w-full">{{ icons::icon("Fingerprint") }}{{ m.add_passkey }}</button>
+    </form>
+  </section>
+{% endcall %}
+
+{% call ui::card() %}
+  <section aria-labelledby="sessions-title" class="flex flex-col gap-4">
+    <div class="flex flex-col gap-1">
+      <h2 id="sessions-title" class="text-base leading-6 font-semibold text-main">{{ m.sessions_title }}</h2>
+      <p class="text-[0.8125rem] leading-5 text-pretty text-secondary">{{ m.sessions_note }}</p>
+    </div>
+    <ul class="flex flex-col divide-y divide-v2-border">
+      {%- for s in view.sessions %}
+      <li data-session="{{ s.name }}" class="flex items-center gap-3 py-3 first:pt-0">
+        <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+          <div class="flex min-w-0 items-center gap-2">
+            <p class="truncate text-sm leading-5 font-medium text-main">{{ s.title }}</p>
+            {%- if s.current %}
+            <span class="shrink-0 rounded-sm border border-v2-border px-1.5 text-xs leading-4 text-secondary">{{ m.session_this }}</span>
+            {%- endif %}
+          </div>
+          <p class="truncate text-[0.8125rem] leading-5 text-secondary"><time datetime="{{ s.signed_in.iso }}" data-format="{{ m.session_signed_in }}">{{ m.session_signed_in.replace("%date%", s.signed_in.text) }}</time>
+            {%- if let Some(credential) = s.credential %} · {{ credential }}{% endif %}</p>
+        </div>
+        <button type="button" data-action="revoke" class="{{ ui::button_cls("secondary", "sm") }}">{{ m.sign_out }}</button>
+      </li>
+      {%- endfor %}
+    </ul>
+    {%- if view.sessions.len() > 1 %}
+    <button type="button" id="sign-out-others" class="{{ ui::button_cls("secondary") }} w-full">{{ m.sign_out_others }}</button>
+    {%- endif %}
+  </section>
+{% endcall %}
+
+<div class="px-1">{% call ui::disclosure(m.lost_passkey_title, center = true) %}
+    <p>{{ m.lost_passkey_body }}</p>
+    {{ ui::command(reset_command) }}
+    <p>{{ m.lost_passkey_note }}</p>
+    {% endcall %}</div>
+{%- endmatch %}
+</div>
+{%- endblock %}
+

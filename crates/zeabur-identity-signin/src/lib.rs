@@ -1,5 +1,7 @@
 #![doc = include_str!("../README.md")]
 
+pub mod account;
+pub mod device;
 pub mod pages;
 pub mod passkeys;
 pub mod problem;
@@ -27,10 +29,11 @@ use zeabur_identity_oauth::authorize::Authentication;
 use zeabur_identity_oauth::endpoints::{FLOW_COOKIE, complete_authorization};
 use zeabur_identity_oauth::{AuthorizationServer, OneTimeIds, Use};
 use zeabur_identity_store::{
-    Consume, CreateCredential, CredentialStore, Directory, GrantStore, NewPasskey, SetupStore,
+    Consume, CreateCredential, CredentialStore, Directory, GrantStore, NewPasskey, SetupStore, User,
 };
 
-use crate::passkeys::{Passkeys, credential_name};
+use crate::device::Requester;
+use crate::passkeys::{Passkeys, authenticator, credential_name};
 use crate::problem::Problem;
 
 /// Cookie holding the sealed WebAuthn ceremony state (`SameSite=Strict`).
@@ -43,7 +46,7 @@ pub const CEREMONY_COOKIE: &str = "__Host-zeabur-identity-webauthn";
 const REGISTRATION_PURPOSE: &str = "zeabur-identity/registration/v1";
 const SIGN_IN_PURPOSE: &str = "zeabur-identity/sign-in/v1";
 /// How long a ceremony may take (WebAuthn Level 3 recommends 300 s for UV-required ceremonies).
-const CEREMONY_LIFETIME: std::time::Duration = std::time::Duration::from_mins(5);
+pub(crate) const CEREMONY_LIFETIME: std::time::Duration = std::time::Duration::from_mins(5);
 /// Authentication methods asserted by a passkey sign-in (RFC 8176).
 ///
 /// `swk`: proof of possession of a key. Attestation is `none`, so a hardware-backed key cannot be
@@ -83,6 +86,7 @@ where
         .route("/setup", post(setup_finish::<D, G, C, K, S>))
         .route("/login/options", post(login_options::<D, G, C, K, S>))
         .route("/login", post(login_finish::<D, G, C, K, S>))
+        .merge(account::routes::<D, G, C, K, S>())
         .with_state(service)
 }
 
@@ -96,7 +100,7 @@ const NOT_JSON: Problem = Problem::new(
     "not-json",
     "Send the request body as JSON.",
 );
-const BAD_REQUEST: Problem = Problem::new(
+pub(crate) const BAD_REQUEST: Problem = Problem::new(
     StatusCode::BAD_REQUEST,
     "bad-request",
     "Unable to read the request body. Send the JSON this endpoint expects.",
@@ -106,12 +110,12 @@ pub(crate) const SETUP_INVALID: Problem = Problem::new(
     "setup-invalid",
     "This setup link is invalid, already used, or expired. Ask your cluster administrator for a new link.",
 );
-const CEREMONY_EXPIRED: Problem = Problem::new(
+pub(crate) const CEREMONY_EXPIRED: Problem = Problem::new(
     StatusCode::BAD_REQUEST,
     "ceremony-expired",
     "The passkey prompt expired. Start again.",
 );
-const PASSKEY_FAILED: Problem = Problem::new(
+pub(crate) const PASSKEY_FAILED: Problem = Problem::new(
     StatusCode::UNAUTHORIZED,
     "passkey-failed",
     "Unable to verify the passkey.",
@@ -162,9 +166,20 @@ pub fn cookie<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
         .map(|(_, value)| value)
 }
 
-fn set_cookie(response: &mut Response, name: &str, value: &str, max_age: u64) {
-    let cookie =
-        format!("{name}={value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age={max_age}");
+pub(crate) fn set_cookie(response: &mut Response, name: &str, value: &str, max_age: u64) {
+    set_cookie_with(response, name, value, max_age, "Strict");
+}
+
+pub(crate) fn set_cookie_with(
+    response: &mut Response,
+    name: &str,
+    value: &str,
+    max_age: u64,
+    same_site: &str,
+) {
+    let cookie = format!(
+        "{name}={value}; Path=/; Secure; HttpOnly; SameSite={same_site}; Max-Age={max_age}"
+    );
     if let Ok(value) = HeaderValue::try_from(cookie) {
         response.headers_mut().append(header::SET_COOKIE, value);
     }
@@ -192,15 +207,15 @@ pub(crate) fn internal(error: impl std::fmt::Display) -> Problem {
 
 /// Sealed ceremony state.
 #[derive(Debug, Serialize, Deserialize)]
-struct Ceremony<T> {
-    id: String,
-    state: T,
-    /// For registration: the user the setup token was for.
-    user: Option<String>,
-    expires_at: UnixTime,
+pub(crate) struct Ceremony<T> {
+    pub(crate) id: String,
+    pub(crate) state: T,
+    /// What the ceremony is bound to: the user a setup token was for, or the account session.
+    pub(crate) user: Option<String>,
+    pub(crate) expires_at: UnixTime,
 }
 
-fn seal<T: Serialize, D, G, C>(
+pub(crate) fn seal<T: Serialize, D, G, C>(
     oauth: &AuthorizationServer<D, G, C>,
     purpose: &str,
     state: T,
@@ -217,7 +232,7 @@ fn seal<T: Serialize, D, G, C>(
     oauth.sealer.seal(purpose, &json).map_err(internal)
 }
 
-fn open<T: DeserializeOwned, D, G, C>(
+pub(crate) fn open<T: DeserializeOwned, D, G, C>(
     oauth: &AuthorizationServer<D, G, C>,
     headers: &HeaderMap,
     purpose: &str,
@@ -234,6 +249,205 @@ fn open<T: DeserializeOwned, D, G, C>(
     } else {
         Ok(ceremony)
     }
+}
+
+/// The longest passkey label.
+pub(crate) const LABEL_MAX: usize = 64;
+
+/// A label as given, trimmed and shortened, or `None` if empty.
+pub(crate) fn clean_label(label: Option<&str>) -> Option<String> {
+    let label: String = label?.trim().chars().take(LABEL_MAX).collect();
+    let label = label.trim_end().to_owned();
+    (!label.is_empty()).then_some(label)
+}
+
+/// The record to store for a newly registered passkey. Without a label from the user, it is
+/// named after the authenticator (by AAGUID), else the browser and system.
+pub(crate) fn new_passkey(
+    passkey: &Passkey,
+    user: &str,
+    response: &RegisterPublicKeyCredential,
+    label: Option<&str>,
+    requester: &Requester,
+    now: UnixTime,
+) -> Result<NewPasskey, Problem> {
+    let credential_id: Vec<u8> = AsRef::<[u8]>::as_ref(passkey.cred_id()).to_vec();
+    let found = authenticator(response);
+    let label = clean_label(label).or_else(|| {
+        let named = found
+            .aaguid
+            .as_deref()
+            .and_then(zeabur_identity_ui::aaguid::name);
+        clean_label(
+            named
+                .map(str::to_owned)
+                .or_else(|| requester.device_name())
+                .as_deref(),
+        )
+    });
+    Ok(NewPasskey {
+        name: credential_name(&credential_id),
+        user: user.to_owned(),
+        credential_id: URL_SAFE_NO_PAD.encode(&credential_id),
+        record: serde_json::to_string(passkey).map_err(internal)?,
+        label,
+        aaguid: found.aaguid,
+        backup_eligible: found.backup_eligible,
+        created_at: now,
+    })
+}
+
+/// A verified assertion.
+pub(crate) struct Verified {
+    pub(crate) user: User,
+    /// `Credential` object name.
+    pub(crate) credential: String,
+    pub(crate) last_used_at: Option<UnixTime>,
+}
+
+/// A refused assertion, with the credential ID when it is not registered here.
+pub(crate) struct Refused {
+    pub(crate) problem: Problem,
+    pub(crate) unknown: Option<Vec<u8>>,
+}
+
+impl From<Problem> for Refused {
+    fn from(problem: Problem) -> Self {
+        Self {
+            problem,
+            unknown: None,
+        }
+    }
+}
+
+/// Verifies a discoverable assertion against the stored credential it names. Every failure
+/// gives the same answer, so responses do not reveal which users or credentials exist; only an
+/// unregistered credential ID is passed back, for `signalUnknownCredential`.
+pub(crate) async fn verify_assertion<D, G, C, K, S>(
+    service: &SignIn<D, G, C, K, S>,
+    response: &PublicKeyCredential,
+    state: DiscoverableAuthentication,
+) -> Result<Verified, Refused>
+where
+    D: Directory,
+    G: GrantStore,
+    C: Clock,
+    K: CredentialStore,
+    S: SetupStore,
+{
+    let (handle, credential_id) = service.passkeys.identify(response).map_err(|error| {
+        tracing::warn!(reason = PASSKEY_FAILED.kind, %error, "passkey identification failed");
+        PASSKEY_FAILED
+    })?;
+    let credential = credential_name(&credential_id);
+    let Some(stored) = service
+        .credentials
+        .get(&credential)
+        .await
+        .map_err(internal)?
+    else {
+        return Err(Refused {
+            problem: PASSKEY_FAILED,
+            unknown: Some(credential_id),
+        });
+    };
+    let user = service
+        .oauth
+        .directory
+        .user(&stored.user)
+        .await
+        .map_err(internal)?
+        .ok_or(PASSKEY_FAILED)?;
+    // The user handle in the assertion must be the credential owner's (WebAuthn Level 3 §7.2).
+    if user.disabled || user.subject != handle.to_string() {
+        return Err(PASSKEY_FAILED.into());
+    }
+    let passkey: Passkey = serde_json::from_str(&stored.record).map_err(internal)?;
+    service
+        .passkeys
+        .finish_sign_in(response, state, &passkey)
+        .map_err(|error| {
+            tracing::warn!(reason = PASSKEY_FAILED.kind, %error, "passkey sign-in verification failed");
+            PASSKEY_FAILED
+        })?;
+    Ok(Verified {
+        user,
+        credential,
+        last_used_at: stored.last_used_at,
+    })
+}
+
+impl Refused {
+    /// The response, with `unknownCredential` for an unregistered credential.
+    pub(crate) fn respond(self, rp_id: &str) -> Response {
+        match self.unknown {
+            Some(id) => self.problem.with(
+                "unknownCredential",
+                serde_json::json!({ "rpId": rp_id, "credentialId": URL_SAFE_NO_PAD.encode(id) }),
+            ),
+            None => self.problem.into_response(),
+        }
+    }
+}
+
+/// Records when a passkey signed in, at most once a minute. Failures are only logged.
+pub(crate) async fn touch<D, G, C, K, S>(
+    service: &SignIn<D, G, C, K, S>,
+    verified: &Verified,
+    now: UnixTime,
+) where
+    D: Directory,
+    G: GrantStore,
+    C: Clock,
+    K: CredentialStore,
+    S: SetupStore,
+{
+    let recent = verified
+        .last_used_at
+        .is_some_and(|last| now.as_secs().saturating_sub(last.as_secs()) < 60);
+    if recent {
+        return;
+    }
+    if let Err(error) = service.credentials.touch(&verified.credential, now).await {
+        tracing::warn!(reason = "touch_failed", %error, "recording passkey use failed");
+    }
+}
+
+/// The user's registered credentials, for `signalAllAcceptedCredentials` (WebAuthn Level 3
+/// §5.1.10.2). Only a complete list read from storage is sent; an empty one never is, so a
+/// failed or partial read cannot make a provider hide working passkeys.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Accepted {
+    rp_id: String,
+    user_id: String,
+    all_accepted_credential_ids: Vec<String>,
+}
+
+pub(crate) async fn accepted<D, G, C, K, S>(
+    service: &SignIn<D, G, C, K, S>,
+    user: &User,
+) -> Option<Accepted>
+where
+    D: Directory,
+    G: GrantStore,
+    C: Clock,
+    K: CredentialStore,
+    S: SetupStore,
+{
+    let passkeys = match service.credentials.passkeys(user).await {
+        Ok(passkeys) => passkeys,
+        Err(error) => {
+            tracing::warn!(reason = "passkey_list_failed", %error, "listing passkeys failed");
+            return None;
+        }
+    };
+    let handle = Uuid::parse_str(&user.subject).ok()?;
+    (!passkeys.is_empty()).then(|| Accepted {
+        rp_id: service.passkeys.rp_id().to_owned(),
+        user_id: URL_SAFE_NO_PAD.encode(handle.as_bytes()),
+        all_accepted_credential_ids: passkeys.into_iter().map(|p| p.credential_id).collect(),
+    })
 }
 
 #[derive(Deserialize)]
@@ -312,7 +526,7 @@ where
         let display = user.display_name.as_deref().unwrap_or(&user.username);
         let (options, state) = service
             .passkeys
-            .begin_registration(handle, &user.username, display)
+            .begin_registration(handle, &user.username, display, Vec::new())
             .map_err(internal)?;
         let sealed = seal::<PasskeyRegistration, _, _, _>(
             &service.oauth,
@@ -344,6 +558,7 @@ where
 
 async fn setup_finish<D, G, C, K, S>(
     State(service): State<Shared<D, G, C, K, S>>,
+    requester: Requester,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response
@@ -386,17 +601,14 @@ where
         if service.setup.consume(&token).await.map_err(internal)? == Consume::AlreadyUsed {
             return Err(SETUP_INVALID);
         }
-        let credential_id: Vec<u8> = AsRef::<[u8]>::as_ref(passkey.cred_id()).to_vec();
-        let label = request
-            .label
-            .map(|l| l.chars().take(64).collect::<String>());
-        let stored = NewPasskey {
-            name: credential_name(&credential_id),
-            user: token.user.clone(),
-            credential_id: URL_SAFE_NO_PAD.encode(&credential_id),
-            record: serde_json::to_string(&passkey).map_err(internal)?,
-            label,
-        };
+        let stored = new_passkey(
+            &passkey,
+            &token.user,
+            &request.credential,
+            request.label.as_deref(),
+            &requester,
+            now,
+        )?;
         match service
             .credentials
             .create(&stored)
@@ -436,11 +648,6 @@ where
 #[derive(Deserialize)]
 struct SignInRequest {
     credential: PublicKeyCredential,
-}
-
-#[derive(Serialize)]
-struct SignInResponse {
-    redirect_to: String,
 }
 
 async fn login_options<D, G, C, K, S>(
@@ -485,6 +692,13 @@ where
     result.unwrap_or_else(IntoResponse::into_response)
 }
 
+#[derive(Serialize)]
+struct SignInResponse {
+    redirect_to: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    accepted: Option<Accepted>,
+}
+
 async fn login_finish<D, G, C, K, S>(
     State(service): State<Shared<D, G, C, K, S>>,
     headers: HeaderMap,
@@ -498,73 +712,47 @@ where
     S: SetupStore,
 {
     let mut identity = None;
-    let result: Result<Response, Problem> = async {
+    let result: Result<Response, Refused> = async {
         check_request(&headers, service.oauth.issuer.as_str())?;
         let request: SignInRequest = parse(&body)?;
         let now = service.oauth.now();
         let flow = cookie(&headers, FLOW_COOKIE).ok_or(NO_REQUEST)?.to_owned();
         let ceremony: Ceremony<DiscoverableAuthentication> =
             open(&service.oauth, &headers, SIGN_IN_PURPOSE, now)?;
-
-        // Same answer for every failure, so responses do not reveal which users or credentials
-        // exist.
-        let (handle, credential_id) = service
-            .passkeys
-            .identify(&request.credential)
-            .map_err(|error| {
-                tracing::warn!(reason = PASSKEY_FAILED.kind, %error, "passkey identification failed");
-                PASSKEY_FAILED
-            })?;
-        let stored = service
-            .credentials
-            .get(&credential_name(&credential_id))
-            .await
-            .map_err(internal)?
-            .ok_or(PASSKEY_FAILED)?;
-        let user = service
-            .oauth
-            .directory
-            .user(&stored.user)
-            .await
-            .map_err(internal)?
-            .ok_or(PASSKEY_FAILED)?;
-        // The user handle in the assertion must be the credential owner's (WebAuthn Level 3 §7.2).
-        if user.disabled || user.subject != handle.to_string() {
-            return Err(PASSKEY_FAILED);
-        }
-        let passkey: Passkey = serde_json::from_str(&stored.record).map_err(internal)?;
-        service
-            .passkeys
-            .finish_sign_in(&request.credential, ceremony.state, &passkey)
-            .map_err(|error| {
-                tracing::warn!(reason = PASSKEY_FAILED.kind, %error, "passkey sign-in verification failed");
-                PASSKEY_FAILED
-            })?;
+        let verified = verify_assertion(&service, &request.credential, ceremony.state).await?;
         // A credential lookup alone does not authenticate the submitted assertion.
-        let user = identity.insert(user);
+        let user = identity.insert(verified.user.clone());
         // The challenge is single-use once it has produced a successful assertion.
         if service
             .used_ceremonies
             .first_use(&ceremony.id, ceremony.expires_at, "", now)
             != Use::First
         {
-            return Err(CEREMONY_EXPIRED);
+            return Err(CEREMONY_EXPIRED.into());
         }
 
         let authentication = Authentication {
             user: user.name.clone(),
             auth_time: now,
             amr: PASSKEY_AMR.iter().map(|m| (*m).to_owned()).collect(),
+            credential: Some(verified.credential.clone()),
+            user_verified: true,
         };
-        let location = complete_authorization(&service.oauth, &flow, authentication)
-            .map_err(|error| {
-                tracing::warn!(reason = NO_REQUEST.kind, ?error, "passkey authorization failed");
+        let location =
+            complete_authorization(&service.oauth, &flow, authentication).map_err(|error| {
+                tracing::warn!(
+                    reason = NO_REQUEST.kind,
+                    ?error,
+                    "passkey authorization failed"
+                );
                 NO_REQUEST
             })?;
+        touch(&service, &verified, now).await;
         let mut response = json(
             StatusCode::OK,
             &SignInResponse {
                 redirect_to: location,
+                accepted: accepted(&service, user).await,
             },
         );
         clear_cookie(&mut response, CEREMONY_COOKIE, "Strict");
@@ -576,11 +764,11 @@ where
         Ok(_) => {
             tracing::info!(target: "zeabur_identity::audit", event = "auth.sign_in", outcome = "success", method = "passkey", user = identity.as_ref().map(|u| u.name.as_str()), subject = identity.as_ref().map(|u| u.subject.as_str()), "signed in with a passkey");
         }
-        Err(problem) => {
-            tracing::warn!(target: "zeabur_identity::audit", event = "auth.sign_in", outcome = "failure", method = "passkey", reason = problem.kind, user = identity.as_ref().map(|u| u.name.as_str()), subject = identity.as_ref().map(|u| u.subject.as_str()), "passkey sign-in failed");
+        Err(refused) => {
+            tracing::warn!(target: "zeabur_identity::audit", event = "auth.sign_in", outcome = "failure", method = "passkey", reason = refused.problem.kind, user = identity.as_ref().map(|u| u.name.as_str()), subject = identity.as_ref().map(|u| u.subject.as_str()), "passkey sign-in failed");
         }
     }
-    result.unwrap_or_else(IntoResponse::into_response)
+    result.unwrap_or_else(|refused| refused.respond(service.passkeys.rp_id()))
 }
 
 #[cfg(test)]

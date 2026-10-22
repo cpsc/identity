@@ -110,6 +110,18 @@
             "identity.zeabur.com"
           ],
           "resources": [
+            "credentials/status"
+          ],
+          "verbs": [
+            "update",
+            "patch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "identity.zeabur.com"
+          ],
+          "resources": [
             "grants"
           ],
           "verbs": [
@@ -145,6 +157,17 @@
             "list",
             "watch",
             "delete"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "events"
+          ],
+          "verbs": [
+            "create"
           ]
         }
       ]

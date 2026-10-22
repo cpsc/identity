@@ -16,6 +16,7 @@
     {% call ui::alert(m.no_request_title, "default", "WarningCircle", live = "") %}{{ m.no_request_apps_body }}{% endcall %}
     {{ ui::app_links(apps, m) }}
     {%- endif %}
+    <a href="/account" class="{{ ui::button_cls("secondary") }} w-full">{{ icons::icon("Key") }}{{ m.manage_passkeys }}</a>
     {%- else %}
     {%- if let Some(notice) = elevation_notice %}
     {% call ui::alert(m.elevated_title, "warn", "Key", id = "elevation", live = "") %}{{ notice }}{% endcall %}

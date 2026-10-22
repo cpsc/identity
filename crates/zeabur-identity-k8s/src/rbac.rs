@@ -14,7 +14,11 @@
 //!   other two.
 //! - **Configuration is read-only.** Users, credentials and clients are written by admins or
 //!   GitOps; Zeabur Identity reads them and creates or deletes credentials when a passkey is
-//!   enrolled or an account is linked. It has no write access to users.
+//!   enrolled, removed or an account is linked. On credentials it may write only `status` (the
+//!   label a user gives a passkey, and when it was last used), never the key material. It has no
+//!   write access to users.
+//! - **Account events.** It creates core `Event`s about users who change their own passkeys or
+//!   sessions, and cannot read, change or delete events.
 //! - **Runtime state is Zeabur Identity's.** Full access to grants; invitations it can read and
 //!   redeem (`delete`), but not create.
 //! - **Nothing else.** No cluster-scoped rights, nothing in other namespaces, no RBAC objects, no
@@ -91,6 +95,7 @@ pub fn rules() -> Vec<PolicyRule> {
         ),
         // Runtime state Zeabur Identity owns.
         rule(&[GROUP], &["credentials"], &[], &["create", "delete"]),
+        rule(&[GROUP], &["credentials/status"], &[], &["update", "patch"]),
         rule(
             &[GROUP],
             &["grants"],
@@ -114,6 +119,8 @@ pub fn rules() -> Vec<PolicyRule> {
             &[],
             &["get", "list", "watch", "delete"],
         ),
+        // Account changes users make themselves, as events on the User.
+        rule(&[""], &["events"], &[], &["create"]),
     ]
 }
 

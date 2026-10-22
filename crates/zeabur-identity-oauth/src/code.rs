@@ -44,6 +44,12 @@ pub struct CodeClaims {
     pub auth_time: UnixTime,
     /// Authentication methods.
     pub amr: Vec<String>,
+    /// `Credential` object name used.
+    #[serde(default)]
+    pub credential: Option<String>,
+    /// Whether the authenticator verified the user.
+    #[serde(default)]
+    pub user_verified: bool,
     /// Expiry.
     pub expires_at: UnixTime,
 }
@@ -65,6 +71,8 @@ pub fn issue(
         user: authentication.user,
         auth_time: authentication.auth_time,
         amr: authentication.amr,
+        credential: authentication.credential,
+        user_verified: authentication.user_verified,
         expires_at,
     };
     let json = serde_json::to_vec(&claims).map_err(|_serialize| CryptoError)?;
@@ -115,6 +123,8 @@ mod tests {
             user: "alice".into(),
             auth_time: UnixTime::from_secs(5),
             amr: vec!["hwk".into()],
+            credential: None,
+            user_verified: true,
         };
         let a = issue(&sealer, request(), auth.clone(), UnixTime::from_secs(65)).unwrap();
         let b = issue(&sealer, request(), auth, UnixTime::from_secs(65)).unwrap();

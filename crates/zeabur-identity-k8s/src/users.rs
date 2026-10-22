@@ -2,7 +2,7 @@
 
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::OwnerReference;
 use kube::Resource;
-use kube::api::Api;
+use kube::api::{Api, ObjectMeta};
 use zeabur_identity_store::StoreError;
 
 use crate::crd::user::User;
@@ -37,4 +37,13 @@ where
     let users: Api<User> = Api::namespaced(api.clone().into_client(), namespace);
     let user = users.get(name).await.map_err(|error| backend(&error))?;
     Ok(user.owner_ref(&()))
+}
+
+/// Whether `meta` names a `User` owner other than the one with UID `subject`. A dependent with
+/// no `User` owner (created while the User was missing) is not excluded.
+pub(crate) fn owned_by_another(meta: &ObjectMeta, subject: &str) -> bool {
+    meta.owner_references
+        .iter()
+        .flatten()
+        .any(|owner| owner.kind == "User" && owner.uid != subject)
 }

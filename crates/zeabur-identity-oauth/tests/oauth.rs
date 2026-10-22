@@ -31,7 +31,7 @@ mod tests {
     use zeabur_identity_oauth::{AuthorizationServer, Lifetimes, OneTimeIds};
     use zeabur_identity_store::{
         Client, ClientType, CreateGrant, Grant, GrantStore, MemoryDirectory, MemoryGrantStore,
-        NewGrant, Rotation, StoreError, User,
+        NewGrant, Rotation, StoreError, User, Verification,
     };
     use zeabur_identity_test_support::logging::Capture;
 
@@ -93,6 +93,21 @@ mod tests {
             } else {
                 self.memory.revoke(name).await
             }
+        }
+
+        async fn list(&self, user: &User) -> Result<Vec<Grant>, StoreError> {
+            self.memory.list(user).await
+        }
+
+        async fn reauthenticate(
+            &self,
+            name: &str,
+            current_hash: &str,
+            verification: &Verification,
+        ) -> Result<bool, StoreError> {
+            self.memory
+                .reauthenticate(name, current_hash, verification)
+                .await
         }
     }
 
@@ -301,6 +316,8 @@ mod tests {
             user: user.into(),
             auth_time: h.clock.now(),
             amr: amr.iter().map(|m| (*m).to_owned()).collect(),
+            credential: None,
+            user_verified: false,
         };
         let location = complete_authorization(&h.server, &flow_cookie(&reply), auth).unwrap();
         param(&location, "code").unwrap()
@@ -424,6 +441,8 @@ mod tests {
             user: "alice".into(),
             auth_time: h.clock.now(),
             amr: vec!["hwk".into(), "user".into()],
+            credential: None,
+            user_verified: false,
         };
         let location = complete_authorization(&h.server, &flow_cookie(&reply), auth).unwrap();
         assert!(location.starts_with(KUBECTL_REDIRECT));
@@ -1002,6 +1021,8 @@ mod tests {
             user: "alice".into(),
             auth_time: h.clock.now(),
             amr: vec![],
+            credential: None,
+            user_verified: false,
         };
         assert!(complete_authorization(&h.server, "forged", auth.clone()).is_err());
         let reply = get(&h.app, &kubectl_authorize(&[])).await;
@@ -1062,6 +1083,8 @@ mod tests {
             user: "alice".into(),
             auth_time: h.clock.now(),
             amr: vec![],
+            credential: None,
+            user_verified: false,
         };
         let location = complete_authorization(&h.server, &flow_cookie(&reply), auth).unwrap();
         assert_eq!(param(&location, "state").as_deref(), Some("pushed"));
@@ -1365,6 +1388,8 @@ mod tests {
             user: "alice".into(),
             auth_time: h.clock.now(),
             amr: vec![],
+            credential: None,
+            user_verified: false,
         };
         let error = complete_authorization(&h.server, &flow_cookie(&reply), auth).unwrap_err();
         assert_eq!(error.error.as_str(), "access_denied");

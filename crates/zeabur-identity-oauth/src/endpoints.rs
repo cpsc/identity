@@ -518,6 +518,9 @@ async fn exchange_code<D: Directory, G: GrantStore, C: Clock>(
         amr: claims.amr.clone(),
         expires_at: absolute,
         initial_hash: refresh_token.hash(),
+        subject: Some(user.subject.clone()),
+        credential: claims.credential.clone(),
+        user_verified: claims.user_verified,
     };
     let idle = now
         .saturating_add(server.lifetimes.refresh_idle)
@@ -610,6 +613,9 @@ fn elevated_tokens<D: Directory, G: GrantStore, C: Clock>(
         amr: claims.amr.clone(),
         expires_at: now.saturating_add(lifetime),
         initial_hash: String::new(),
+        subject: Some(user.subject.clone()),
+        credential: claims.credential.clone(),
+        user_verified: claims.user_verified,
     };
     let tokens = issue_tokens(
         server,

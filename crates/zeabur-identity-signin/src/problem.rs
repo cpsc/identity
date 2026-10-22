@@ -22,6 +22,8 @@ struct Body {
     kind: String,
     title: &'static str,
     status: u16,
+    #[serde(flatten)]
+    extensions: serde_json::Map<String, serde_json::Value>,
 }
 
 impl Problem {
@@ -44,15 +46,22 @@ impl Problem {
             "Unable to complete the request. Try again.",
         )
     }
-}
 
-impl IntoResponse for Problem {
-    fn into_response(self) -> Response {
+    /// The response with an extension member (RFC 9457 §3.2).
+    #[must_use]
+    pub fn with(self, name: &str, value: serde_json::Value) -> Response {
+        let mut extensions = serde_json::Map::new();
+        extensions.insert(name.to_owned(), value);
+        self.respond(extensions)
+    }
+
+    fn respond(self, extensions: serde_json::Map<String, serde_json::Value>) -> Response {
         let body = Body {
             // RFC 9457 §3.1.1: a URI reference identifying the problem type.
             kind: format!("urn:zeabur-identity:problem:{}", self.kind),
             title: self.title,
             status: self.status.as_u16(),
+            extensions,
         };
         let mut response = (self.status, axum::Json(body)).into_response();
         let headers = response.headers_mut();
@@ -62,5 +71,11 @@ impl IntoResponse for Problem {
         );
         headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
         response
+    }
+}
+
+impl IntoResponse for Problem {
+    fn into_response(self) -> Response {
+        self.respond(serde_json::Map::new())
     }
 }

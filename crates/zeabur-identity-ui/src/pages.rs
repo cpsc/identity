@@ -297,3 +297,196 @@ pub fn setup_page(lang: Lang, providers: &[ProviderButton], apps: &[AppLink<'_>]
     };
     render(StatusCode::OK, &page)
 }
+
+/// How a passkey is kept, from its backup flags (WebAuthn BE and BS).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Storage {
+    /// Backed up (BS): synced by a passkey provider.
+    Synced,
+    /// Not backup eligible (BE unset): it lives on one authenticator.
+    OneDevice,
+    /// Eligible but not backed up yet, or unknown.
+    Unknown,
+}
+
+/// A passkey on the account page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PasskeyRow<'a> {
+    /// `Credential` object name.
+    pub name: &'a str,
+    /// The label, or `None` to show a generic name.
+    pub label: Option<&'a str>,
+    /// When it was added, in Unix seconds.
+    pub added: Option<u64>,
+    /// When it last signed in, in Unix seconds.
+    pub last_used: Option<u64>,
+    /// How it is kept.
+    pub storage: Storage,
+    /// Whether this session signed in, or last confirmed, with it.
+    pub this_device: bool,
+}
+
+/// A session or app grant on the account page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionRow<'a> {
+    /// `Grant` object name.
+    pub name: &'a str,
+    /// The app's name, or `None` for the account page itself.
+    pub app: Option<&'a str>,
+    /// When the user signed in, in Unix seconds.
+    pub signed_in: u64,
+    /// The label of the credential used, if known.
+    pub credential: Option<&'a str>,
+    /// Whether it is the session viewing the page.
+    pub current: bool,
+}
+
+/// The signed-in user's account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AccountView<'a> {
+    /// The username.
+    pub username: &'a str,
+    /// The session's CSRF token, sent back with every change.
+    pub csrf: &'a str,
+    /// The user's passkeys.
+    pub passkeys: &'a [PasskeyRow<'a>],
+    /// The user's sessions and app grants.
+    pub sessions: &'a [SessionRow<'a>],
+}
+
+/// A UTC date for a `<time>` element; the script shows it in the reader's locale.
+#[derive(Debug, Clone)]
+struct Date {
+    iso: String,
+    text: String,
+}
+
+impl Date {
+    fn new(secs: u64) -> Self {
+        let days = i64::try_from(secs / 86_400).unwrap_or(0);
+        let rest = secs % 86_400;
+        let (year, month, day) = civil(days);
+        Self {
+            iso: format!(
+                "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+                rest / 3600,
+                rest / 60 % 60,
+                rest % 60
+            ),
+            text: format!("{year:04}-{month:02}-{day:02}"),
+        }
+    }
+}
+
+/// Days since 1970-01-01 to a proleptic Gregorian date (Howard Hinnant's `civil_from_days`).
+const fn civil(days: i64) -> (i64, i64, i64) {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + if month <= 2 { 1 } else { 0 };
+    (year, month, day)
+}
+
+struct PasskeyItem<'a> {
+    name: &'a str,
+    label: &'a str,
+    added: Option<Date>,
+    last_used: Option<Date>,
+    storage: &'static str,
+    this_device: bool,
+}
+
+struct SessionItem<'a> {
+    name: &'a str,
+    title: &'a str,
+    signed_in: Date,
+    credential: Option<&'a str>,
+    current: bool,
+}
+
+struct AccountItems<'a> {
+    username: &'a str,
+    csrf: &'a str,
+    passkeys: Vec<PasskeyItem<'a>>,
+    sessions: Vec<SessionItem<'a>>,
+}
+
+#[derive(Template)]
+#[template(path = "account.html")]
+struct AccountPage<'a> {
+    lang: Lang,
+    langs: &'static [Lang],
+    m: &'static Messages,
+    assets: &'a Versions,
+    view: Option<AccountItems<'a>>,
+    reset_command: &'static str,
+}
+
+/// Renders the account page: a sign-in button without `view`, else the user's passkeys and
+/// sessions.
+#[must_use]
+pub fn account_page(lang: Lang, view: Option<AccountView<'_>>) -> Response {
+    let m = lang.messages();
+    let view = view.map(|view| AccountItems {
+        username: view.username,
+        csrf: view.csrf,
+        passkeys: view
+            .passkeys
+            .iter()
+            .map(|p| PasskeyItem {
+                name: p.name,
+                label: p
+                    .label
+                    .filter(|l| !l.trim().is_empty())
+                    .unwrap_or(m.passkey_unnamed),
+                added: p.added.map(Date::new),
+                last_used: p.last_used.map(Date::new),
+                storage: match p.storage {
+                    Storage::Synced => m.passkey_synced,
+                    Storage::OneDevice => m.passkey_device_bound,
+                    Storage::Unknown => "",
+                },
+                this_device: p.this_device,
+            })
+            .collect(),
+        sessions: view
+            .sessions
+            .iter()
+            .map(|s| SessionItem {
+                name: s.name,
+                title: s.app.unwrap_or(m.session_account),
+                signed_in: Date::new(s.signed_in),
+                credential: s.credential,
+                current: s.current,
+            })
+            .collect(),
+    });
+    let page = AccountPage {
+        lang,
+        langs: &Lang::ALL,
+        m,
+        assets: &VERSIONS,
+        view,
+        reset_command: RESET_COMMAND,
+    };
+    render(StatusCode::OK, &page)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dates_are_utc_civil_dates() {
+        assert_eq!(Date::new(0).iso, "1970-01-01T00:00:00Z");
+        assert_eq!(Date::new(951_782_400).text, "2000-02-29");
+        let date = Date::new(1_792_651_380);
+        assert_eq!(date.text, "2026-10-22");
+        assert_eq!(date.iso, "2026-10-22T06:43:00Z");
+    }
+}

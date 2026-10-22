@@ -15,6 +15,9 @@ use serde::{Deserialize, Serialize};
 /// whole family. Deleting it by hand is how an admin revokes a session
 /// (`kubectl delete grant`, or `-l identity.zeabur.com/user=<user>` for all of a user's).
 /// Only hashes are stored.
+///
+/// Signing in to the account page creates one too: named `s-…`, with client `zeabur_identity`
+/// (never a valid `OAuthClient` name), and no refresh token.
 #[expect(
     clippy::duplicated_attributes,
     reason = "repeated printcolumn arguments such as `type_ = \"string\"` are distinct columns"
@@ -72,6 +75,18 @@ pub struct GrantSpec {
     /// so creating a family is one write.
     #[schemars(regex(pattern = r"^sha256:[0-9a-f]{64}$"))]
     pub initial_hash: String,
+    /// UID of the `User` at sign-in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1, max = 128))]
+    pub subject: Option<String>,
+    /// Name of the `Credential` the user signed in with. Removing that credential revokes the
+    /// grant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1, max = 253))]
+    pub credential: Option<String>,
+    /// Whether the authenticator verified the user at sign-in.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub user_verified: bool,
 }
 
 /// Rotation state, changed only through compare-and-swap.
@@ -93,4 +108,23 @@ pub struct GrantStatus {
     #[serde(default)]
     #[schemars(range(min = 0))]
     pub idle_expires_at: i64,
+    /// The latest re-authentication, for account sessions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reauth: Option<GrantReauth>,
+}
+
+/// A re-authentication within an account session.
+#[derive(KubeSchema, Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GrantReauth {
+    /// When, in Unix seconds.
+    #[schemars(range(min = 0))]
+    pub auth_time: i64,
+    /// Name of the `Credential` used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1, max = 253))]
+    pub credential: Option<String>,
+    /// Whether the authenticator verified the user.
+    #[serde(default)]
+    pub user_verified: bool,
 }

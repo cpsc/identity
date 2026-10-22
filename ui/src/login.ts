@@ -1,5 +1,5 @@
 // Sign-in page: passkey autofill (conditional mediation) plus an explicit button.
-import { assertionJson, cancelled, post, problem, requestOptions, say, supported, upstreamButtons } from "./webauthn";
+import { assertionJson, cancelled, post, problem, requestOptions, say, signal, supported, upstreamButtons } from "./webauthn";
 
 const form = document.getElementById("sign-in") as HTMLFormElement | null;
 const messages = form?.dataset ?? {};
@@ -18,6 +18,7 @@ function fold(folded: boolean): void {
 async function finish(credential: Credential | null): Promise<void> {
   if (!(credential instanceof PublicKeyCredential)) throw new DOMException("no credential", "NotAllowedError");
   const reply = await post("/login", { credential: assertionJson(credential) });
+  await signal(reply.body);
   if (reply.ok && typeof reply.body.redirect_to === "string") {
     say("status", "");
     window.location.assign(reply.body.redirect_to);

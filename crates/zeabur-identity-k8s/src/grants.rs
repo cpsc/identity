@@ -8,16 +8,17 @@ use std::collections::BTreeMap;
 use std::future::Future;
 
 use kube::ResourceExt as _;
-use kube::api::{Api, DeleteParams, ObjectMeta};
+use kube::api::{Api, DeleteParams, ListParams, ObjectMeta};
 use zeabur_identity_core::clock::UnixTime;
+use zeabur_identity_core::crypto::ct_eq;
 use zeabur_identity_store::{
-    Classification, CreateGrant, Grant, GrantStore, NewGrant, Rotation, StoreError, classify,
-    rotated,
+    Classification, CreateGrant, Grant, GrantStore, NewGrant, Rotation, StoreError, User,
+    Verification, classify, rotated,
 };
 
 use super::objects::{CreateOutcome, ReplaceOutcome, create_once, replace_status_if_unchanged};
-use super::users::user_owner;
-use crate::crd::grant::{Grant as GrantObject, GrantSpec, GrantStatus};
+use super::users::{owned_by_another, user_owner};
+use crate::crd::grant::{Grant as GrantObject, GrantReauth, GrantSpec, GrantStatus};
 use crate::crd::{CLIENT_LABEL, EXPIRES_AT_ANNOTATION, EXPIRY_BUCKET_LABEL, USER_LABEL};
 
 /// How many times a rotation re-reads after losing a compare-and-swap.
@@ -86,8 +87,25 @@ fn to_object(grant: &NewGrant, idle_expires_at: UnixTime) -> GrantObject {
             expires_at: secs(grant.expires_at),
             initial_idle_expires_at: secs(idle_expires_at),
             initial_hash: grant.initial_hash.clone(),
+            subject: grant.subject.clone(),
+            credential: grant.credential.clone(),
+            user_verified: grant.user_verified,
         },
         status: None,
+    }
+}
+
+fn status(grant: &Grant) -> GrantStatus {
+    GrantStatus {
+        rotation: i64::try_from(grant.rotation).unwrap_or(i64::MAX),
+        current_hash: grant.current_hash.clone(),
+        previous_hash: grant.previous_hash.clone(),
+        idle_expires_at: secs(grant.idle_expires_at),
+        reauth: grant.reauth.as_ref().map(|reauth| GrantReauth {
+            auth_time: secs(reauth.at),
+            credential: reauth.credential.clone(),
+            user_verified: reauth.user_verified,
+        }),
     }
 }
 
@@ -103,6 +121,9 @@ fn from_object(object: &GrantObject) -> Grant {
         amr: spec.amr.clone(),
         expires_at: time(spec.expires_at),
         initial_hash: spec.initial_hash.clone(),
+        subject: spec.subject.clone(),
+        credential: spec.credential.clone(),
+        user_verified: spec.user_verified,
     };
     match &object.status {
         None => Grant {
@@ -111,6 +132,7 @@ fn from_object(object: &GrantObject) -> Grant {
             rotation: 0,
             previous_hash: None,
             idle_expires_at: time(spec.initial_idle_expires_at),
+            reauth: None,
         },
         Some(status) => Grant {
             spec: new,
@@ -118,6 +140,11 @@ fn from_object(object: &GrantObject) -> Grant {
             current_hash: status.current_hash.clone(),
             previous_hash: status.previous_hash.clone(),
             idle_expires_at: time(status.idle_expires_at),
+            reauth: status.reauth.as_ref().map(|reauth| Verification {
+                at: time(reauth.auth_time),
+                credential: reauth.credential.clone(),
+                user_verified: reauth.user_verified,
+            }),
         },
     }
 }
@@ -181,12 +208,7 @@ impl GrantStore for KubeGrantStore {
                     Classification::Current => {}
                 }
                 let after = rotated(&current, &next, idle_expires_at);
-                object.status = Some(GrantStatus {
-                    rotation: i64::try_from(after.rotation).unwrap_or(i64::MAX),
-                    current_hash: after.current_hash.clone(),
-                    previous_hash: after.previous_hash.clone(),
-                    idle_expires_at: secs(after.idle_expires_at),
-                });
+                object.status = Some(status(&after));
                 match replace_status_if_unchanged(&api, &object)
                     .await
                     .map_err(|e| backend(&e))?
@@ -212,6 +234,60 @@ impl GrantStore for KubeGrantStore {
                 Err(kube::Error::Api(status)) if status.code == 404 => Ok(()),
                 Err(error) => Err(backend(&error)),
             }
+        }
+    }
+
+    fn list(&self, user: &User) -> impl Future<Output = Result<Vec<Grant>, StoreError>> + Send {
+        let api = self.api.clone();
+        let user = user.clone();
+        async move {
+            let params = ListParams::default().labels(&format!("{USER_LABEL}={}", user.name));
+            let objects = api.list(&params).await.map_err(|e| backend(&e))?;
+            let mut grants: Vec<Grant> = objects
+                .items
+                .iter()
+                .filter(|object| !owned_by_another(&object.metadata, &user.subject))
+                .map(from_object)
+                .filter(|grant| grant.belongs_to(&user))
+                .collect();
+            grants.sort_by(|a, b| a.spec.name.cmp(&b.spec.name));
+            Ok(grants)
+        }
+    }
+
+    fn reauthenticate(
+        &self,
+        name: &str,
+        current_hash: &str,
+        verification: &Verification,
+    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
+        let api = self.api.clone();
+        let (name, current_hash, verification) = (
+            name.to_owned(),
+            current_hash.to_owned(),
+            verification.clone(),
+        );
+        async move {
+            for _ in 0..MAX_ATTEMPTS {
+                let Some(mut object) = api.get_opt(&name).await.map_err(|e| backend(&e))? else {
+                    return Ok(false);
+                };
+                let mut grant = from_object(&object);
+                if !ct_eq(grant.current_hash.as_bytes(), current_hash.as_bytes()) {
+                    return Ok(false);
+                }
+                grant.reauth = Some(verification.clone());
+                object.status = Some(status(&grant));
+                match replace_status_if_unchanged(&api, &object)
+                    .await
+                    .map_err(|e| backend(&e))?
+                {
+                    ReplaceOutcome::Replaced(_) => return Ok(true),
+                    ReplaceOutcome::NotFound => return Ok(false),
+                    ReplaceOutcome::Conflict => {}
+                }
+            }
+            Err(StoreError("re-authentication kept conflicting".to_owned()))
         }
     }
 }

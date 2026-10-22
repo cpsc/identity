@@ -339,6 +339,10 @@ pub struct Authentication {
     pub auth_time: UnixTime,
     /// Authentication methods (RFC 8176).
     pub amr: Vec<String>,
+    /// `Credential` object name used, so removing it revokes what this sign-in issued.
+    pub credential: Option<String>,
+    /// Whether the authenticator verified the user (WebAuthn UV).
+    pub user_verified: bool,
 }
 
 /// Builds the redirect for a successful or failed response, with `iss` (RFC 9207).

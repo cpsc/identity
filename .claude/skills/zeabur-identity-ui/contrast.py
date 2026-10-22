@@ -222,11 +222,15 @@ COMMON: tuple[Pair, ...] = (
 LIGHT: tuple[Pair, ...] = (
     Pair(name="secondary button text", kind=Kind.TEXT, fg=paint("text-main"), bg=stack(paint("#ebebec")),
          source="upstream.html, button_cls secondary (button-secondary), hover stop #ebebec"),
+    Pair(name="danger button text", kind=Kind.TEXT, fg=paint("fail-strong"), bg=stack(paint("#ebebec")),
+         source="account.html, button_cls danger (button-secondary text-fail-strong!), hover stop #ebebec"),
 )
 
 DARK: tuple[Pair, ...] = (
     Pair(name="secondary button text", kind=Kind.TEXT, fg=paint("text-main"), bg=stack(paint("#34343a")),
          source="upstream.html, button_cls secondary (button-secondary), hover stop #34343a"),
+    Pair(name="danger button text", kind=Kind.TEXT, fg=paint("fail-strong"), bg=stack(paint("#34343a")),
+         source="account.html, button_cls danger (button-secondary text-fail-strong!), hover stop #34343a"),
 )
 
 PAIRS: dict[str, tuple[Pair, ...]] = {"light": COMMON + LIGHT, "dark": COMMON + DARK}

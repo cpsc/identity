@@ -15,7 +15,8 @@ pub use zeabur_identity_store::CredentialType;
 /// The object name is derived from the credential's unique key (`c-` + hex SHA-256 of the
 /// passkey credential ID, or of the upstream issuer and subject), so creating a duplicate fails
 /// with `409 AlreadyExists`. That is the uniqueness check WebAuthn Level 3 §7.1 asks for, and
-/// it holds across replicas. The spec is immutable; revoking is deleting.
+/// it holds across replicas. The spec is immutable; revoking is deleting. `status` holds what
+/// the user may change (the label) and when the credential was last used.
 #[expect(
     clippy::duplicated_attributes,
     reason = "repeated printcolumn arguments such as `type_ = \"string\"` are distinct columns"
@@ -26,6 +27,7 @@ pub use zeabur_identity_store::CredentialType;
     version = "v1alpha1",
     kind = "Credential",
     namespaced,
+    status = "CredentialStatus",
     shortname = "zbcred",
     category = "zeabur-identity",
     selectable = ".spec.user",
@@ -95,4 +97,23 @@ pub struct ExternalIdentity {
     /// Upstream subject: the stable account ID, never an email address.
     #[schemars(length(min = 1, max = 256))]
     pub subject: String,
+}
+
+/// What changes after enrolment. Written by Zeabur Identity only.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialStatus {
+    /// The label the user gave it last; takes the place of `spec.passkey.label`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(max = 64))]
+    pub label: Option<String>,
+    /// When it last signed in, in Unix seconds. Updated at most once a minute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 0))]
+    pub last_used_at: Option<i64>,
+    /// Bumped by every account change that must not race a removal (see
+    /// `KubeCredentialStore::remove`).
+    #[serde(default)]
+    #[schemars(range(min = 0))]
+    pub revision: i64,
 }

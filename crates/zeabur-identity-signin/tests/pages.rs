@@ -146,7 +146,7 @@ mod tests {
         // Clients with a home URL are offered by their display name.
         assert!(page.body.contains(&format!("<a href=\"{HOME}\"")));
         assert!(page.body.contains("Open Cluster Dashboard"));
-        assert!(!page.body.contains("Lost your passkey?"));
+        assert!(!page.body.contains("Lost all your passkeys?"));
     }
 
     #[tokio::test]
@@ -180,7 +180,7 @@ mod tests {
         // With a login hint the username stays in view: nothing to fold.
         assert!(!page.body.contains("data-collapsible"));
         assert!(!page.body.contains("id=\"use-username\""));
-        assert!(page.body.contains("Lost your passkey?"));
+        assert!(page.body.contains("Lost all your passkeys?"));
         assert!(
             page.body
                 .replace("<span class=\"inline-block max-w-full\">", "")

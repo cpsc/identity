@@ -164,7 +164,7 @@
                 "description": "A passkey or linked upstream identity of a Zeabur Identity user.",
                 "properties": {
                   "spec": {
-                    "description": "A way for a `User` to sign in.\n\nThe object name is derived from the credential's unique key (`c-` + hex SHA-256 of the\npasskey credential ID, or of the upstream issuer and subject), so creating a duplicate fails\nwith `409 AlreadyExists`. That is the uniqueness check WebAuthn Level 3 §7.1 asks for, and\nit holds across replicas. The spec is immutable; revoking is deleting.",
+                    "description": "A way for a `User` to sign in.\n\nThe object name is derived from the credential's unique key (`c-` + hex SHA-256 of the\npasskey credential ID, or of the upstream issuer and subject), so creating a duplicate fails\nwith `409 AlreadyExists`. That is the uniqueness check WebAuthn Level 3 §7.1 asks for, and\nit holds across replicas. The spec is immutable; revoking is deleting. `status` holds what\nthe user may change (the label) and when the credential was last used.",
                     "properties": {
                       "external": {
                         "description": "Upstream identity, when `type` is `GitHub` or `Google`.",
@@ -265,6 +265,33 @@
                         "rule": "(self.type != 'Passkey') == has(self.external)"
                       }
                     ]
+                  },
+                  "status": {
+                    "description": "What changes after enrolment. Written by Zeabur Identity only.",
+                    "nullable": true,
+                    "properties": {
+                      "label": {
+                        "description": "The label the user gave it last; takes the place of `spec.passkey.label`.",
+                        "maxLength": 64,
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "lastUsedAt": {
+                        "description": "When it last signed in, in Unix seconds. Updated at most once a minute.",
+                        "format": "int64",
+                        "minimum": 0.0,
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "revision": {
+                        "default": 0,
+                        "description": "Bumped by every account change that must not race a removal (see\n`KubeCredentialStore::remove`).",
+                        "format": "int64",
+                        "minimum": 0.0,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
                   }
                 },
                 "required": [
@@ -280,7 +307,10 @@
               }
             ],
             "served": true,
-            "storage": true
+            "storage": true,
+            "subresources": {
+              "status": {}
+            }
           }
         ]
       }
@@ -475,7 +505,7 @@
                 "description": "A refresh-token family issued by Zeabur Identity.",
                 "properties": {
                   "spec": {
-                    "description": "One login's refresh-token family.\n\nCreated when an authorization code is redeemed; every refresh rotates the token with one\ncompare-and-swap on `status`; reuse of an old token deletes the object, which revokes the\nwhole family. Deleting it by hand is how an admin revokes a session\n(`kubectl delete grant`, or `-l identity.zeabur.com/user=<user>` for all of a user's).\nOnly hashes are stored.",
+                    "description": "One login's refresh-token family.\n\nCreated when an authorization code is redeemed; every refresh rotates the token with one\ncompare-and-swap on `status`; reuse of an old token deletes the object, which revokes the\nwhole family. Deleting it by hand is how an admin revokes a session\n(`kubectl delete grant`, or `-l identity.zeabur.com/user=<user>` for all of a user's).\nOnly hashes are stored.\n\nSigning in to the account page creates one too: named `s-…`, with client `zeabur_identity`\n(never a valid `OAuthClient` name), and no refresh token.",
                     "properties": {
                       "amr": {
                         "description": "Authentication methods (RFC 8176 values).",
@@ -505,6 +535,13 @@
                         "minLength": 1,
                         "type": "string"
                       },
+                      "credential": {
+                        "description": "Name of the `Credential` the user signed in with. Removing that credential revokes the\ngrant.",
+                        "maxLength": 253,
+                        "minLength": 1,
+                        "nullable": true,
+                        "type": "string"
+                      },
                       "expiresAt": {
                         "description": "Absolute expiry, in Unix seconds. The family cannot be refreshed after this.",
                         "format": "int64",
@@ -532,11 +569,22 @@
                         "maxItems": 16,
                         "type": "array"
                       },
+                      "subject": {
+                        "description": "UID of the `User` at sign-in.",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "nullable": true,
+                        "type": "string"
+                      },
                       "user": {
                         "description": "Name of the `User` object.",
                         "maxLength": 253,
                         "minLength": 1,
                         "type": "string"
+                      },
+                      "userVerified": {
+                        "description": "Whether the authenticator verified the user at sign-in.",
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -577,6 +625,34 @@
                         "nullable": true,
                         "pattern": "^sha256:[0-9a-f]{64}$",
                         "type": "string"
+                      },
+                      "reauth": {
+                        "description": "The latest re-authentication, for account sessions.",
+                        "nullable": true,
+                        "properties": {
+                          "authTime": {
+                            "description": "When, in Unix seconds.",
+                            "format": "int64",
+                            "minimum": 0.0,
+                            "type": "integer"
+                          },
+                          "credential": {
+                            "description": "Name of the `Credential` used.",
+                            "maxLength": 253,
+                            "minLength": 1,
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "userVerified": {
+                            "default": false,
+                            "description": "Whether the authenticator verified the user.",
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "authTime"
+                        ],
+                        "type": "object"
                       },
                       "rotation": {
                         "default": 0,

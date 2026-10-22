@@ -4532,6 +4532,8 @@ dependencies = [
  "askama",
  "axum",
  "form_urlencoded",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "zeabur-identity-core",

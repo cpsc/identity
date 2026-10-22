@@ -8,7 +8,7 @@ the sign-in pages.
 
 | Router | Routes |
 |---|---|
-| `router` | `POST /setup/options`, `POST /setup` (enrol), `POST /login/options`, `POST /login` |
+| `router` | `POST /setup/options`, `POST /setup` (enrol), `POST /login/options`, `POST /login`, and the `account` routes: `GET /account`, `POST /account/…`, `GET /.well-known/passkey-endpoints` |
 | `upstream::router` | `POST /upstream/{provider}/start`, `GET /upstream/{provider}/callback` |
 | `pages::router` | `GET /login`, `GET /setup`, `GET /assets/{name}` |
 
@@ -46,6 +46,16 @@ tests; `zeabur-identity-test-support` provides the software authenticator for th
   `application/json` body, as the [OWASP CSRF guidance][owasp] recommends. Cookies use the
   `__Host-` prefix ([RFC 6265bis][rfc6265bis]) because cookies lack integrity against
   related-domain attackers ([Zheng et al.][zheng], [Squarcina et al.][squarcina]).
+- **Account page.** `/account` signs in with a passkey into a one-hour session stored as a
+  `Grant` named `s-…` (client `zeabur_identity`, which no OAuth client can have, and a name a
+  refresh token cannot use). The `__Host-zeabur-identity-session` cookie is `HttpOnly` and
+  `SameSite=Lax`; changes also need a CSRF token derived from the session secret. Every read and
+  write is filtered to the session's user by name and UID. Adding or removing a passkey needs a
+  user-verified assertion from the last five minutes by one of the user's own passkeys
+  (Kanidm's privilege window works the same way). The last passkey cannot be removed; the
+  Kubernetes store makes that hold under concurrent removals with `resourceVersion`
+  preconditions. Removing a passkey revokes every session and grant it signed in. Changes are
+  logged to `zeabur_identity::audit` and recorded as `Event`s on the `User`.
 - **Upstream providers.** An upstream account signs in only if it was linked to a user, either
   by redeeming an enrolment link with it or by an admin creating the `Credential`; nothing is
   created on first sign-in. Accounts are keyed by the provider's stable identifier (GitHub's

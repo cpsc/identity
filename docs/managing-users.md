@@ -24,7 +24,7 @@ export ZEABUR_IDENTITY_ISSUER=https://identity.example.test
 | `User` | `zbuser` | a person: username, display name, groups | you |
 | `Credential` | `zbcred` | one passkey, or one linked GitHub or Google account | Zeabur Identity, when someone uses a link |
 | `Invitation` | `zbinvite` | a pending one-time link | `zeabur-identityctl invite`; Zeabur Identity deletes it once used or expired |
-| `Grant` | `zbgrant` | one signed-in session | Zeabur Identity, at each sign-in |
+| `Grant` | `zbgrant` | one signed-in session: an application's (`g-…`) or the account page's (`s-…`) | Zeabur Identity, at each sign-in |
 
 Credentials, invitations and grants carry the label `identity.zeabur.com/user=<username>`, so
 `-l identity.zeabur.com/user=alice` selects everything that belongs to `alice`.
@@ -135,11 +135,26 @@ kubectl -n zeabur-identity patch zbclient kubectl --type=merge -p '{"spec":{"all
 Turning it off takes effect at once, even for sign-ins in progress. When an application asks
 for admin rights, the sign-in page says so and shows for how long.
 
+## The account page
+
+People manage their own passkeys at `https://<issuer>/account`: add one, rename one, remove one,
+and see and end their sessions. Adding or removing a passkey asks for a passkey confirmation
+first. Nobody can remove their last passkey there. Removing a passkey also ends every session
+that signed in with it. Each change is logged and recorded as an event on the `User`:
+
+```sh
+kubectl -n zeabur-identity get events --field-selector involvedObject.name=alice
+```
+
+An account-page session lasts an hour. Password managers find the page through
+`/.well-known/passkey-endpoints`.
+
 ## Add another passkey or device
 
 Most passkeys sync through the platform account (iCloud Keychain, Google Password Manager), so
-a new phone usually needs nothing. For a separate security key, or to link a GitHub or Google
-account, invite the same username again. The new link adds one passkey or linked account and
+a new phone usually needs nothing. For a separate security key, the person can add it on the
+[account page](#the-account-page). To link a GitHub or Google account, or when they cannot sign
+in, invite the same username again. The new link adds one passkey or linked account and
 leaves everything else as it is:
 
 ```sh
@@ -154,7 +169,7 @@ kubectl -n zeabur-identity delete zbcred <name>
 ```
 
 The deleted credential cannot sign in again. Sessions it already started keep working until you
-[sign them out](#sign-someone-out).
+[sign them out](#sign-someone-out). (Removing it on the account page signs those out too.)
 
 ## Sign someone out
 

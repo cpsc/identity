@@ -18,6 +18,9 @@ Connect client (Argo CD, Grafana, Headlamp, …) can use the same issuer.
 - **No standing secrets in the issuer's hands.** Tokens are short-lived and audience-bound; only
   hashes of codes, refresh tokens and links are stored; signing keys rotate on a schedule. The
   service account cannot create Secrets, bindings or users.
+- **Self-service without new privileges.** The account page acts only on the signed-in user's
+  own objects, matched by UID; adding or removing a passkey needs a fresh verified passkey, and
+  the last one cannot be removed.
 - **State in Kubernetes.** Custom resources hold users, credentials, clients, sessions and
   invitations, with no database; see [removing someone](managing-users.md#suspend-or-remove-someone)
   for revocation and deletion order.

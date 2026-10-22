@@ -31,7 +31,9 @@ its container image.
 | RFC 9207 Authorization server issuer identification | RFC | Met |
 | OpenID Connect Core 1.0 | Final (errata set 2) | Partial: no single sign-on sessions, so every authorization request asks for a sign-in |
 | W3C WebAuthn Level 3 | Recommendation | Met for registration, discoverable sign-in and conditional mediation |
-| NIST SP 800-63B-4 | Final, Jul. 2025 | Partial: user-verified passkeys (AAL2-capable); no sessions to time out yet |
+| WebAuthn Signal API (`signalAllAcceptedCredentials`, `signalUnknownCredential`) | WebAuthn Level 3 | Met where the browser has it (feature-detected) |
+| W3C A Well-Known URL for Relying Party Passkey Endpoints | Working Draft | Met |
+| NIST SP 800-63B-4 | Final, Jul. 2025 | Partial: user-verified passkeys (AAL2-capable); account-page sessions end after one hour and need a fresh verified passkey within five minutes to add or remove one; OAuth sign-ins have no sessions |
 | Cookies (draft-ietf-httpbis-rfc6265bis) | Draft | Met for the `__Host-` cookies used |
 | RFC 9457 Problem Details | RFC | Met for the sign-in endpoints |
 | RFC 8176 Authentication Method Reference values | RFC | Met (`swk`, `mfa` for passkeys) |
@@ -104,7 +106,7 @@ its container image.
 |---|---|---|---|---|
 | API concepts | Update with `resourceVersion` is compare-and-swap; delete preconditions; create of an existing name fails | `zeabur-identity-k8s/src/objects.rs` | `zeabur-identity-k8s/tests/kubernetes.rs: exactly_one_racer_wins_each_primitive` *(cluster)* | Met |
 | CRD validation | CEL within the cost budget | `zeabur-identity-k8s/src/crd/*.rs` | `admission_rejects_invalid_objects` *(cluster)* | Met |
-| RBAC | Least privilege: Secrets only by name, no `create` on Secrets, no RBAC verbs | `zeabur-identity-k8s/src/rbac.rs` | `service_account_has_least_privilege` *(cluster)*, `zeabur-identity-k8s: rbac::tests::*` | Met |
+| RBAC | Least privilege: Secrets only by name, no `create` on Secrets, no RBAC verbs; `create` on core `Events` and `update`/`patch` on `credentials/status` for the account page | `zeabur-identity-k8s/src/rbac.rs` | `service_account_has_least_privilege` *(cluster)*, `zeabur-identity-k8s: rbac::tests::*` | Met |
 | RFC 9700 §2.1; RFC 8252 §7.3; RFC 6749 §3.1.2 | Redirect URIs are `https://` with a host, or a loopback `http://` with a path; printable ASCII, no fragment or user information. Admission checks this with CEL `isURL()`/`url()`; `zeabur-identityctl client create` additionally requires a valid WHATWG URL written in its serialized form with well-formed percent-encoding, so exact matching sees the string a browser uses and admission accepts it | `zeabur-identity-k8s/src/crd/client.rs` `REDIRECT_URI_RULE`, `zeabur-identity-k8s/src/clients.rs` `redirect_uri_allowed` | `zeabur-identity-k8s: clients::tests::redirect_uris_are_https_or_loopback_in_the_form_a_browser_uses`, `clients::tests::invalid_registrations_are_rejected_with_the_offending_value`; `tests/redirect_uris.rs` (property: accepted URIs survive the WHATWG and RFC 3986 parsers and the authorization response, loopback ports match, the browser's form is accepted); `admission_rejects_invalid_objects`, `admission_and_zeabur-identityctl_agree_on_generated_redirect_uris` *(cluster: generated candidates; what `zeabur-identityctl` accepts is admitted, and what admission lets in is never a non-https, non-loopback, fragment or credential target to a browser)* | Met |
 | RFC 6749 §10.10 | Generated client secrets: 256 bits from the CSPRNG (guessing probability at most 2^-128 is a MUST, at most 2^-160 a SHOULD); only the hash is stored | `zeabur-identity-k8s/src/clients.rs` `register` | `zeabur-identity-k8s: clients::tests::confidential_clients_get_a_fresh_random_secret_and_only_its_hash`, `clients::tests::emitted_objects_satisfy_the_schema_rules`; `oauth_flow_on_kubernetes_storage` *(cluster: the printed secret authenticates, a wrong one is `invalid_client`)* | Met |
 | Project requirement | Expired objects are cleaned up | `zeabur-identity-k8s/src/gc.rs` | `garbage_collector_deletes_expired_objects_only` *(cluster)* | Met |
@@ -182,6 +184,25 @@ Tests are in `zeabur-identity-signin/tests/signin.rs` unless noted.
 | RFC 9457 §3 | Problem details | — | `problem.rs` | `requests_from_other_sites_are_refused` | Met |
 | Fetch Metadata | Cross-site state-changing requests refused | — | `lib.rs` `check_request` | `requests_from_other_sites_are_refused`, `zeabur-identity-signin: tests::same_origin_checks` | Met |
 | RFC 6265bis | `__Host-` cookies: Secure, `Path=/`, no Domain | MUST | `lib.rs`, `upstream.rs` | `code_flow_issues_tokens_kubernetes_can_use` | Met |
+
+## Account page
+
+`/account`, where a user manages their own passkeys and sessions. Tests are in
+`zeabur-identity-signin/tests/signin.rs` (`tests::account::*`) unless noted.
+
+| Source | Requirement | Level | Code | Test | Status |
+|---|---|---|---|---|---|
+| Project requirement | Every read and write is filtered to the session's user by name and UID; names in requests only select among those | MUST | `zeabur-identity-signin/src/account.rs`, `zeabur-identity-k8s/src/credentials.rs` `owned_passkeys`, `grants.rs` `list` | `the_page_lists_only_the_session_users_passkeys`, `changes_cannot_reach_another_users_objects`; `zeabur-identity-k8s/tests/account.rs: only_the_users_own_passkeys_are_listed_or_changed`, `grants_are_listed_by_uid_and_reauthenticated_by_secret` | Met |
+| Project requirement; NIST SP 800-63B-4 §2.2.3 | Adding or removing a passkey needs a user-verified assertion from the last 5 minutes, by one of the user's own passkeys, recorded on the session | MUST | `account.rs` `is_fresh`, `reauth` | `adding_and_removing_need_a_recent_verified_passkey`, `changes_cannot_reach_another_users_objects` | Met |
+| Project requirement | The last passkey is never removed, including by concurrent removals | MUST | `zeabur-identity-k8s/src/credentials.rs` `remove` (revision bump on the others, then delete with preconditions) | `the_last_passkey_cannot_be_removed`, `concurrent_removals_keep_one_passkey`; `zeabur-identity-k8s/tests/account.rs: interleaved_removals_keep_a_passkey`, `sequential_removals_stop_at_the_last_passkey` | Met |
+| Project requirement | Removing a passkey revokes every session and grant that signed in or re-authenticated with it | MUST | `account.rs` `revoke_by_credential` | `removing_a_passkey_revokes_what_it_signed_in` | Met |
+| OWASP CSRF Prevention | Changes need the session cookie, same-origin Fetch Metadata and a per-session token | MUST | `account.rs` `signed_in`, `SessionToken::csrf` | `rename_needs_the_csrf_token_and_same_origin` | Met |
+| RFC 6265bis | Session cookie `__Host-`, `HttpOnly`, `SameSite=Lax`; only the secret's hash is stored; one hour, not extended; ends when the user is disabled or recreated | MUST | `account.rs` | `sessions_end_after_an_hour_and_with_the_user`, `sessions_can_be_revoked` | Met |
+| WebAuthn §5.4.3 | `excludeCredentials` lists the user's passkeys; resident key and UV required | SHOULD | `account.rs` `add_options`, `passkeys.rs` | `adding_and_removing_need_a_recent_verified_passkey` | Met |
+| WebAuthn Signal API | `signalAllAcceptedCredentials` only with a complete, non-empty list; `signalUnknownCredential` for an unregistered credential | — | `lib.rs` `accepted`, `Refused`; `ui/src/webauthn.ts` `signal` | `removing_a_passkey_revokes_what_it_signed_in` | Met |
+| Passkey Endpoints well-known URL | `/.well-known/passkey-endpoints` returns `enroll` and `manage`, 200 JSON, no redirect | — | `account.rs` `passkey_endpoints` | `passkey_endpoints_are_published` | Met |
+| Project requirement | Add, rename, remove and session revocation leave a `zeabur_identity::audit` log line and an `Event` on the `User` (actor, credential, AAGUID, client IP, user agent) | MUST | `account.rs` `log_outcome`, `record`; `zeabur-identity-k8s/src/credentials.rs` `record` | `adding_and_removing_need_a_recent_verified_passkey`, `rename_needs_the_csrf_token_and_same_origin`; `zeabur-identity-k8s/tests/account.rs: only_the_users_own_passkeys_are_listed_or_changed` | Met |
+| Project requirement | A new passkey's default label is its authenticator's name from a vendored AAGUID list (names only) | — | `zeabur-identity-ui/src/aaguid.rs` | `zeabur-identity-ui: aaguid::tests::*` | Met |
 
 ## Upstream sign-in (GitHub, Google)
 

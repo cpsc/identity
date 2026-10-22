@@ -54,7 +54,8 @@ server, the `zeabur-identityctl` admin CLI and the `zeabur-identity-e2e` tests.
   requests per primitive against a real k3s API server: exactly one wins.
 - **Least privilege for the server.** Zeabur Identity's service account reaches Secrets only by name
   (`get`/`update` on the key Secret, `get`/`delete` on the setup Secret, `get` on the internal
-  certificate) and has no `list`, `watch` or `create` on Secrets, since `create` cannot be
+  certificate), and `create` on core `Events` for the account page's audit trail. It has no
+  `list`, `watch` or `create` on Secrets, since `create` cannot be
   limited to a name ([RBAC]). It has nothing outside its namespace, no RBAC objects and no
   `impersonate`. A compromised Zeabur Identity can change Zeabur Identity's own state (it holds
   the signing key anyway) but cannot reach other workloads or grant itself cluster rights.

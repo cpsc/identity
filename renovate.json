@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Cargo crates, action digests and the k3s test version. The Rust nightly and flake.lock are updated by .github/workflows/update-toolchain.yml, which also has to update the fenix hash in flake.nix.",
+  "description": "Cargo crates, ui/ packages (bun.lock, the same schedule and grouping as Zeabur's web/), action digests and the k3s test version. The Rust nightly and flake.lock are updated by .github/workflows/update-toolchain.yml, which also has to update the fenix hash in flake.nix.",
   "extends": [
     "config:recommended",
     ":semanticCommitTypeAll(chore)",
@@ -16,6 +16,7 @@
   "commitBody": "Signed-off-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>",
   "enabledManagers": [
     "cargo",
+    "bun",
     "github-actions",
     "custom.regex"
   ],
@@ -38,6 +39,17 @@
         "patch"
       ],
       "groupName": "cargo (non-major)"
+    },
+    {
+      "description": "One pull request for compatible ui/ package updates; majors stay separate.",
+      "matchManagers": [
+        "bun"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "ui (non-major)"
     },
     {
       "matchManagers": [

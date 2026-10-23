@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """WCAG 2.2 contrast of every colour pair the sign-in pages render.
 
-Reads the ``:root`` colour tokens of the vendored design system and ``ui/styles/app.css``.
+Reads the ``:root`` colour tokens of the design system package and ``ui/styles/app.css``.
 Alpha is composited in gamma-encoded sRGB, as browsers do; ratios follow
 https://www.w3.org/TR/WCAG22/#dfn-contrast-ratio. Text needs 4.5:1 (1.4.3), boundaries and
 focus indicators 3:1 (1.4.11, 2.4.13). Disabled controls, decorative separators, the card's
-edge, the mark and button edges are exempt (Understanding 1.4.11) and not checked.
+edge, the mark and button edges are exempt (Understanding 1.4.11) and not checked. A pair whose
+design-system colours fall short keeps them and is checked against its ``design_system_minimum``.
 
 Usage, from the repository root inside ``nix develop``::
 
@@ -35,7 +36,7 @@ type Layers = tuple[Paint, ...]
 """Paints from the bottom up; the first is opaque."""
 
 DEFAULT_CSS = (
-    Path("ui/styles/vendor/zeabur-design-system/src/tokens.css"),
+    Path("ui/node_modules/@zeabur/design-system/src/tokens.css"),
     Path("ui/styles/app.css"),
 )
 THEMES = ("light", "dark")
@@ -163,6 +164,19 @@ class Pair:
     bg: Layers
     source: str
     drawn_on: Layers | None = None
+    design_system_minimum: float | None = None
+    """Set where the design system's own colours fall below the WCAG minimum: the pair follows
+    the design system and must not drop below this ratio."""
+
+    @property
+    def minimum(self) -> float:
+        return self.kind.minimum if self.design_system_minimum is None else self.design_system_minimum
+
+    @property
+    def need(self) -> str:
+        if self.design_system_minimum is None:
+            return f"{self.kind.minimum:g} ({self.kind.criterion})"
+        return f"{self.design_system_minimum:g} (design system)"
 
     def ratio(self, tokens: Tokens) -> float:
         fg = self.fg.over(flatten(self.drawn_on or self.bg, tokens), tokens)
@@ -180,18 +194,19 @@ def stack(*paints: Paint) -> Layers:
 # Keep in step with the templates.
 
 PAGE_BG = stack(paint("page"))  # base.html body: bg-zGray-50 dark:bg-zGray-950
-CARD = stack(paint("card"))  # ui.html card: bg-card
+CARD = stack(paint("card"))  # ds.html card: bg-card
 ALERT = stack(paint("card"), paint("v2-surface-hover"))  # alert default: bg-v2-surface-hover
 ALERT_WARN = stack(paint("card"), paint("amber", 0.08))  # alert warn: bg-amber/8
-ALERT_FAIL = stack(paint("card"), paint("zOrangered-500", 0.06))  # alert destructive: bg-zOrangered-500/6
-# button-primary: the lightest gradient stop.
+ALERT_FAIL = stack(paint("card"), paint("danger", 0.06))  # alert destructive: bg-danger/6
+# button-primary and button-destructive: the lightest gradient stop.
 PRIMARY_LIGHTEST = stack(paint("#8340ff"))
+DESTRUCTIVE_LIGHTEST = stack(paint("destructive-from"))
 
 COMMON: tuple[Pair, ...] = (
     Pair(name="card text", kind=Kind.TEXT, fg=paint("text-main"), bg=CARD,
          source="card title, field label and input text (text-main)"),
     Pair(name="secondary text on card", kind=Kind.TEXT, fg=paint("text-secondary"), bg=CARD,
-         source="card and field descriptions, #status, separator text (text-secondary)"),
+         source="card and field descriptions, #status, separator text, badge (text-secondary)"),
     Pair(name="error text on card", kind=Kind.TEXT, fg=paint("fail-strong"), bg=CARD,
          source="login/setup #error (text-fail-strong)"),
     Pair(name="product name on page", kind=Kind.TEXT, fg=paint("text-main"), bg=PAGE_BG,
@@ -199,19 +214,22 @@ COMMON: tuple[Pair, ...] = (
     Pair(name="language link", kind=Kind.TEXT, fg=paint("text-secondary"), bg=PAGE_BG,
          source="base.html nav (text-secondary)"),
     Pair(name="alert title", kind=Kind.TEXT, fg=paint("text-main"), bg=ALERT,
-         source="ui.html alert default"),
+         source="ds.html alert default"),
     Pair(name="alert description", kind=Kind.TEXT, fg=paint("text-secondary"), bg=ALERT,
-         source="ui.html alert default, description text-secondary"),
+         source="ds.html alert default, description text-secondary"),
     Pair(name="warning alert text", kind=Kind.TEXT, fg=paint("warn-strong"), bg=ALERT_WARN,
-         source="ui.html alert warn (login elevation notice), text-warn-strong"),
+         source="ds.html alert warn (login elevation notice), text-warn-strong"),
     Pair(name="error alert text", kind=Kind.TEXT, fg=paint("fail-strong"), bg=ALERT_FAIL,
-         source="ui.html alert destructive (error.html), text-fail-strong"),
+         source="ds.html alert destructive (account.html), text-fail-strong"),
     Pair(name="primary button text", kind=Kind.TEXT, fg=paint("#ffffff"), bg=PRIMARY_LIGHTEST,
-         source="button_cls primary (button-primary), lightest gradient stop"),
+         source="ds.html button primary (button-primary), lightest gradient stop"),
+    Pair(name="destructive button text", kind=Kind.TEXT, fg=paint("on-primary"), bg=DESTRUCTIVE_LIGHTEST,
+         source="account.html, ds.html button destructive (button-destructive), lightest gradient stop",
+         design_system_minimum=3.0),
     Pair(name="input border against card", kind=Kind.BOUNDARY, fg=paint("input"), bg=CARD,
-         source="input_cls border-input"),
+         source="ds.html input border-input"),
     Pair(name="input focus edge against card", kind=Kind.FOCUS, fg=paint("ring"), bg=CARD,
-         source="input_cls focus:border-ring"),
+         source="ds.html input focus:border-ring"),
     Pair(name="focus outline against card", kind=Kind.FOCUS, fg=paint("focus-ring"), bg=CARD,
          source="design system base.css :focus-visible outline var(--focus-ring)"),
     Pair(name="focus outline against page", kind=Kind.FOCUS, fg=paint("focus-ring"), bg=PAGE_BG,
@@ -221,16 +239,12 @@ COMMON: tuple[Pair, ...] = (
 # button-secondary: the hover's lower gradient stop.
 LIGHT: tuple[Pair, ...] = (
     Pair(name="secondary button text", kind=Kind.TEXT, fg=paint("text-main"), bg=stack(paint("#ebebec")),
-         source="upstream.html, button_cls secondary (button-secondary), hover stop #ebebec"),
-    Pair(name="danger button text", kind=Kind.TEXT, fg=paint("fail-strong"), bg=stack(paint("#ebebec")),
-         source="account.html, button_cls danger (button-secondary text-fail-strong!), hover stop #ebebec"),
+         source="upstream.html, ds.html button secondary (button-secondary), hover stop #ebebec"),
 )
 
 DARK: tuple[Pair, ...] = (
     Pair(name="secondary button text", kind=Kind.TEXT, fg=paint("text-main"), bg=stack(paint("#34343a")),
-         source="upstream.html, button_cls secondary (button-secondary), hover stop #34343a"),
-    Pair(name="danger button text", kind=Kind.TEXT, fg=paint("fail-strong"), bg=stack(paint("#34343a")),
-         source="account.html, button_cls danger (button-secondary text-fail-strong!), hover stop #34343a"),
+         source="upstream.html, ds.html button secondary (button-secondary), hover stop #34343a"),
 )
 
 PAIRS: dict[str, tuple[Pair, ...]] = {"light": COMMON + LIGHT, "dark": COMMON + DARK}
@@ -348,7 +362,7 @@ class Result:
 
     @property
     def passed(self) -> bool:
-        return self.ratio >= self.pair.kind.minimum
+        return self.ratio >= self.pair.minimum
 
 
 def evaluate(themes: dict[str, Tokens]) -> list[Result]:
@@ -364,7 +378,7 @@ def report(results: Sequence[Result]) -> str:
             r.pair.name,
             f"{r.pair.fg} / {' + '.join(map(str, r.pair.bg))}",
             f"{r.ratio:.2f}",
-            f"{r.pair.kind.minimum:g} ({r.pair.kind.criterion})",
+            r.pair.need,
             "ok" if r.passed else "FAIL",
             r.pair.source,
         )

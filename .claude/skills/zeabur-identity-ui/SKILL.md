@@ -1,27 +1,41 @@
 ---
 name: zeabur-identity-ui
-description: Change Zeabur Identity's sign-in pages — askama templates, TypeScript, Tailwind CSS, translations — while keeping the strict CSP, committed reproducible assets, size budgets and WCAG 2.2 AA contrast. Use for any change under ui/ or crates/zeabur-identity-ui.
+description: Change Zeabur Identity's sign-in pages — askama templates, the design system's generated classes, TypeScript, Tailwind CSS, translations — while keeping the strict CSP, committed reproducible assets, size budgets and WCAG 2.2 AA contrast. Use for any change under ui/ or crates/zeabur-identity-ui.
 ---
 
 # Sign-in pages
 
-- **Where things are.** Sources: `ui/src/*.ts` (scripts), `ui/styles/*.css` (Tailwind v4 input).
-  Templates: `crates/zeabur-identity-ui/templates/` (askama; Zeabur design system class strings, from
-  the vendored `ui/styles/vendor/zeabur-design-system/`). Built output:
-  `crates/zeabur-identity-ui/assets/` (committed, embedded with `include_bytes!`). Page routes live in
+- **Where things are.** Sources: `ui/src/*.ts` (one script per page, no framework),
+  `ui/styles/app.css` (Tailwind v4 input; imports `@zeabur/design-system/tokens.css`). Templates:
+  `crates/zeabur-identity-ui/templates/` (askama). Built output: `crates/zeabur-identity-ui/assets/`
+  (committed, embedded with `include_bytes!`). Page routes live in
   `crates/zeabur-identity-signin/src/pages.rs`; rendering in `crates/zeabur-identity-ui/src/pages.rs`.
+- **Design system.** `@zeabur/design-system` is a dependency in `ui/package.json`, as in web.
+  `ui/scripts/gen-classes.ts` calls its React-free `cva` functions
+  (`@zeabur/design-system/variants/<name>`) and writes `templates/ds.html`: one askama macro per
+  component part (`ds::button("primary", "lg")`, `ds::card()`, `ds::alert("warn")` …) and the mark.
+  Never edit `ds.html`. A component is used as the design system has it; a template adds only
+  layout classes (`w-full`, `flex-1`). The generator holds the few identity classes merged over
+  the design system's (the card's padding and heading), each one explicit; there are no contrast
+  overrides. A value the templates need that is missing from the generator's table goes into the
+  table; a treatment the design system lacks goes into the design system. `ui.html` holds the
+  markup of the shared macros (card, alert, field, command, disclosure). The Geist font is copied
+  from the package by the build.
 - **Build and check** (inside `nix develop`):
   ```sh
-  ./scripts/build-ui.sh && git diff --stat -- crates/zeabur-identity-ui/assets
-  tsc -p ui && ./scripts/ui-budget.sh
-  ./scripts/fallow.sh dead-code --baseline fallow-baseline.json && ./scripts/fallow.sh audit --base main
+  (cd ui && bun ci && bun run fmt:check && bun run lint && bun run typecheck)
+  ./scripts/build-ui.sh && git diff --stat -- crates/zeabur-identity-ui/assets crates/zeabur-identity-ui/templates/ds.html
+  ./scripts/ui-budget.sh && python3 .claude/skills/zeabur-identity-ui/contrast.py
+  (cd ui && bun run fallow dead-code --baseline fallow-baseline.json && bun run fallow audit --base main)
   cargo nextest run -p zeabur-identity-signin -E 'binary(pages)'
   ```
-  Commit the rebuilt assets with the source change; CI rebuilds and fails on any difference.
-- **fallow** (`scripts/fallow.sh <command>`, config in `ui/.fallowrc.json`). `dead-code` finds
-  unused files and exports, and a page that imports another page (pages import only
+  Commit the rebuilt assets and `ds.html` with the source change; CI rebuilds and fails on any
+  difference. Format with `bun run fmt` in `ui/`. Look at every page state with
+  `cargo run -p zeabur-identity-ui --example preview` (http://localhost:8090/).
+- **fallow** (`bun run fallow <command>` in `ui/`, config in `ui/.fallowrc.json`). `dead-code` finds
+  unused files, exports and dependencies, and a page that imports another page (pages import only
   `webauthn.ts`). `ui/fallow-baseline.json` holds the findings that predate fallow; never add to
-  it, and run `scripts/fallow.sh baselines prune` after a fix. `audit --base main` is what CI
+  it, and run `bun run fallow baselines prune` after a fix. `audit --base main` is what CI
   gates on: new dead code, complexity and duplication in the changed files. `health` gives the
   score and the complex functions; with no unit tests for `ui/src`, CRAP counts every branch as
   untested. A false positive gets an entry in `.fallowrc.json` with the reason.
@@ -34,9 +48,11 @@ description: Change Zeabur Identity's sign-in pages — askama templates, TypeSc
   compile error. Wording and terms follow Zeabur's `docs/wording.md`: sentence case, errors
   that say what failed and what to do next, no "we"; in Chinese no 被／進行／您, 請 only in a
   full sentence that asks the reader to act.
-- **Contrast.** After changing a token or a colour class, run
+- **Contrast.** After changing a token, a colour class or the design-system pin, run
   `python3 .claude/skills/zeabur-identity-ui/contrast.py` (inside `nix develop`; exits 1 on any
   failure). Try a value first with `--set light:input='rgb(126, 122, 133)'`. Add a pair to its
-  inventory when a template starts rendering a new one.
+  inventory when a template starts rendering a new one. Where the design system's own colours
+  fall below the WCAG minimum, the pages keep them: the pair gets `design_system_minimum` (the
+  ratio it must not drop below) and the gap is raised in the design system.
 - **Budgets.** Brotli sizes are checked by `scripts/ui-budget.sh`; raise a budget only with a
   reason in the commit.

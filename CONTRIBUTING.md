@@ -49,7 +49,10 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-it
 cargo nextest run --workspace
 cargo deny --locked check
 ./scripts/unsafe-report.sh
-./scripts/build-ui.sh && git diff --exit-code -- crates/zeabur-identity-ui/assets && tsc -p ui && ./scripts/ui-budget.sh
+(cd ui && bun ci && bun run fmt:check && bun run lint && bun run typecheck)
+./scripts/build-ui.sh && git diff --exit-code -- crates/zeabur-identity-ui/assets crates/zeabur-identity-ui/templates/ds.html
+./scripts/ui-budget.sh && python3 .claude/skills/zeabur-identity-ui/contrast.py
+(cd ui && bun run fallow dead-code --baseline fallow-baseline.json && bun run fallow audit --base main)
 ```
 
 Design rationale lives next to the code, in rustdoc: state the decision and its reason, and
@@ -107,8 +110,14 @@ Cargo does not pick a release younger than seven days unless it is already in th
 catch a compromised release. An urgent security update overrides it for one command:
 `CARGO_REGISTRY_GLOBAL_MIN_PUBLISH_AGE="0 days" cargo update -p <crate>`.
 
-[Renovate](https://docs.renovatebot.com/) (`renovate.json`) opens the weekly crate, action digest
-and k3s updates under the same seven-day delay; compatible crate updates share one pull request.
+The sign-in pages' build tools (`ui/package.json`) follow the same rules: exact versions in a
+committed `bun.lock`, no release younger than seven days (`ui/bunfig.toml`), OSI-approved
+licences and no install scripts. They are the versions Zeabur's web interface uses. The design
+system is a Git dependency pinned to a commit.
+
+[Renovate](https://docs.renovatebot.com/) (`renovate.json`) opens the weekly crate, `ui/` package,
+action digest and k3s updates under the same seven-day delay; compatible crate updates share one
+pull request, and so do compatible `ui/` updates.
 A crate update that brings in new `unsafe` or native code fails `unsafe-report` until the
 allowlist entry below is added and reviewed, so those pull requests are never merged unread.
 

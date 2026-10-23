@@ -1,10 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/v3.33.1/schema.json",
-  // The pages scripts/build-ui.sh builds.
+  // The pages that scripts/build-ui.sh builds.
   "entry": ["src/login.ts", "src/setup.ts", "src/account.ts", "styles/app.css"],
-  // A verbatim copy of the design system's styles; it is checked in that repository.
-  "duplicates": { "ignore": ["styles/vendor/**"] },
-  "health": { "ignore": ["styles/vendor/**"] },
   // A page imports only webauthn.ts, never another page.
   "boundaries": {
     "zones": [
@@ -15,7 +12,7 @@
       { "from": "pages", "allow": ["webauthn"] },
       { "from": "webauthn", "allow": [] }
     ],
-    "coverage": { "requireAllFiles": true, "allowUnmatched": ["styles/**"] }
+    "coverage": { "requireAllFiles": true, "allowUnmatched": ["styles/**", "scripts/**"] }
   },
   "audit": { "deadCodeBaseline": "fallow-baseline.json" },
   "rules": { "policy-violation": "off" }

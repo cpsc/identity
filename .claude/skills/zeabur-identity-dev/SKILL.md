@@ -26,7 +26,8 @@ nix develop -c ./scripts/unsafe-report.sh
 nix develop -c bash -c 'shellcheck scripts/*.sh && actionlint && nixfmt --check flake.nix'
 ```
 Iterate per crate with `-p <crate>` to keep builds short. Cluster tests: see the
-`zeabur-identity-cluster-tests` skill. UI changes: see `zeabur-identity-ui`.
+`zeabur-identity-cluster-tests` skill. The `ui` job (bun, Tailwind, oxlint, oxfmt, fallow from
+`ui/package.json`) is in `zeabur-identity-ui`.
 
 ## Lint conventions
 - `unsafe` is forbidden. No panics on input: no `unwrap`/`expect`/indexing outside tests.
@@ -50,4 +51,4 @@ Iterate per crate with `-p <crate>` to keep builds short. Cluster tests: see the
 - Sign off every commit (`git commit -s`, DCO). Do not add tool- or session-specific trailers.
 - Regenerate committed outputs in the same commit: `cargo run -q -p zeabur-identityctl -- crds >
   deploy/crds.json`, `… -- rbac > deploy/rbac.json` (tests fail when they are stale), and the UI
-  assets.
+  assets with `templates/ds.html` (`./scripts/build-ui.sh`).

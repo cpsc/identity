@@ -1,6 +1,7 @@
 {%- extends "base.html" -%}
 {%- import "ui.html" as ui -%}
 {%- import "icons.html" as icons -%}
+{%- import "ds.html" as ds -%}
 {%- import "upstream.html" as upstream -%}
 {%- block title %}{{ m.login_title }}{% endblock -%}
 {%- block head %}<script type="module" src="/assets/login.js?v={{ assets.login_js }}"></script>{% endblock -%}
@@ -16,7 +17,7 @@
     {% call ui::alert(m.no_request_title, "default", "WarningCircle", live = "") %}{{ m.no_request_apps_body }}{% endcall %}
     {{ ui::app_links(apps, m) }}
     {%- endif %}
-    <a href="/account" class="{{ ui::button_cls("secondary") }} w-full">{{ icons::icon("Key") }}{{ m.manage_passkeys }}</a>
+    <a href="/account" class="{{ ds::button("secondary", "lg") }} w-full">{{ icons::icon("Key") }}{{ m.manage_passkeys }}</a>
     {%- else %}
     {#- Shown by the script once the request has ended: signing in can then only fail. -#}
     <div id="ended" hidden tabindex="-1" class="flex flex-col gap-5 outline-none">
@@ -43,14 +44,14 @@
       {#- Without a login hint the script folds this away when the browser offers passkeys itself. -#}
       <div id="username-field"{% if login_hint.is_none() %} data-collapsible{% endif %}>
       {% call ui::field("username", m.login_username, m.login_username_hint) %}
-      <input id="username" name="username" type="text" class="{{ ui::input_cls() }}"
+      <input id="username" name="username" type="text" class="{{ ds::input() }}"
              autocomplete="username webauthn" autocapitalize="none" spellcheck="false"
              value="{{ login_hint.unwrap_or_default() }}"
              {{- ui::field_describedby("username", m.login_username_hint) }}>
       {% endcall %}
       </div>
       <div class="flex flex-col gap-2">
-        <button type="submit" class="{{ ui::button_cls("primary") }} w-full">{{ icons::icon("Fingerprint") }}{{ m.login_passkey }}</button>
+        <button type="submit" class="{{ ds::button("primary", "lg") }} w-full">{{ icons::icon("Fingerprint") }}{{ m.login_passkey }}</button>
         {%- if login_hint.is_none() %}
         <button type="button" id="use-username" hidden aria-controls="username-field"
                 class="inline-flex min-h-8 items-center self-center rounded-md px-2 text-[0.8125rem] leading-5 text-secondary underline-offset-4 hover:text-main hover:underline">{{ m.use_username }}</button>

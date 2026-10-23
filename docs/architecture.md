@@ -86,9 +86,10 @@ Every crate has a README that is also its crate-level documentation (`cargo doc 
 | [`zeabur-identityctl`](../crates/zeabur-identityctl) | **binary**: the administrator's CLI | core, k8s |
 | [`zeabur-identity-test-support`](../crates/zeabur-identity-test-support), [`zeabur-identity-e2e`](../crates/zeabur-identity-e2e) | test helpers; end-to-end tests on a cluster | — |
 
-The sign-in pages' TypeScript and Tailwind sources live in [`ui/`](../ui); their built output is
-committed to `crates/zeabur-identity-ui/assets` and embedded in the binary, so building Zeabur Identity needs only
-Cargo.
+The sign-in pages' TypeScript and Tailwind sources live in [`ui/`](../ui), with Zeabur's design
+system as a package. Their built output, and the design system's classes as askama macros
+(`templates/ds.html`), are committed to `crates/zeabur-identity-ui` and embedded in the binary, so
+building Zeabur Identity needs only Cargo.
 
 ## Development
 

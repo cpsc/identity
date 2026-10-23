@@ -37,14 +37,17 @@ jobs:
             run: cargo deny --locked check
           - name: unsafe-report
             run: ./scripts/unsafe-report.sh
-          # Sign-in page assets: committed output must match the sources, typecheck, and fit the budget.
-          # fallow: unused code and boundaries, then new findings against HEAD^ (on a pull request,
-          # the base branch); the health report does not fail the job.
+          # Sign-in pages: format, lint and typecheck; the committed assets and design-system classes
+          # must match the sources; budgets and contrast. fallow: unused code and boundaries, then new
+          # findings against HEAD^ (on a pull request, the base branch); health does not fail the job.
           - name: ui
             run: >-
-              ./scripts/build-ui.sh && git diff --exit-code -- crates/zeabur-identity-ui/assets && tsc -p ui && ./scripts/ui-budget.sh
-              && ./scripts/fallow.sh dead-code --baseline fallow-baseline.json && ./scripts/fallow.sh audit --base HEAD^
-              && ./scripts/fallow.sh health --report-only
+              (cd ui && bun ci && bun run fmt:check && bun run lint && bun run typecheck)
+              && ./scripts/build-ui.sh
+              && git diff --exit-code -- crates/zeabur-identity-ui/assets crates/zeabur-identity-ui/templates/ds.html
+              && ./scripts/ui-budget.sh && python3 .claude/skills/zeabur-identity-ui/contrast.py
+              && (cd ui && bun run fallow dead-code --baseline fallow-baseline.json && bun run fallow audit --base HEAD^
+              && bun run fallow health --report-only)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

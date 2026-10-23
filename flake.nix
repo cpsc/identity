@@ -65,10 +65,8 @@
               gh
               binutils
 
-              # Login page assets
+              # Sign-in page assets: bun installs the rest from ui/bun.lock.
               bun
-              tailwindcss_4
-              typescript
               brotli
               python3 # .claude/skills/zeabur-identity-ui/contrast.py
 

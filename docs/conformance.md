@@ -226,10 +226,10 @@ needs nothing the CSP forbids.
 | CSP Level 3, Trusted Types | No inline script, style or handlers; no string-to-HTML sinks | — | `zeabur-identity-ui`, `ui/src/*.ts` | all page tests | Met |
 | RFC 9110 §12.5.4, §12.4.2 | `Accept-Language` with quality values | — | `zeabur-identity-ui/src/i18n.rs` | `zeabur-identity-ui: i18n::tests::*`, `language_follows_parameter_then_header` | Met |
 | Project requirement | Assets embedded, no CDN; built output checked against source; size measured | MUST | `zeabur-identity-ui/src/assets.rs`, `scripts/build-ui.sh`, `scripts/ui-budget.sh` | `assets_are_embedded_versioned_and_immutable`; CI `ui` | Met |
-| Project requirement | No tokens in browser storage; cookies `HttpOnly`, `Secure`, `SameSite` | MUST | `ui/src/*.ts`, `zeabur-identity-signin` | `tsc -p ui`, review | Met |
+| Project requirement | No tokens in browser storage; cookies `HttpOnly`, `Secure`, `SameSite` | MUST | `ui/src/*.ts`, `zeabur-identity-signin` | `bun run typecheck` in `ui/`, review | Met |
 | Project requirement | Fallback without passkey support or script; provider buttons only when configured and not for elevation | MUST | templates | `login_offers_passkey_autofill_for_a_pending_request`, `provider_buttons_appear_only_when_configured_and_not_for_elevation` | Met |
 | Project requirement | Dark mode; en, zh-TW, zh-CN | MUST | `ui/styles/app.css`, `zeabur-identity-ui/src/i18n.rs` | `language_follows_parameter_then_header` | Met |
 | Escaping | User-influenced text cannot inject markup | — | askama auto-escaping | `user_controlled_text_is_escaped` | Met |
-| WCAG 2.2 1.4.3, 1.4.11 | Text ≥ 4.5:1; boundaries and focus ≥ 3:1 | AA | `ui/styles/app.css` (`A11Y` overrides) | computed table in the `zeabur-identity-ui` docs | Met for every pair used |
+| WCAG 2.2 1.4.3, 1.4.11 | Text ≥ 4.5:1; boundaries and focus ≥ 3:1 | AA | the design system's tokens, `ui/styles/app.css` | `contrast.py` (CI `ui`), computed table in the `zeabur-identity-ui` docs | Partly met: the destructive button's text is 3.04:1, the design system's colours |
 | WCAG 2.2 2.4.7, 2.5.8, 3.1.1, 3.1.2, 3.3.1, 4.1.3 | Focus, target size, language, errors, status messages | A / AA | templates | `language_follows_parameter_then_header`; review | Met by inspection |
 | WCAG 2.2 | Automated audit and assistive-technology pass | — | — | — | Not done |

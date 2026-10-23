@@ -1,56 +1,43 @@
 {%- import "icons.html" as icons -%}
-{#- The design system's component classes (src/components/<name>.tsx), merged by hand for askama. -#}
+{%- import "ds.html" as ds -%}
+{#- The design system's components as askama macros; their classes come from ds.html. -#}
 
-{#- variant: "primary" | "secondary" | "danger" (secondary with error-coloured text; the design system's destructive variant is below 4.5:1); size: "default" | "sm". -#}
-{%- macro button_cls(variant = "primary", size = "default") -%}
-group/button inline-flex shrink-0 items-center justify-center gap-2 rounded-md font-medium whitespace-nowrap transition-colors duration-150 select-none active:translate-y-px disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4
-{%- if size == "sm" %} h-8 px-3 text-[0.8125rem]{% else %} h-10 px-5 text-sm{% endif %}
-{%- if variant == "primary" %} button-primary{% else if variant == "danger" %} button-secondary text-fail-strong!{% else %} button-secondary{% endif -%}
-{%- endmacro -%}
-
-{%- macro input_cls() -%}
-h-10 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-base text-main transition-[border-color,box-shadow,background-color] duration-150 outline-none placeholder:text-tertiary focus:border-ring focus:ring-1 focus:ring-ring/20 disabled:cursor-not-allowed disabled:bg-v2-surface-active disabled:text-secondary aria-invalid:border-destructive aria-invalid:focus:ring-destructive/20 sm:text-sm
-{%- endmacro -%}
-
-{%- macro card(cls = "") -%}
-<div data-slot="card" class="group/card flex flex-col gap-5 rounded-xl border border-v2-border bg-card p-6 text-card-foreground shadow-xs sm:px-7 {{ cls }}">{{ caller() }}</div>
+{%- macro card() -%}
+<div data-slot="card" class="{{ ds::card() }}">{{ caller() }}</div>
 {%- endmacro -%}
 
 {%- macro card_header(title, description = "") -%}
-<div data-slot="card-header" class="flex flex-col gap-1 text-center">
-  <h1 data-slot="card-title" class="text-xl leading-7 font-semibold tracking-[-0.01em] text-main">{{ title }}</h1>
+<div data-slot="card-header" class="{{ ds::card_header() }}">
+  <h1 data-slot="card-title" class="{{ ds::card_title() }}">{{ title }}</h1>
   {%- if !description.is_empty() %}
-  <p data-slot="card-description" class="text-[0.8125rem] leading-5 text-pretty text-secondary">{{ description }}</p>
+  <p data-slot="card-description" class="{{ ds::card_description() }}">{{ description }}</p>
   {%- endif %}
 </div>
 {%- endmacro -%}
 
 {%- macro card_content() -%}
-<div data-slot="card-content">{{ caller() }}</div>
+<div data-slot="card-content" class="{{ ds::card_content() }}">{{ caller() }}</div>
 {%- endmacro -%}
 
 {#- variant: "default" | "warn" | "destructive"; live: the role, "alert" | "status" | "" for none. -#}
 {%- macro alert(title, variant = "default", icon_name = "WarningCircle", id = "", live = "alert", cls = "") -%}
-<div data-slot="alert"{% if !live.is_empty() %} role="{{ live }}"{% endif %}{% if !id.is_empty() %} id="{{ id }}"{% endif %} class="group/alert relative grid w-full gap-0.5 rounded-lg border px-4 py-3 text-left text-[0.8125rem] leading-5 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2.5 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4
-  {%- if variant == "destructive" %} border-zOrangered-500/30 bg-zOrangered-500/6 text-fail-strong *:data-[slot=alert-description]:text-current
-  {%- else if variant == "warn" %} border-amber/40 bg-amber/8 text-warn-strong *:data-[slot=alert-description]:text-current
-  {%- else %} border-v2-border bg-v2-surface-hover text-main{% endif %} {{ cls }}">
+<div data-slot="alert"{% if !live.is_empty() %} role="{{ live }}"{% endif %}{% if !id.is_empty() %} id="{{ id }}"{% endif %} class="{{ ds::alert(variant) }} {{ cls }}">
   {{- icons::icon(icon_name) -}}
-  <div data-slot="alert-title" class="text-sm leading-5 font-medium group-has-[>svg]/alert:col-start-2">{{ title }}</div>
-  <div data-slot="alert-description" class="leading-relaxed text-pretty text-secondary group-has-[>svg]/alert:col-start-2">{{ caller() }}</div>
+  <div data-slot="alert-title" class="{{ ds::alert_title() }}">{{ title }}</div>
+  <div data-slot="alert-description" class="{{ ds::alert_description() }}">{{ caller() }}</div>
 </div>
 {%- endmacro -%}
 
 {#- The call body is the control; give it id=`id` and field_describedby(id, …). -#}
 {%- macro field(id, label, description = "", error = "") -%}
-<div role="group" data-slot="field"{% if !error.is_empty() %} data-invalid="true"{% endif %} class="group/field flex min-w-0 flex-col gap-1.5">
-  <label data-slot="field-label" for="{{ id }}" class="w-fit text-[0.8125rem] leading-5 font-medium text-main">{{ label }}</label>
+<div role="group" data-slot="field"{% if !error.is_empty() %} data-invalid="true"{% endif %} class="{{ ds::field() }}">
+  <label data-slot="field-label" for="{{ id }}" class="{{ ds::field_label() }}">{{ label }}</label>
   {{ caller() }}
   {%- if !description.is_empty() %}
-  <p id="{{ id }}-desc" data-slot="field-description" class="text-[0.8125rem] leading-5 text-secondary">{{ description }}</p>
+  <p id="{{ id }}-desc" data-slot="field-description" class="{{ ds::field_description() }}">{{ description }}</p>
   {%- endif %}
   {%- if !error.is_empty() %}
-  <p id="{{ id }}-err" data-slot="field-error" class="text-xs leading-4 text-fail-strong">{{ error }}</p>
+  <p id="{{ id }}-err" data-slot="field-error" class="{{ ds::field_error() }}">{{ error }}</p>
   {%- endif %}
 </div>
 {%- endmacro -%}
@@ -64,9 +51,9 @@ h-10 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text
 
 {%- macro field_separator(text) -%}
 <div data-slot="field-separator" class="flex items-center gap-3 text-xs leading-4 text-secondary">
-  <div role="separator" aria-orientation="horizontal" data-slot="separator" class="h-px flex-1 bg-v2-border"></div>
+  <div role="separator" aria-orientation="horizontal" data-orientation="horizontal" data-slot="separator" class="{{ ds::separator() }} flex-1"></div>
   <span data-slot="field-separator-content">{{ text }}</span>
-  <div aria-hidden="true" class="h-px flex-1 bg-v2-border"></div>
+  <div aria-hidden="true" data-orientation="horizontal" class="{{ ds::separator() }} flex-1"></div>
 </div>
 {%- endmacro -%}
 
@@ -97,7 +84,7 @@ h-10 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text
 {%- if !apps.is_empty() %}
 <div data-slot="apps" class="flex flex-col gap-3">
   {%- for app in apps %}
-  <a href="{{ app.url }}" class="{{ button_cls("secondary") }} w-full"><span class="truncate">{{ m.open_app.replace("%app%", app.name) }}</span>{{ icons::icon("ArrowUpRight") }}</a>
+  <a href="{{ app.url }}" class="{{ ds::button("secondary", "lg") }} w-full"><span class="truncate">{{ m.open_app.replace("%app%", app.name) }}</span>{{ icons::icon("ArrowUpRight") }}</a>
   {%- endfor %}
 </div>
 {%- endif %}

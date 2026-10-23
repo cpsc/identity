@@ -1,6 +1,7 @@
 {%- extends "base.html" -%}
 {%- import "ui.html" as ui -%}
 {%- import "icons.html" as icons -%}
+{%- import "ds.html" as ds -%}
 {%- import "upstream.html" as upstream -%}
 {%- block title %}{{ m.setup_title }}{% endblock -%}
 {%- block head %}<script type="module" src="/assets/setup.js?v={{ assets.setup_js }}"></script>{% endblock -%}
@@ -19,7 +20,7 @@
     <div id="done" hidden tabindex="-1" class="flex flex-col gap-5 outline-none">
       {%- if let Some(client) = client %}
       {% call ui::alert(m.setup_done_title, "default", "Key", live = "") %}{{ m.setup_done_continue_body }}{% endcall %}
-      <a href="/login" class="{{ ui::button_cls("primary") }} w-full">{{ icons::icon("Fingerprint") }}<span class="truncate">{{ m.login_continue_to }} {{ client }}</span></a>
+      <a href="/login" class="{{ ds::button("primary", "lg") }} w-full">{{ icons::icon("Fingerprint") }}<span class="truncate">{{ m.login_continue_to }} {{ client }}</span></a>
       {%- else if apps.is_empty() %}
       {% call ui::alert(m.setup_done_title, "default", "Key", live = "") %}{{ m.setup_done_body }}{% endcall %}
       {%- else %}
@@ -38,10 +39,10 @@
           data-msg-working="{{ m.working }}" data-msg-error="{{ m.generic_error }}"
           data-msg-invalid="{{ m.setup_invalid }}" data-msg-missing="{{ m.setup_missing_token }}">
       {% call ui::field("label", m.setup_label, m.setup_label_hint) %}
-      <input id="label" name="label" type="text" maxlength="64" class="{{ ui::input_cls() }}" autocomplete="off"
+      <input id="label" name="label" type="text" maxlength="64" class="{{ ds::input() }}" autocomplete="off"
              {{- ui::field_describedby("label", m.setup_label_hint) }}>
       {% endcall %}
-      <button type="submit" class="{{ ui::button_cls("primary") }} w-full">{{ icons::icon("Fingerprint") }}{{ m.setup_create }}</button>
+      <button type="submit" class="{{ ds::button("primary", "lg") }} w-full">{{ icons::icon("Fingerprint") }}{{ m.setup_create }}</button>
     </form>
     {{ upstream::buttons(providers, m) }}
   </div>

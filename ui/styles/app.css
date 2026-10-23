@@ -1,7 +1,8 @@
-/* Built by scripts/build-ui.sh into crates/zeabur-identity-ui/assets, which are committed. */
+/* Built by scripts/build-ui.sh into crates/zeabur-identity-ui/assets, which are committed.
+   The font file is copied there from the design system. */
 @import "tailwindcss" source(none);
 @source "../../crates/zeabur-identity-ui/templates";
-@import "./vendor/zeabur-design-system/tokens.css";
+@import "@zeabur/design-system/tokens.css";
 
 @custom-variant dark (@media (prefers-color-scheme: dark));
 :root {

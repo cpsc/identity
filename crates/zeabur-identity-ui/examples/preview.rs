@@ -111,6 +111,7 @@ async fn index() -> Html<String> {
         "/login",
         "/login/apps",
         "/login/request",
+        "/login/ending",
         "/login/hint",
         "/login/elevated",
         "/setup",
@@ -133,15 +134,40 @@ async fn index() -> Html<String> {
     ))
 }
 
+const PENDING: Duration = Duration::from_mins(10);
+
 async fn login(Path(state): Path<String>, RawQuery(q): RawQuery, h: HeaderMap) -> Response {
     let lang = lang(q.as_deref(), &h);
     match state.as_str() {
         "apps" => login_page(lang, None, None, None, &PROVIDERS, &APPS),
-        "request" => login_page(lang, Some("Zeabur"), None, None, &PROVIDERS, &[]),
-        "hint" => login_page(lang, Some("Zeabur"), None, Some("admin"), &PROVIDERS, &[]),
+        "request" => login_page(
+            lang,
+            Some(("Zeabur", PENDING)),
+            None,
+            None,
+            &PROVIDERS,
+            &APPS,
+        ),
+        // The request ends a few seconds after the page loads.
+        "ending" => login_page(
+            lang,
+            Some(("Zeabur", Duration::from_secs(5))),
+            None,
+            None,
+            &PROVIDERS,
+            &APPS,
+        ),
+        "hint" => login_page(
+            lang,
+            Some(("Zeabur", PENDING)),
+            None,
+            Some("admin"),
+            &PROVIDERS,
+            &[],
+        ),
         "elevated" => login_page(
             lang,
-            Some("Zeabur"),
+            Some(("Zeabur", PENDING)),
             Some(Duration::from_mins(5)),
             None,
             &[],
@@ -250,7 +276,7 @@ async fn main() -> std::io::Result<()> {
         .route(
             "/setup",
             get(|RawQuery(q): RawQuery, h: HeaderMap| async move {
-                setup_page(lang(q.as_deref(), &h), &PROVIDERS, &APPS)
+                setup_page(lang(q.as_deref(), &h), None, &PROVIDERS, &APPS)
             }),
         )
         .route("/setup/options", post(setup_options))

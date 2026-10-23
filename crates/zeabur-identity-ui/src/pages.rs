@@ -125,6 +125,8 @@ struct LoginPage<'a> {
     m: &'static Messages,
     assets: &'a Versions,
     client: Option<&'a str>,
+    /// Seconds left on the pending request.
+    expires_in: Option<u64>,
     subtitle: String,
     elevation_notice: Option<String>,
     login_hint: Option<&'a str>,
@@ -140,6 +142,7 @@ struct SetupPage<'a> {
     langs: &'static [Lang],
     m: &'static Messages,
     assets: &'a Versions,
+    client: Option<&'a str>,
     providers: &'a [ProviderButton],
     apps: &'a [AppLink<'a>],
     setup_link_command: &'static str,
@@ -238,21 +241,25 @@ pub fn error_page(lang: Lang, reason: ErrorReason, detail: &str) -> Response {
     render(StatusCode::BAD_REQUEST, &page)
 }
 
-/// Renders the sign-in page. Without a pending request (`client` is `None`) it explains that
-/// there is nothing to sign in to and offers `apps`; `providers` adds "Continue with …" buttons.
+/// Renders the sign-in page.
+///
+/// `request` is the pending request's client name and the time left on it. Without one the page
+/// explains that there is nothing to sign in to and offers `apps`; with one, it offers them only
+/// once the request has ended. `providers` adds "Continue with …" buttons.
 ///
 /// `elevation` is the elevated token's lifetime when the request asks for one; the page then
 /// says so before the passkey prompt.
 #[must_use]
 pub fn login_page(
     lang: Lang,
-    client: Option<&str>,
+    request: Option<(&str, Duration)>,
     elevation: Option<Duration>,
     login_hint: Option<&str>,
     providers: &[ProviderButton],
     apps: &[AppLink<'_>],
 ) -> Response {
     let m = lang.messages();
+    let client = request.map(|(client, _)| client);
     let subtitle = client.map_or_else(
         || m.login_subtitle.to_owned(),
         |c| format!("{} {c}", m.login_continue_to),
@@ -271,6 +278,7 @@ pub fn login_page(
         m,
         assets: &VERSIONS,
         client,
+        expires_in: request.map(|(_, left)| left.as_secs()),
         subtitle,
         elevation_notice,
         login_hint,
@@ -282,14 +290,23 @@ pub fn login_page(
 }
 
 /// Renders the enrolment page, where a setup link or invitation becomes a passkey (or, with
-/// `providers`, a linked upstream account). Once done, it offers `apps` and a backup passkey.
+/// `providers`, a linked upstream account).
+///
+/// Once done, it leads back to the sign-in for `client` when one is pending, otherwise to `apps`,
+/// and suggests a backup passkey.
 #[must_use]
-pub fn setup_page(lang: Lang, providers: &[ProviderButton], apps: &[AppLink<'_>]) -> Response {
+pub fn setup_page(
+    lang: Lang,
+    client: Option<&str>,
+    providers: &[ProviderButton],
+    apps: &[AppLink<'_>],
+) -> Response {
     let page = SetupPage {
         lang,
         langs: &Lang::ALL,
         m: lang.messages(),
         assets: &VERSIONS,
+        client,
         providers,
         apps,
         setup_link_command: SETUP_LINK_COMMAND,

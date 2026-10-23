@@ -17,8 +17,15 @@
     <noscript>{% call ui::alert(m.noscript_title, "default", "Key", live = "") %}{{ m.noscript_body }}{% endcall %}</noscript>
     <div id="new-link" hidden>{{ ui::new_link(m, setup_link_command) }}</div>
     <div id="done" hidden tabindex="-1" class="flex flex-col gap-5 outline-none">
+      {%- if let Some(client) = client %}
+      {% call ui::alert(m.setup_done_title, "default", "Key", live = "") %}{{ m.setup_done_continue_body }}{% endcall %}
+      <a href="/login" class="{{ ui::button_cls("primary") }} w-full">{{ icons::icon("Fingerprint") }}<span class="truncate">{{ m.login_continue_to }} {{ client }}</span></a>
+      {%- else if apps.is_empty() %}
       {% call ui::alert(m.setup_done_title, "default", "Key", live = "") %}{{ m.setup_done_body }}{% endcall %}
+      {%- else %}
+      {% call ui::alert(m.setup_done_title, "default", "Key", live = "") %}{{ m.no_request_apps_body }}{% endcall %}
       {{ ui::app_links(apps, m) }}
+      {%- endif %}
       <div data-slot="backup" class="flex flex-col gap-2 text-[0.8125rem] leading-5 text-pretty text-secondary">
         <p class="text-sm leading-5 font-medium text-main">{{ m.backup_title }}</p>
         <p>{{ m.backup_body }}</p>

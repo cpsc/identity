@@ -187,7 +187,21 @@ mod tests {
                 .replace("</span>", "")
                 .contains("zeabur-identityctl setup-link --username &#60;name&#62; --reset")
         );
-        assert!(!page.body.contains("Open Cluster Dashboard"));
+        // The apps wait, hidden, for the request to end; the form says when that is.
+        let ended = section(
+            &page.body,
+            "<div id=\"ended\" hidden",
+            "<div id=\"request\"",
+        );
+        assert!(ended.contains("This sign-in expired"));
+        assert!(ended.contains("Open Cluster Dashboard"));
+        assert_eq!(page.body.matches("Open Cluster Dashboard").count(), 1);
+        let expires_in: u64 = section(&page.body, "data-expires-in=\"", ">")
+            .trim_start_matches("data-expires-in=\"")
+            .trim_end_matches('"')
+            .parse()
+            .unwrap();
+        assert!((590..=600).contains(&expires_in), "{expires_in}");
         assert!(page.body.contains("<noscript>"));
         assert!(page.body.contains("id=\"unsupported\""));
         assert!(page.body.contains("type=\"module\""));
@@ -243,6 +257,79 @@ mod tests {
         // The switcher marks the current language and links to the others.
         assert!(page.body.contains("?lang=zh-TW"));
         assert!(page.body.contains("aria-current"));
+    }
+
+    /// The text of `html` from `start` up to `end`.
+    fn section<'a>(html: &'a str, start: &str, end: &str) -> &'a str {
+        let from = html.find(start).unwrap_or_else(|| panic!("no {start}"));
+        let rest = html.get(from..).unwrap();
+        rest.get(..rest.find(end).unwrap_or_else(|| panic!("no {end}")))
+            .unwrap()
+    }
+
+    async fn pending_request(app: &Router) -> String {
+        let authorize = get(
+            app,
+            &format!(
+                "/authorize?response_type=code&client_id=dashboard&redirect_uri=https%3A%2F%2Fdashboard.example.com%2Fcb\
+                 &scope=openid&code_challenge={CHALLENGE}&code_challenge_method=S256"
+            ),
+            &[],
+        )
+        .await;
+        authorize.headers[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_owned()
+    }
+
+    #[tokio::test]
+    async fn setup_leads_to_the_pending_sign_in_or_the_apps() {
+        let app = app().await;
+        // Without a request, enrolment ends with the apps to open.
+        let page = get(&app, "/setup", &[]).await;
+        let done = section(&page.body, "<div id=\"done\"", "<form");
+        assert!(done.contains("Open an app below."));
+        assert!(done.contains(&format!("<a href=\"{HOME}\"")));
+        assert!(!done.contains("href=\"/login\""));
+
+        // Started from an app's sign-in, it leads straight back there.
+        let cookie = pending_request(&app).await;
+        let page = get(&app, "/setup", &[("cookie", &cookie)]).await;
+        assert_hardened(&page);
+        let done = section(&page.body, "<div id=\"done\"", "<form");
+        assert!(done.contains("href=\"/login\""));
+        assert!(done.contains("Continue to Cluster Dashboard"));
+        assert!(!done.contains(HOME));
+
+        // An expired request is no request.
+        let page = get(
+            &app,
+            "/setup",
+            &[("cookie", &format!("{FLOW_COOKIE}=forged"))],
+        )
+        .await;
+        assert!(!page.body.contains("href=\"/login\""));
+    }
+
+    /// The script acts on this problem and these elements; a rename on either side leaves only
+    /// the generic error.
+    #[tokio::test]
+    async fn login_script_handles_an_ended_request() {
+        let app = app().await;
+        let login = get(&app, "/assets/login.js", &[]).await.body;
+        for needle in [
+            "\"no-request\"",
+            "\"ended\"",
+            "\"request\"",
+            "expiresIn",
+            "pageshow",
+        ] {
+            assert!(login.contains(needle), "login.js: {needle}");
+        }
     }
 
     /// A used or expired link leaves only the way to a new one: the script hides the form and the

@@ -15,6 +15,17 @@ function fold(folded: boolean): void {
   useUsername.hidden = !folded;
 }
 
+// The request has ended (expired, or finished elsewhere): offer the apps instead of a form that
+// can only fail.
+function ended(): void {
+  autofill?.abort();
+  const view = document.getElementById("ended");
+  if (!view) return;
+  document.getElementById("request")?.setAttribute("hidden", "");
+  view.hidden = false;
+  view.focus();
+}
+
 async function finish(credential: Credential | null): Promise<void> {
   if (!(credential instanceof PublicKeyCredential)) throw new DOMException("no credential", "NotAllowedError");
   const reply = await post("/login", { credential: assertionJson(credential) });
@@ -25,7 +36,9 @@ async function finish(credential: Credential | null): Promise<void> {
     return;
   }
   say("status", "");
-  say("error", problem(reply) === "passkey-failed" ? messages.msgFailed ?? "" : messages.msgError ?? "");
+  const kind = problem(reply);
+  if (kind === "no-request") ended();
+  else say("error", kind === "passkey-failed" ? messages.msgFailed ?? "" : messages.msgError ?? "");
 }
 
 async function options(): Promise<PublicKeyCredentialRequestOptions | null> {
@@ -70,12 +83,19 @@ async function signIn(event: SubmitEvent): Promise<void> {
   }
 }
 
+// A page restored from the back-forward cache may show a request that has since ended.
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) window.location.reload();
+});
+
 if (form) {
+  const expiresIn = Number(messages.expiresIn);
+  if (expiresIn >= 0) window.setTimeout(ended, expiresIn * 1000);
   // Upstream providers work without passkey support.
   upstreamButtons(() => {
     autofill?.abort();
     return {};
-  }, messages);
+  }, messages, { "no-request": ended });
   if (!supported()) {
     document.getElementById("unsupported")?.removeAttribute("hidden");
     form.hidden = true;

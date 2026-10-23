@@ -18,6 +18,14 @@
     {%- endif %}
     <a href="/account" class="{{ ui::button_cls("secondary") }} w-full">{{ icons::icon("Key") }}{{ m.manage_passkeys }}</a>
     {%- else %}
+    {#- Shown by the script once the request has ended: signing in can then only fail. -#}
+    <div id="ended" hidden tabindex="-1" class="flex flex-col gap-5 outline-none">
+      {% call ui::alert(m.err_request_expired.title, "default", "WarningCircle", live = "") -%}
+      {{ m.err_request_expired.cause }} {% if apps.is_empty() %}{{ m.err_request_expired.next }}{% else %}{{ m.no_request_apps_body }}{% endif %}
+      {%- endcall %}
+      {{ ui::app_links(apps, m) }}
+    </div>
+    <div id="request" class="flex flex-col gap-5">
     {%- if let Some(notice) = elevation_notice %}
     {% call ui::alert(m.elevated_title, "warn", "Key", id = "elevation", live = "") %}{{ notice }}{% endcall %}
     {%- endif %}
@@ -30,7 +38,8 @@
     <noscript>{% call ui::alert(m.noscript_title, "default", "Key", live = "") %}{{ m.noscript_body }}{% endcall %}</noscript>
     <form id="sign-in" class="flex flex-col gap-5" novalidate
           data-msg-failed="{{ m.passkey_failed }}" data-msg-cancelled="{{ m.passkey_cancelled }}"
-          data-msg-working="{{ m.working }}" data-msg-error="{{ m.generic_error }}">
+          data-msg-working="{{ m.working }}" data-msg-error="{{ m.generic_error }}"
+          {%- if let Some(seconds) = expires_in %} data-expires-in="{{ seconds }}"{% endif %}>
       {#- Without a login hint the script folds this away when the browser offers passkeys itself. -#}
       <div id="username-field"{% if login_hint.is_none() %} data-collapsible{% endif %}>
       {% call ui::field("username", m.login_username, m.login_username_hint) %}
@@ -54,6 +63,7 @@
     {{ ui::command(reset_command) }}
     <p>{{ m.lost_passkey_note }}</p>
     {% endcall %}
+    </div>
     {%- endif %}
   </div>
   {% endcall %}

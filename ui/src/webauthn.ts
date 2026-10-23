@@ -158,18 +158,21 @@ type Signals = {
 /**
  * Passes the server's signals to the passkey provider (WebAuthn Level 3 §5.1.10), where the
  * browser supports them: `accepted` lists every credential the user still has, `unknownCredential`
- * names one the server does not know. Failures are ignored; they are hints.
+ * names one the server does not know. Failures are ignored; they are hints. Safari with a passkey
+ * manager extension never settles them, so this waits half a second at most.
  */
 export async function signal(body: Json): Promise<void> {
   const api = window.PublicKeyCredential as unknown as Signals | undefined;
+  const sent: Promise<void>[] = [];
   try {
     if (body.accepted && typeof api?.signalAllAcceptedCredentials === "function") {
-      await api.signalAllAcceptedCredentials(body.accepted as Json);
+      sent.push(api.signalAllAcceptedCredentials(body.accepted as Json));
     }
     if (body.unknownCredential && typeof api?.signalUnknownCredential === "function") {
-      await api.signalUnknownCredential(body.unknownCredential as Json);
+      sent.push(api.signalUnknownCredential(body.unknownCredential as Json));
     }
   } catch {
-    // Not supported for this provider, or refused.
+    // Not supported for this provider.
   }
+  await Promise.race([Promise.allSettled(sent), new Promise((resolve) => setTimeout(resolve, 500))]);
 }

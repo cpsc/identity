@@ -20,7 +20,9 @@ description: Change Zeabur Identity's sign-in pages — askama templates, the de
   overrides. A value the templates need that is missing from the generator's table goes into the
   table; a treatment the design system lacks goes into the design system. `ui.html` holds the
   markup of the shared macros (card, alert, field, command, disclosure). The Geist font is copied
-  from the package by the build.
+  from the package by the build. A destructive action on each row of a list (remove a passkey)
+  takes `ds::button("secondary-destructive", "sm")`; the solid `destructive` is for the final
+  confirm only.
 - **Build and check** (inside `nix develop`):
   ```sh
   (cd ui && bun ci && bun run fmt:check && bun run lint && bun run typecheck)
@@ -52,7 +54,6 @@ description: Change Zeabur Identity's sign-in pages — askama templates, the de
   `python3 .claude/skills/zeabur-identity-ui/contrast.py` (inside `nix develop`; exits 1 on any
   failure). Try a value first with `--set light:input='rgb(126, 122, 133)'`. Add a pair to its
   inventory when a template starts rendering a new one. Where the design system's own colours
-  fall below the WCAG minimum, the pages keep them: the pair gets `design_system_minimum` (the
-  ratio it must not drop below) and the gap is raised in the design system.
+  fall below the WCAG minimum, fix them in the design system, not in the pages.
 - **Budgets.** Brotli sizes are checked by `scripts/ui-budget.sh`; raise a budget only with a
   reason in the commit.

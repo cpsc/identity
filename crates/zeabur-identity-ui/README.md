@@ -57,8 +57,7 @@ The pages target [WCAG 2.2][wcag] AA, follow the operating system's dark mode wi
 honour reduced motion, and keep a focus outline in forced-colours mode. Contrast ratios are
 computed from the design system's sRGB tokens (alpha composited in sRGB as browsers do, WCAG
 relative luminance) by `.claude/skills/zeabur-identity-ui/contrast.py`. The pages use the design
-system's colours as they are; where those fall short, the pair is listed with the ratio it must
-keep:
+system's colours as they are:
 
 | Pair | Light | Dark | Needed |
 |---|---|---|---|
@@ -67,7 +66,8 @@ keep:
 | Error text on card (`fail-strong`) | 6.49 | 9.40 | 4.5 |
 | Elevation notice (warning alert) | 5.67 | 10.40 | 4.5 |
 | Primary button text (lightest gradient stop) | 5.07 | 5.07 | 4.5 |
-| Destructive button text (lightest gradient stop; the design system's `button-destructive`) | 3.04 | 3.04 | 3, below WCAG 1.4.3's 4.5 |
+| Destructive button text (lightest gradient stop; the final confirm) | 4.61 | 4.61 | 4.5 |
+| Quiet destructive button text (`secondary-destructive`, lowest stop; each passkey row) | 5.32 | 7.40 | 4.5 |
 | Input border on card | 4.19 | 4.22 | 3 |
 | Focus outline on card | 7.06 | 5.09 | 3 |
 

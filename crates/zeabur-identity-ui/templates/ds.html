@@ -13,6 +13,10 @@ group/button inline-flex shrink-0 items-center justify-center rounded-md font-me
 group/button inline-flex shrink-0 items-center justify-center rounded-md font-medium whitespace-nowrap transition-colors duration-150 select-none disabled:pointer-events-none disabled:opacity-50 aria-invalid:ring-1 aria-invalid:ring-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 button-destructive h-control-lg gap-2 px-5 text-sm
 {%- else if variant == "destructive" && size == "sm" -%}
 group/button inline-flex shrink-0 items-center justify-center rounded-md font-medium whitespace-nowrap transition-colors duration-150 select-none disabled:pointer-events-none disabled:opacity-50 aria-invalid:ring-1 aria-invalid:ring-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 button-destructive h-control-sm gap-1.5 px-3 text-xs
+{%- else if variant == "secondary-destructive" && size == "lg" -%}
+group/button inline-flex shrink-0 items-center justify-center rounded-md font-medium whitespace-nowrap transition-colors duration-150 select-none disabled:pointer-events-none disabled:opacity-50 aria-invalid:ring-1 aria-invalid:ring-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 button-secondary-destructive h-control-lg gap-2 px-5 text-sm
+{%- else if variant == "secondary-destructive" && size == "sm" -%}
+group/button inline-flex shrink-0 items-center justify-center rounded-md font-medium whitespace-nowrap transition-colors duration-150 select-none disabled:pointer-events-none disabled:opacity-50 aria-invalid:ring-1 aria-invalid:ring-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 button-secondary-destructive h-control-sm gap-1.5 px-3 text-xs
 {%- endif -%}
 {%- endmacro -%}
 

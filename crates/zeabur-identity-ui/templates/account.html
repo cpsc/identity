@@ -73,7 +73,7 @@
           <div data-actions class="mt-1 flex flex-wrap gap-2">
             <button type="button" data-action="rename" class="{{ ds::button("secondary", "sm") }}">{{ m.rename }}</button>
             {%- if view.passkeys.len() > 1 %}
-            <button type="button" data-action="remove" class="{{ ds::button("destructive", "sm") }}">{{ m.remove }}</button>
+            <button type="button" data-action="remove" class="{{ ds::button("secondary-destructive", "sm") }}">{{ m.remove }}</button>
             {%- endif %}
           </div>
           {%- if view.passkeys.len() == 1 %}

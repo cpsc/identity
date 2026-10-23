@@ -41,7 +41,10 @@ type Macro = {
 const macros: Record<string, Macro> = {
   button: {
     classes: buttonVariants,
-    params: { variant: ["primary", "secondary", "destructive"], size: ["lg", "sm"] },
+    params: {
+      variant: ["primary", "secondary", "destructive", "secondary-destructive"],
+      size: ["lg", "sm"],
+    },
   },
   input: { classes: () => inputVariants({ size: "lg" }) },
   card: { classes: () => cardVariants(), identity: "gap-5 py-6 shadow-xs" },

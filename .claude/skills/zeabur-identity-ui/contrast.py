@@ -5,8 +5,7 @@ Reads the ``:root`` colour tokens of the design system package and ``ui/styles/a
 Alpha is composited in gamma-encoded sRGB, as browsers do; ratios follow
 https://www.w3.org/TR/WCAG22/#dfn-contrast-ratio. Text needs 4.5:1 (1.4.3), boundaries and
 focus indicators 3:1 (1.4.11, 2.4.13). Disabled controls, decorative separators, the card's
-edge, the mark and button edges are exempt (Understanding 1.4.11) and not checked. A pair whose
-design-system colours fall short keeps them and is checked against its ``design_system_minimum``.
+edge, the mark and button edges are exempt (Understanding 1.4.11) and not checked.
 
 Usage, from the repository root inside ``nix develop``::
 
@@ -164,19 +163,6 @@ class Pair:
     bg: Layers
     source: str
     drawn_on: Layers | None = None
-    design_system_minimum: float | None = None
-    """Set where the design system's own colours fall below the WCAG minimum: the pair follows
-    the design system and must not drop below this ratio."""
-
-    @property
-    def minimum(self) -> float:
-        return self.kind.minimum if self.design_system_minimum is None else self.design_system_minimum
-
-    @property
-    def need(self) -> str:
-        if self.design_system_minimum is None:
-            return f"{self.kind.minimum:g} ({self.kind.criterion})"
-        return f"{self.design_system_minimum:g} (design system)"
 
     def ratio(self, tokens: Tokens) -> float:
         fg = self.fg.over(flatten(self.drawn_on or self.bg, tokens), tokens)
@@ -224,8 +210,19 @@ COMMON: tuple[Pair, ...] = (
     Pair(name="primary button text", kind=Kind.TEXT, fg=paint("#ffffff"), bg=PRIMARY_LIGHTEST,
          source="ds.html button primary (button-primary), lightest gradient stop"),
     Pair(name="destructive button text", kind=Kind.TEXT, fg=paint("on-primary"), bg=DESTRUCTIVE_LIGHTEST,
-         source="account.html, ds.html button destructive (button-destructive), lightest gradient stop",
-         design_system_minimum=3.0),
+         source="account.html confirm, ds.html button destructive (button-destructive), lightest gradient stop"),
+    Pair(name="quiet destructive button text", kind=Kind.TEXT, fg=paint("fail-strong"),
+         bg=stack(paint("secondary-from")),
+         source="account.html remove, ds.html button secondary-destructive, upper gradient stop"),
+    Pair(name="quiet destructive button text", kind=Kind.TEXT, fg=paint("fail-strong"),
+         bg=stack(paint("secondary-to")),
+         source="account.html remove, ds.html button secondary-destructive, lower gradient stop"),
+    Pair(name="quiet destructive button hover", kind=Kind.TEXT, fg=paint("fail-strong"),
+         bg=stack(paint("secondary-danger-from")),
+         source="account.html remove, ds.html button secondary-destructive, hover upper stop"),
+    Pair(name="quiet destructive button hover", kind=Kind.TEXT, fg=paint("fail-strong"),
+         bg=stack(paint("secondary-danger-to")),
+         source="account.html remove, ds.html button secondary-destructive, hover lower stop"),
     Pair(name="input border against card", kind=Kind.BOUNDARY, fg=paint("input"), bg=CARD,
          source="ds.html input border-input"),
     Pair(name="input focus edge against card", kind=Kind.FOCUS, fg=paint("ring"), bg=CARD,
@@ -362,7 +359,7 @@ class Result:
 
     @property
     def passed(self) -> bool:
-        return self.ratio >= self.pair.minimum
+        return self.ratio >= self.pair.kind.minimum
 
 
 def evaluate(themes: dict[str, Tokens]) -> list[Result]:
@@ -378,7 +375,7 @@ def report(results: Sequence[Result]) -> str:
             r.pair.name,
             f"{r.pair.fg} / {' + '.join(map(str, r.pair.bg))}",
             f"{r.ratio:.2f}",
-            r.pair.need,
+            f"{r.pair.kind.minimum:g} ({r.pair.kind.criterion})",
             "ok" if r.passed else "FAIL",
             r.pair.source,
         )

@@ -39,6 +39,11 @@ Iterate per crate with `-p <crate>` to keep builds short. Cluster tests: see the
   `doc-valid-idents` instead of backticking them.
 - `rustfmt` reflows code; when editing with scripts, match on short, stable anchors.
 
+## Standards
+- Writing a comment, rustdoc or commit message; adding or removing a test; adding a trait, layer,
+  option or flag; or code that lists, watches, polls, stores or fans out: apply
+  [`STANDARDS.md`](STANDARDS.md) and check the change against it.
+
 ## Documentation
 - Rationale goes in rustdoc next to the code: state the decision and why, cite the
   specification section, paper or prior art (see `zeabur-identity-spec-work`). Each crate's README is its

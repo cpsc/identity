@@ -21,4 +21,8 @@ description: Add or upgrade a Rust or frontend dependency in Zeabur Identity und
   dependencies of `zeabur-identity` and `zeabur-identityctl` count; dev-dependencies and test crates do not.
 - **Advisories** that do not apply need an `ignore` entry in `deny.toml` with the reason.
 - **Frontend tooling** comes from nixpkgs through `flake.nix` (Tailwind CSS v4, bun, TypeScript);
-  there is no `package.json` and no npm install. Pin by updating `flake.lock`.
+  there is no `package.json` and no npm install. Pin by updating `flake.lock`. The one exception
+  is fallow (`scripts/fallow.sh`), a check that ships nothing: nixpkgs has no package, so it runs
+  as `bunx fallow@<version>`. Its npm packages hold a prebuilt binary with npm provenance and run
+  no install scripts. Bump it to a release at least seven days old, in the script and in
+  `ui/.fallowrc.json`'s `$schema`; move it to the flake when nixpkgs has it.

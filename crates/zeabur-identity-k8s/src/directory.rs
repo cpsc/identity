@@ -27,10 +27,9 @@ use std::time::{Duration, Instant};
 use futures_util::StreamExt as _;
 use kube::api::{Api, ListParams};
 use kube::core::{NamespaceResourceScope, PartialObjectMeta};
-use kube::runtime::WatchStreamExt as _;
 use kube::runtime::reflector::store::Writer;
 use kube::runtime::reflector::{self, ObjectRef, Store};
-use kube::runtime::watcher::{self, watcher};
+use kube::runtime::{WatchStreamExt as _, watcher};
 use kube::{Resource, ResourceExt as _};
 use serde::de::DeserializeOwned;
 use tokio::task::JoinHandle;
@@ -39,6 +38,7 @@ use zeabur_identity_store::{App, Client, Directory, StoreError, User};
 
 use crate::crd::client::OAuthClient;
 use crate::crd::user::User as UserObject;
+use crate::watch::relisting_watcher;
 
 /// Maximum startup wait for complete directory metadata snapshots.
 ///
@@ -175,7 +175,7 @@ async fn run_index<K>(
         + Sync
         + 'static,
 {
-    let events = watcher(api, watcher::Config::default()).modify(|object| {
+    let events = relisting_watcher(api, watcher::Config::default()).modify(|object| {
         object.metadata.annotations = None;
         object.metadata.labels = None;
         object.metadata.managed_fields = None;

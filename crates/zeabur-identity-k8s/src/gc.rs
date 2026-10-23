@@ -17,7 +17,8 @@
 //!   objects early, which ends sessions but cannot extend them. The precondition-guarded delete
 //!   follows [Pinniped]'s garbage collector.
 //! - **Retries.** Infrastructure errors are retried after 30 s. A relist forgets objects deleted
-//!   while the watch was down. Sleeps are capped at 5 minutes so that a wall-clock jump is noticed.
+//!   while the watch was down; [`relisting_watcher`] also relists when the API server rejects a
+//!   resumed watch. Sleeps are capped at 5 minutes so that a wall-clock jump is noticed.
 //! - **Not a kube-runtime `Controller`.** `Controller::for_stream`, needed for a metadata-only
 //!   stream, is behind an unstable feature in kube-runtime 4.2, and this job is a timer queue, not
 //!   reconciliation. Several replicas may run it: deletes are idempotent.
@@ -40,7 +41,7 @@ use futures_util::StreamExt as _;
 use kube::api::{Api, ObjectMeta};
 use kube::core::{NamespaceResourceScope, PartialObjectMeta};
 use kube::runtime::WatchStreamExt as _;
-use kube::runtime::watcher::{self, Event, watcher};
+use kube::runtime::watcher::{self, Event};
 use kube::{Client, Resource};
 use serde::de::DeserializeOwned;
 use tokio::sync::watch;
@@ -48,6 +49,7 @@ use zeabur_identity_core::clock::{Clock, UnixTime};
 
 use super::objects::{DeleteOutcome, delete_if_unchanged};
 use crate::crd::{EXPIRES_AT_ANNOTATION, EXPIRY_BUCKET_LABEL};
+use crate::watch::relisting_watcher;
 
 /// How long to wait before retrying a delete that failed for an infrastructure reason.
 const RETRY_AFTER: Duration = Duration::from_secs(30);
@@ -212,7 +214,9 @@ pub async fn run<K, C>(
     let api: Api<K> = Api::namespaced(client.clone(), namespace);
     // Metadata-only watch: names, versions and annotations, never object bodies.
     let metadata: Api<PartialObjectMeta<K>> = Api::namespaced(client, namespace);
-    let mut events = watcher(metadata, config).default_backoff().boxed();
+    let mut events = relisting_watcher(metadata, config)
+        .default_backoff()
+        .boxed();
     let mut schedule = Schedule::default();
     tracing::info!(%kind, "garbage collector started");
 

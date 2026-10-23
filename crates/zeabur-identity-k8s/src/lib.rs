@@ -15,6 +15,7 @@ pub mod objects;
 pub mod rbac;
 pub mod setup;
 pub mod users;
+pub mod watch;
 
 /// Label set on every object Zeabur Identity creates.
 pub const MANAGED_BY: (&str, &str) = ("app.kubernetes.io/managed-by", "zeabur-identity");

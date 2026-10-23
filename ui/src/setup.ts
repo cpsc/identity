@@ -10,9 +10,12 @@ for (const link of document.querySelectorAll<HTMLAnchorElement>("a[data-lang-lin
   link.hash = window.location.hash;
 }
 
+// The link can no longer be used, so getting a new one is the only way on.
 function invalid(): void {
   say("error", messages.msgInvalid ?? "");
   document.getElementById("new-link")?.removeAttribute("hidden");
+  if (form) form.hidden = true;
+  document.getElementById("upstream")?.setAttribute("hidden", "");
 }
 
 async function register(event: SubmitEvent): Promise<void> {
@@ -54,7 +57,7 @@ async function register(event: SubmitEvent): Promise<void> {
 
 if (form) {
   // Linking an upstream account works without passkey support.
-  if (token) upstreamButtons(() => ({ token }), messages, invalid);
+  if (token) upstreamButtons(() => ({ token }), messages, { "setup-invalid": invalid });
   else document.getElementById("upstream")?.setAttribute("hidden", "");
   if (!supported()) {
     document.getElementById("unsupported")?.removeAttribute("hidden");

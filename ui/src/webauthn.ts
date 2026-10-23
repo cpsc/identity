@@ -117,9 +117,10 @@ export function say(id: "status" | "error", text: string): void {
 
 /**
  * Wires the "Continue with <provider>" buttons: each starts an upstream sign-in (or, with a
- * token, linking) and follows the provider URL the server returns.
+ * token, linking) and follows the provider URL the server returns. `handlers` take over named
+ * problems from the generic error.
  */
-export function upstreamButtons(body: () => Json, messages: DOMStringMap, onInvalid?: () => void): void {
+export function upstreamButtons(body: () => Json, messages: DOMStringMap, handlers: Record<string, () => void> = {}): void {
   for (const button of document.querySelectorAll<HTMLButtonElement>("button[data-provider]")) {
     button.addEventListener("click", () => {
       void (async () => {
@@ -132,7 +133,8 @@ export function upstreamButtons(body: () => Json, messages: DOMStringMap, onInva
             return;
           }
           say("status", "");
-          if (problem(reply) === "setup-invalid" && onInvalid) onInvalid();
+          const handler = handlers[problem(reply)];
+          if (handler) handler();
           else say("error", messages.msgError ?? "");
         } catch {
           say("status", "");

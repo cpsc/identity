@@ -245,6 +245,22 @@ mod tests {
         assert!(page.body.contains("aria-current"));
     }
 
+    /// A used or expired link leaves only the way to a new one: the script hides the form and the
+    /// provider buttons and shows the new-link guidance, all found by these ids.
+    #[tokio::test]
+    async fn setup_page_has_what_a_used_link_hides() {
+        let app = app_with(&[Kind::GitHub]).await;
+        let setup = get(&app, "/assets/setup.js", &[]).await.body;
+        let page = get(&app, "/setup", &[]).await;
+        for id in ["setup", "upstream", "new-link"] {
+            assert!(setup.contains(&format!("\"{id}\"")), "setup.js: {id}");
+            assert!(page.body.contains(&format!("id=\"{id}\"")), "page: {id}");
+        }
+        assert!(setup.contains("\"setup-invalid\""));
+        assert!(page.body.contains("<div id=\"new-link\" hidden>"));
+        assert!(page.body.contains("data-msg-invalid="));
+    }
+
     #[tokio::test]
     async fn setup_page_loads_its_script() {
         let app = app().await;

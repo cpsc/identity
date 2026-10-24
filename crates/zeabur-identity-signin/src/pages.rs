@@ -58,7 +58,7 @@ async fn login<D: Directory, G: GrantStore, C: Clock>(
     let login_hint = pending
         .as_ref()
         .and_then(|(flow, _)| flow.request.login_hint.as_deref());
-    let apps = apps(&server.directory).await;
+    let apps = server.directory.apps();
     login_page(
         lang,
         client.zip(expires_in),
@@ -75,7 +75,7 @@ async fn setup<D: Directory, G: GrantStore, C: Clock>(
     headers: HeaderMap,
 ) -> Response {
     let pending = pending(&server, &headers).await;
-    let apps = apps(&server.directory).await;
+    let apps = server.directory.apps();
     setup_page(
         page_lang(query.as_deref(), &headers),
         pending.as_ref().map(|(_, client)| client.as_str()),
@@ -99,17 +99,6 @@ async fn pending<D: Directory, G: GrantStore, C: Clock>(
         Err(error) => {
             tracing::error!(reason = "client_lookup_failed", %error, "client lookup failed");
             None
-        }
-    }
-}
-
-/// The applications to offer; a failed lookup only hides them.
-pub(crate) async fn apps(directory: &impl Directory) -> Vec<App> {
-    match directory.apps().await {
-        Ok(apps) => apps,
-        Err(error) => {
-            tracing::warn!(reason = "apps_lookup_failed", %error, "application list lookup failed");
-            Vec::new()
         }
     }
 }

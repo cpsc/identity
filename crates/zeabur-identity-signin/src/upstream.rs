@@ -411,7 +411,7 @@ where
         };
         match sign_in.credentials.link(&external).await {
             Ok(CreateCredential::Created) => {
-                let apps = crate::pages::apps(&oauth.directory).await;
+                let apps = oauth.directory.apps();
                 let mut response = notice_page(
                     lang,
                     m.upstream_linked_title,

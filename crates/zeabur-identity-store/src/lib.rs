@@ -130,6 +130,9 @@ pub struct User {
 pub trait Directory: Send + Sync + 'static {
     /// Looks up a client by `client_id`.
     fn client(&self, id: &str) -> impl Future<Output = Result<Option<Client>, StoreError>> + Send;
+    /// The [`Client::name`] of a client, from a local index. Pages call it for each row, so it
+    /// reads no backend. The answer can lag. Do not use it for authorization.
+    fn client_name(&self, id: &str) -> Option<String>;
     /// Looks up a user by object name.
     fn user(&self, name: &str) -> impl Future<Output = Result<Option<User>, StoreError>> + Send;
     /// Looks up a user by immutable subject (the object UID), with current authorization data.
@@ -140,9 +143,9 @@ pub trait Directory: Send + Sync + 'static {
         &self,
         subject: &str,
     ) -> impl Future<Output = Result<Option<User>, StoreError>> + Send;
-    /// The applications the sign-in page offers to open (see [`apps`]). Adapters may cache
-    /// the answer briefly: anyone can load the page, and nothing here is authorization data.
-    fn apps(&self) -> impl Future<Output = Result<Vec<App>, StoreError>> + Send;
+    /// The applications the sign-in page offers to open (see [`apps`]), from a local index.
+    /// Anyone can load the page, so it reads no backend. Nothing here is authorization data.
+    fn apps(&self) -> Vec<App>;
 }
 
 /// A refresh-token family to create.
@@ -385,6 +388,11 @@ impl Directory for MemoryDirectory {
         future::ready(Ok(clients.get(id).cloned()))
     }
 
+    fn client_name(&self, id: &str) -> Option<String> {
+        let clients = self.clients.lock().unwrap_or_else(PoisonError::into_inner);
+        clients.get(id).map(|client| client.name().to_owned())
+    }
+
     fn user(&self, name: &str) -> impl Future<Output = Result<Option<User>, StoreError>> + Send {
         let users = self.users.lock().unwrap_or_else(PoisonError::into_inner);
         future::ready(Ok(users.get(name).cloned()))
@@ -406,9 +414,9 @@ impl Directory for MemoryDirectory {
         future::ready(result)
     }
 
-    fn apps(&self) -> impl Future<Output = Result<Vec<App>, StoreError>> + Send {
+    fn apps(&self) -> Vec<App> {
         let clients = self.clients.lock().unwrap_or_else(PoisonError::into_inner);
-        future::ready(Ok(apps(clients.values())))
+        apps(clients.values())
     }
 }
 

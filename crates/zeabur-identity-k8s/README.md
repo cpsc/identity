@@ -33,8 +33,10 @@ server, the `zeabur-identityctl` admin CLI and the `zeabur-identity-e2e` tests.
   redemption, one per refresh and one when a grant ends, so anonymous traffic cannot fill etcd
   (the failure mode of storing a request object per unauthenticated `/authorize`, seen in
   [Dex]).
-- **Current authorization data, metadata-indexed misses.** Metadata-only watches maintain client
-  existence and user UID indexes, shared by directory clones. The asynchronous constructor
+- **Current authorization data, indexed misses.** Watches maintain a client index and a
+  metadata-only user UID index, shared by directory clones. The client index keeps the display
+  name and home URL, and drops the secret hash, redirect URIs and audiences. The sign-in page's
+  application list and the account page's client names read only this index. The asynchronous constructor
   waits for both initial snapshots within 30 seconds; the last clone dropping stops the watches.
   Annotations, labels, managed fields, owner references and finalizers are discarded before
   reflection; the locator does not use them, and GitOps metadata can dominate retained memory.

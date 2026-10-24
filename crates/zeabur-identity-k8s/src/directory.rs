@@ -1,19 +1,22 @@
 //! [`Directory`] backed by `User` and `OAuthClient` objects.
 //!
-//! Metadata-only watches index client names and user UIDs; arbitrary unknown client names and
-//! subjects never cause per-request API reads. The initial snapshots must complete before any
-//! lookup. Relists replace each index atomically, and watch errors retry with backoff without
-//! falling back to per-identifier reads for indexed lookups.
+//! Watches index clients and user UIDs; arbitrary unknown client names and subjects never cause
+//! per-request API reads. The user index holds metadata only. The client index also holds the
+//! display name and home URL. The sign-in page and the account page read them from the index.
+//! The initial snapshots must complete before any lookup. Relists replace each index atomically,
+//! and watch errors retry with backoff without falling back to per-identifier reads for indexed
+//! lookups.
 //! Before reflection, discard annotations, labels, managed fields, owner references and
 //! finalizers: this locator uses none of them. In particular, GitOps annotations and server-side
-//! apply history can dwarf the name/namespace/UID needed for lookup. Projecting before the
-//! reflector also avoids cloning those allocations into its initial and relist snapshots.
+//! apply history can dwarf the name/namespace/UID needed for lookup. Also discard the secret hash,
+//! redirect URIs and audiences of each client. Projecting before the reflector also avoids cloning
+//! those allocations into its initial and relist snapshots.
 //!
-//! An index is only a locator, never authorization data: known clients and users are read directly
-//! on every request. Watch lag may temporarily deny a new object, but cannot retain a revoked
-//! permission or client secret. Subject lookups also compare the fetched UID, because Kubernetes
-//! permits a deleted object's name to be reused but assigns every new object a distinct [UID].
-//! Ambiguous subjects fail closed.
+//! An index is only a locator and a source of display names, never authorization data: known
+//! clients and users are read directly on every request. Watch lag may temporarily deny a new
+//! object, but cannot retain a revoked permission or client secret. Subject lookups also compare
+//! the fetched UID, because Kubernetes permits a deleted object's name to be reused but assigns
+//! every new object a distinct [UID]. Ambiguous subjects fail closed.
 //! Name-based user lookups always GET directly after initial synchronization, including absent
 //! names. Setup, sign-in and refresh therefore do not wait for individual user watch events.
 //!
@@ -21,11 +24,11 @@
 
 use std::borrow::Cow;
 use std::fmt::Debug;
-use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::StreamExt as _;
-use kube::api::{Api, ListParams};
+use kube::api::Api;
 use kube::core::{NamespaceResourceScope, PartialObjectMeta};
 use kube::runtime::reflector::store::Writer;
 use kube::runtime::reflector::{self, ObjectRef, Store};
@@ -45,22 +48,13 @@ use crate::watch::relisting_watcher;
 /// Deployment startup protection must outlast this deadline before liveness may restart a pod.
 pub const INITIAL_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// How long the sign-in page's application list is reused. Anyone can load that page, so it
-/// must not cost an API request each time; a new home URL shows up within this time.
-const APPS_TTL: Duration = Duration::from_mins(1);
-/// Clients read for the application list.
-const APPS_LIST_LIMIT: u32 = 200;
-
-type CachedApps = (Instant, Vec<App>);
-
-/// Locates clients and user subjects through metadata, then reads current API objects.
+/// Locates clients and user subjects through watched indexes, then reads current API objects.
 #[derive(Clone)]
 pub struct KubeDirectory {
     clients: Api<OAuthClient>,
     users: Api<UserObject>,
-    client_index: Store<PartialObjectMeta<OAuthClient>>,
+    client_index: Store<OAuthClient>,
     user_index: Store<PartialObjectMeta<UserObject>>,
-    apps: Arc<Mutex<Option<CachedApps>>>,
     _watcher: Arc<WatchTask>,
 }
 
@@ -94,12 +88,16 @@ impl KubeDirectory {
     ) -> Result<Self, StoreError> {
         let (client_index, client_writer) = reflector::store();
         let (user_index, user_writer) = reflector::store();
-        let client_metadata = metadata_api(&clients);
+        let client_api = clients.clone();
         let user_metadata = metadata_api(&users);
         let watcher = Arc::new(WatchTask(tokio::spawn(async move {
             tokio::join!(
-                run_index(client_metadata, client_writer, "client"),
-                run_index(user_metadata, user_writer, "user"),
+                run_index(client_api, client_writer, "client", |client| {
+                    client.spec.secret_hash = None;
+                    client.spec.redirect_uris = Vec::new();
+                    client.spec.audiences = Vec::new();
+                }),
+                run_index(user_metadata, user_writer, "user", |_| {}),
             );
         })));
         tokio::time::timeout(INITIAL_SYNC_TIMEOUT, async {
@@ -122,7 +120,6 @@ impl KubeDirectory {
             users,
             client_index,
             user_index,
-            apps: Arc::default(),
             _watcher: watcher,
         })
     }
@@ -133,6 +130,23 @@ impl KubeDirectory {
             .await
             .map_err(|e| backend(&e))?
             .and_then(convert))
+    }
+
+    fn indexed_client(&self, id: &str) -> Option<Arc<OAuthClient>> {
+        self.clients.namespace().map_or_else(
+            // A name shared across namespaces is not an unambiguous client identifier.
+            || {
+                let mut matches = self
+                    .client_index
+                    .state_filter(|object| object.metadata.name.as_deref() == Some(id));
+                if matches.len() == 1 {
+                    matches.pop()
+                } else {
+                    None
+                }
+            },
+            |namespace| self.client_index.get(&ObjectRef::new(id).within(namespace)),
+        )
     }
 }
 
@@ -148,39 +162,38 @@ where
 }
 
 /// All-namespaces watches still require a namespace for an individual object GET.
-fn indexed_api<'a, K>(api: &'a Api<K>, metadata: &PartialObjectMeta<K>) -> Option<Cow<'a, Api<K>>>
+fn indexed_api<'a, K, I>(api: &'a Api<K>, indexed: &I) -> Option<Cow<'a, Api<K>>>
 where
     K: Resource<Scope = NamespaceResourceScope, DynamicType = ()> + Clone,
+    I: Resource,
 {
     if api.namespace().is_some() {
         Some(Cow::Borrowed(api))
     } else {
         Some(Cow::Owned(Api::namespaced(
             api.clone().into_client(),
-            metadata.metadata.namespace.as_deref()?,
+            indexed.meta().namespace.as_deref()?,
         )))
     }
 }
 
+/// The watcher pages its `LIST` (500 objects for each page) and follows `continue`.
 async fn run_index<K>(
-    api: Api<PartialObjectMeta<K>>,
-    writer: Writer<PartialObjectMeta<K>>,
+    api: Api<K>,
+    writer: Writer<K>,
     resource: &'static str,
+    project: impl Fn(&mut K) + Send + 'static,
 ) where
-    K: Resource<Scope = NamespaceResourceScope, DynamicType = ()>
-        + Clone
-        + DeserializeOwned
-        + Debug
-        + Send
-        + Sync
-        + 'static,
+    K: Resource<DynamicType = ()> + Clone + DeserializeOwned + Debug + Send + Sync + 'static,
 {
-    let events = relisting_watcher(api, watcher::Config::default()).modify(|object| {
-        object.metadata.annotations = None;
-        object.metadata.labels = None;
-        object.metadata.managed_fields = None;
-        object.metadata.owner_references = None;
-        object.metadata.finalizers = None;
+    let events = relisting_watcher(api, watcher::Config::default()).modify(move |object| {
+        let metadata = object.meta_mut();
+        metadata.annotations = None;
+        metadata.labels = None;
+        metadata.managed_fields = None;
+        metadata.owner_references = None;
+        metadata.finalizers = None;
+        project(object);
     });
     reflector::reflector(writer, events)
         .default_backoff()
@@ -204,55 +217,33 @@ fn backend(error: &kube::Error) -> StoreError {
 
 impl Directory for KubeDirectory {
     async fn client(&self, id: &str) -> Result<Option<Client>, StoreError> {
-        let indexed = self.clients.namespace().map_or_else(
-            // A name shared across namespaces is not an unambiguous client identifier.
-            || {
-                let mut matches = self
-                    .client_index
-                    .state_filter(|object| object.metadata.name.as_deref() == Some(id));
-                if matches.len() == 1 {
-                    matches.pop()
-                } else {
-                    None
-                }
-            },
-            |namespace| self.client_index.get(&ObjectRef::new(id).within(namespace)),
-        );
-        let Some(metadata) = indexed else {
+        let Some(indexed) = self.indexed_client(id) else {
             return Ok(None);
         };
-        let Some(api) = indexed_api(&self.clients, &metadata) else {
+        let Some(api) = indexed_api(&self.clients, indexed.as_ref()) else {
             return Ok(None);
         };
         let result = api.get_opt(id).await;
         Ok(result.map_err(|e| backend(&e))?.map(client))
     }
 
+    fn client_name(&self, id: &str) -> Option<String> {
+        let indexed = self.indexed_client(id)?;
+        Some(client(OAuthClient::clone(&indexed)).name().to_owned())
+    }
+
     async fn user(&self, name: &str) -> Result<Option<User>, StoreError> {
         Self::read_user(&self.users, name).await
     }
 
-    async fn apps(&self) -> Result<Vec<App>, StoreError> {
-        let cached = self
-            .apps
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .as_ref()
-            .filter(|(at, _)| at.elapsed() < APPS_TTL)
-            .map(|(_, apps)| apps.clone());
-        if let Some(apps) = cached {
-            return Ok(apps);
-        }
-        let list = self
-            .clients
-            .list(&ListParams::default().limit(APPS_LIST_LIMIT))
-            .await
-            .map_err(|e| backend(&e))?;
-        let clients: Vec<Client> = list.items.into_iter().map(client).collect();
-        let apps = zeabur_identity_store::apps(&clients);
-        *self.apps.lock().unwrap_or_else(PoisonError::into_inner) =
-            Some((Instant::now(), apps.clone()));
-        Ok(apps)
+    fn apps(&self) -> Vec<App> {
+        let clients: Vec<Client> = self
+            .client_index
+            .state_filter(|object| object.spec.home_url.is_some())
+            .iter()
+            .map(|object| client(OAuthClient::clone(object)))
+            .collect();
+        zeabur_identity_store::apps(&clients)
     }
 
     async fn user_by_subject(&self, subject: &str) -> Result<Option<User>, StoreError> {
@@ -267,7 +258,7 @@ impl Directory for KubeDirectory {
         let Some(name) = metadata.metadata.name.as_deref() else {
             return Ok(None);
         };
-        let Some(api) = indexed_api(&self.users, metadata) else {
+        let Some(api) = indexed_api(&self.users, metadata.as_ref()) else {
             return Ok(None);
         };
         Ok(Self::read_user(&api, name)

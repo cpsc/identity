@@ -72,13 +72,14 @@ async fn kubernetes(
         USERS => USERS,
         other => panic!("unexpected collection: {other}"),
     };
-    // Api<PartialObjectMeta<K>> must negotiate metadata, not download full specs or secrets.
-    assert!(
-        request.headers["accept"]
+    // The user index must negotiate metadata, not download full specs.
+    let metadata_only = request.headers.get("accept").is_some_and(|accept| {
+        accept
             .to_str()
             .unwrap()
             .contains("as=PartialObjectMetadata")
-    );
+    });
+    assert_eq!(metadata_only, resource == USERS);
     let is_watch = form_urlencoded::parse(request.uri.query().unwrap_or_default().as_bytes())
         .any(|(key, value)| key == "watch" && value == "true");
     let (sender, receiver) = mpsc::unbounded_channel();
@@ -153,10 +154,19 @@ fn metadata(object: &Value) -> Value {
         "metadata":object["metadata"]})
 }
 
+/// The object as its index watch receives it.
+fn watched(resource: &str, object: &Value) -> Value {
+    if resource == CLIENTS {
+        object.clone()
+    } else {
+        metadata(object)
+    }
+}
+
 fn reply_list(reply: StreamSender, items: &[Value]) {
     reply
         .send(Bytes::from(
-            json!({"apiVersion":"meta.k8s.io/v1", "kind":"PartialObjectMetadataList",
+            json!({"apiVersion":"v1", "kind":"List",
                 "metadata":{"resourceVersion":"100"}, "items":items})
             .to_string(),
         ))
@@ -284,7 +294,7 @@ impl Mock {
     async fn snapshot(&self, resource: &str) -> Vec<Value> {
         self.backend.lock().await.objects[resource]
             .values()
-            .map(metadata)
+            .map(|object| watched(resource, object))
             .collect()
     }
 
@@ -300,6 +310,11 @@ impl Mock {
     }
 
     fn event(&self, resource: &str, event: &str, object: &Value) {
+        let object = if event == "ERROR" {
+            object.clone()
+        } else {
+            watched(resource, object)
+        };
         self.streams[resource]
             .send(Bytes::from(format!(
                 "{}\n",
@@ -426,8 +441,8 @@ async fn list_watch_and_relist_project_metadata_without_losing_locator_identity(
             .groups,
         ["modified"]
     );
-    mock.event(CLIENTS, "MODIFIED", &metadata(&modified_client));
-    mock.event(USERS, "MODIFIED", &metadata(&modified_user));
+    mock.event(CLIENTS, "MODIFIED", &modified_client);
+    mock.event(USERS, "MODIFIED", &modified_user);
     wait_for(|| indexes_at_version("102")).await;
     assert_projected_indexes(&directory, &modified_client, &modified_user);
 
@@ -510,20 +525,34 @@ async fn unique_unknown_identifiers_never_read_resources() {
 #[tokio::test]
 async fn client_create_delete_events_update_existence_index() {
     let (mock, directory) = Mock::new(vec![], vec![]).await;
-    let created = client("created");
+    let mut created = client("created");
+    created["spec"]["type"] = json!("Confidential");
+    created["spec"]["secretHash"] = json!(format!("sha256:{}", "ab".repeat(32)));
+    created["spec"]["audiences"] = json!(["kubernetes"]);
+    created["spec"]["homeUrl"] = json!("https://created.example/");
     mock.put(CLIENTS, created.clone()).await;
     assert!(directory.client("created").await.unwrap().is_none());
     assert_eq!(mock.gets("oauthclients/created").await, 0);
-    mock.event(CLIENTS, "ADDED", &metadata(&created));
+    mock.event(CLIENTS, "ADDED", &created);
     wait_for(|| has_client(&directory, "created")).await;
     assert!(directory.client("created").await.unwrap().is_some());
     let cached = directory.client_index.find(|_| true).unwrap();
-    assert!(
-        serde_json::to_value(cached.as_ref())
-            .unwrap()
-            .get("spec")
-            .is_none()
+    assert_eq!(cached.spec.secret_hash, None);
+    assert_eq!(cached.spec.redirect_uris, Vec::<String>::new());
+    assert_eq!(cached.spec.audiences, Vec::<String>::new());
+    // Pages read names and home URLs from the index, not from the API server.
+    assert_eq!(
+        directory.client_name("created").as_deref(),
+        Some("Original")
     );
+    assert_eq!(
+        directory.apps(),
+        [zeabur_identity_store::App {
+            name: "Original".into(),
+            url: "https://created.example/".into(),
+        }]
+    );
+    assert_eq!(mock.backend.lock().await.lists[CLIENTS], 1);
     mock.backend
         .lock()
         .await
@@ -533,7 +562,7 @@ async fn client_create_delete_events_update_existence_index() {
         .remove("created");
     // Stale existence metadata never authorizes an object deleted before its watch event.
     assert!(directory.client("created").await.unwrap().is_none());
-    mock.event(CLIENTS, "DELETED", &metadata(&created));
+    mock.event(CLIENTS, "DELETED", &created);
     wait_for(|| !has_client(&directory, "created")).await;
     assert!(directory.client("created").await.unwrap().is_none());
     assert_eq!(mock.gets("oauthclients/created").await, 2);
@@ -659,8 +688,8 @@ async fn deleted_recreated_user_never_substitutes_subject() {
             .is_none()
     );
     assert_eq!(mock.gets("users/alice").await, 3);
-    mock.event(USERS, "DELETED", &metadata(&original));
-    mock.event(USERS, "ADDED", &metadata(&recreated));
+    mock.event(USERS, "DELETED", &original);
+    mock.event(USERS, "ADDED", &recreated);
     wait_for(|| {
         directory
             .user_index
@@ -737,7 +766,7 @@ async fn clones_keep_watchers_alive_until_last_directory_drops() {
     drop(directory);
     let created = client("created");
     mock.put(CLIENTS, created.clone()).await;
-    mock.event(CLIENTS, "ADDED", &metadata(&created));
+    mock.event(CLIENTS, "ADDED", &created);
     wait_for(|| has_client(&clone, "created")).await;
     assert!(clone.client("created").await.unwrap().is_some());
     assert!(!watcher.is_finished());
@@ -776,7 +805,7 @@ async fn all_namespace_indexes_read_objects_in_their_metadata_namespace() {
     let mut duplicate = mock.backend.lock().await.objects[CLIENTS]["known"].clone();
     duplicate["metadata"]["namespace"] = json!("other");
     duplicate["metadata"]["uid"] = json!("other-client");
-    mock.event(CLIENTS, "ADDED", &metadata(&duplicate));
+    mock.event(CLIENTS, "ADDED", &duplicate);
     wait_for(|| directory.client_index.len() == 2).await;
     assert!(directory.client("known").await.unwrap().is_none());
     let gets = &mock.backend.lock().await.gets;

@@ -558,10 +558,11 @@ where
             if client == ACCOUNT_CLIENT || apps.iter().any(|(id, _)| id == client) {
                 continue;
             }
-            let name = match service.oauth.directory.client(client).await {
-                Ok(Some(found)) => found.name().to_owned(),
-                Ok(None) | Err(_) => client.to_owned(),
-            };
+            let name = service
+                .oauth
+                .directory
+                .client_name(client)
+                .unwrap_or_else(|| client.to_owned());
             apps.push((client.to_owned(), name));
         }
         Ok(Some((account, passkeys, sessions, apps)))

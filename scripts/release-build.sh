@@ -35,6 +35,9 @@ target_dir="${CARGO_TARGET_DIR:-$root/target}"
 mkdir -p "$target_dir"
 target_dir="$(cd "$target_dir" && pwd)"
 
+# Release binaries are always compiled, never taken from the kache compiler cache (flake.nix).
+unset RUSTC_WRAPPER
+
 # Embedded cargo-auditable metadata lets Syft inventory dependencies in shipped binaries,
 # instead of reporting every package in the workspace or Cargo.lock.
 cargo auditable build --release --locked --target "$target" --target-dir "$target_dir" \

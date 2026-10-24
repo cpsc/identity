@@ -392,10 +392,10 @@ pub const ZH_TW: Messages = Messages {
     noscript_body: "通行密鑰需要 JavaScript。請為這個網站開啟 JavaScript，再重新載入頁面。",
     no_request_title: "目前沒有登入要求",
     no_request_body: "請從要使用的應用程式或指令（例如 kubectl）開始。需要登入時，它會開啟這個頁面。",
-    elevated_title: "要求提升權限",
-    elevated_body: "%app% 要求提升權限，也就是使用你在叢集上的管理員權限，例如變更或刪除叢集上執行的內容。權限會在 %minutes%\u{a0}分鐘後自動失效。如果這次登入不是你自己從 %app% 發起的，請不要繼續。",
+    elevated_title: "要求暫時使用管理員權限",
+    elevated_body: "%app% 要求暫時使用你在叢集上的管理員權限，例如變更或刪除叢集上執行的內容。權限會在 %minutes%\u{a0}分鐘後自動失效。如果這次登入不是你自己從 %app% 發起的，請不要繼續。",
     working: "正在等待通行密鑰…",
-    generic_error: "無法完成操作。再試一次；如果仍然失敗，請聯絡管理員。",
+    generic_error: "無法完成操作。再試一次，如果仍然失敗，請聯絡管理員。",
     setup_title: "設定通行密鑰",
     setup_subtitle: "這個連結只能用一次，可為帳號新增通行密鑰。",
     setup_label: "通行密鑰名稱",
@@ -491,11 +491,11 @@ pub const ZH_TW: Messages = Messages {
     err_provider_failed: ErrorText {
         title: "無法驗證外部帳號的回應",
         cause: "Zeabur Identity 無法連線到外部帳號的服務，或無法驗證它傳回的內容。",
-        next: "過一分鐘再試。如果仍然失敗，管理伺服器的人可以檢視 Zeabur Identity 的記錄檔：",
+        next: "過一分鐘再試。如果仍然失敗，管理伺服器的人可以檢視 Zeabur Identity 的日誌：",
     },
     err_clock_skew: ErrorText {
         title: "伺服器的時鐘可能不準",
-        cause: "外部帳號的登入權杖看起來已過期或簽發於未來。伺服器時鐘誤差超過一分鐘時，就會發生這種情況。",
+        cause: "外部帳號的登入權杖看起來已過期，或簽發時間在未來。伺服器時鐘誤差超過一分鐘時，就會發生這種情況。",
         next: "管理伺服器的人可以檢查時鐘是否已同步：",
     },
     err_account_not_linked: ErrorText {
@@ -521,7 +521,7 @@ pub const ZH_TW: Messages = Messages {
     err_server: ErrorText {
         title: "Zeabur Identity 無法完成操作",
         cause: "伺服器發生錯誤，例如 Kubernetes 沒有及時回應。",
-        next: "過一分鐘再試。如果仍然失敗，管理伺服器的人可以檢視 Zeabur Identity 的記錄檔：",
+        next: "過一分鐘再試。如果仍然失敗，管理伺服器的人可以檢視 Zeabur Identity 的日誌：",
     },
 };
 
@@ -543,10 +543,10 @@ pub const ZH_CN: Messages = Messages {
     noscript_body: "通行密钥需要 JavaScript。请为此网站开启 JavaScript，然后重新加载页面。",
     no_request_title: "当前没有登录请求",
     no_request_body: "请从要使用的应用或命令（例如 kubectl）开始。需要登录时，它会打开此页面。",
-    elevated_title: "请求提升权限",
-    elevated_body: "%app% 请求提升权限，即使用你在集群上的管理员权限，例如修改或删除集群上运行的内容。权限会在 %minutes%\u{a0}分钟后自动失效。如果这次登录不是你自己从 %app% 发起的，不要继续。",
+    elevated_title: "请求临时使用管理员权限",
+    elevated_body: "%app% 请求临时使用你在集群上的管理员权限，例如修改或删除集群上运行的内容。权限会在 %minutes%\u{a0}分钟后自动失效。如果这次登录不是你自己从 %app% 发起的，不要继续。",
     working: "正在等待通行密钥…",
-    generic_error: "无法完成操作。再试一次；如果仍然失败，请联系管理员。",
+    generic_error: "无法完成操作。再试一次，如果仍然失败，请联系管理员。",
     setup_title: "设置通行密钥",
     setup_subtitle: "此一次性链接会为你的账号添加通行密钥。",
     setup_label: "通行密钥名称",
@@ -646,7 +646,7 @@ pub const ZH_CN: Messages = Messages {
     },
     err_clock_skew: ErrorText {
         title: "服务器时钟可能不准",
-        cause: "外部账号的登录令牌看起来已过期或签发于未来。服务器时钟误差超过一分钟时，就会出现这种情况。",
+        cause: "外部账号的登录令牌看起来已过期，或签发时间在未来。服务器时钟误差超过一分钟时，就会出现这种情况。",
         next: "管理服务器的人可以检查时钟是否已同步：",
     },
     err_account_not_linked: ErrorText {

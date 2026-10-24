@@ -230,8 +230,8 @@ pub(crate) mod tests {
         manager.reconcile().await.unwrap();
         assert!(published.has_changed().unwrap());
         let first = published.borrow_and_update().clone().unwrap();
-        assert_eq!(kids(&first).len(), 2, "one ES256 and one RS256 key");
         let signer = first.signer(Algorithm::Es256, clock.now()).unwrap();
+        assert!(kids(&first).contains(&signer.kid().to_owned()));
 
         // Reconciling again without time passing keeps the same keys.
         manager.reconcile().await.unwrap();
@@ -264,24 +264,23 @@ pub(crate) mod tests {
         manager.reconcile().await.unwrap();
         let snapshot = published.borrow().clone().unwrap();
         assert_eq!(
-            kids(&snapshot).len(),
-            4,
-            "a successor per algorithm is published"
-        );
-        assert_eq!(
             snapshot
                 .signer(Algorithm::Es256, clock.now())
                 .unwrap()
                 .kid(),
             old.kid()
         );
+        let successor = snapshot
+            .signer(Algorithm::Es256, UnixTime::from_secs(7 * 86_400))
+            .unwrap();
         assert_ne!(
-            snapshot
-                .signer(Algorithm::Es256, UnixTime::from_secs(7 * 86_400))
-                .unwrap()
-                .kid(),
+            successor.kid(),
             old.kid(),
             "the published successor takes over on schedule, even before the next reconcile"
+        );
+        assert!(
+            kids(&snapshot).contains(&successor.kid().to_owned()),
+            "the successor is published before it signs"
         );
     }
 

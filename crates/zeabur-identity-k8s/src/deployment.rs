@@ -352,10 +352,24 @@ mod tests {
     #[test]
     fn service_exposes_both_listeners() {
         let service = serde_json::to_value(service("ns")).unwrap();
-        let ports = service["spec"]["ports"].as_array().unwrap();
-        assert_eq!(ports.len(), 2);
-        assert_eq!(ports[1]["name"], "internal");
-        assert_eq!(ports[1]["port"], 443);
-        assert_eq!(ports[1]["targetPort"], "internal");
+        let ports: Vec<_> = service["spec"]["ports"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| {
+                (
+                    p["name"].as_str(),
+                    p["port"].as_u64(),
+                    p["targetPort"].as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            ports,
+            [
+                (Some("http"), Some(80), Some("http")),
+                (Some("internal"), Some(443), Some("internal")),
+            ]
+        );
     }
 }

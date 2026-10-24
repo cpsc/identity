@@ -165,19 +165,20 @@ mod tests {
         );
     }
 
+    /// RFC 7638 has no EC example; compare with an independent implementation.
     #[test]
-    fn ec_thumbprint_input_is_canonical() {
+    fn ec_thumbprint_matches_an_independent_implementation() {
         let key = PublicKey::Ec {
             x: [1; 32],
             y: [2; 32],
         };
+        let jwk: jsonwebtoken::jwk::Jwk =
+            serde_json::from_value(serde_json::to_value(key.to_jwk(Algorithm::Es256)).unwrap())
+                .unwrap();
         assert_eq!(
-            key.thumbprint_input(),
-            format!(
-                r#"{{"crv":"P-256","kty":"EC","x":"{}","y":"{}"}}"#,
-                base64url(&[1; 32]),
-                base64url(&[2; 32])
-            )
+            key.thumbprint(),
+            jwk.thumbprint(jsonwebtoken::jwk::ThumbprintHash::SHA256)
+                .unwrap()
         );
     }
 

@@ -183,8 +183,7 @@ mod tests {
             Duration::from_hours(1),
         )
         .unwrap();
-        let key = certified_key(issued.cert_pem.as_bytes(), issued.key_pem.as_bytes()).unwrap();
-        assert_eq!(key.cert.len(), 1);
+        assert!(certified_key(issued.cert_pem.as_bytes(), issued.key_pem.as_bytes()).is_ok());
         assert!(certified_key(b"", issued.key_pem.as_bytes()).is_err());
         assert!(certified_key(issued.cert_pem.as_bytes(), b"nope").is_err());
     }

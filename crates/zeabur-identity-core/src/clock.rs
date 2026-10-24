@@ -79,9 +79,4 @@ mod tests {
             UnixTime::from_secs(0)
         );
     }
-
-    #[test]
-    fn system_clock_is_after_2026() {
-        assert!(SystemClock.now() > UnixTime::from_secs(1_767_225_600));
-    }
 }

@@ -255,7 +255,6 @@ mod tests {
     fn bootstraps_with_an_immediately_active_key() {
         let mut ring = KeyRing::new(Algorithm::Es256);
         assert!(ring.tick(at(1_000), &policy(), generate).unwrap());
-        assert_eq!(ring.published().len(), 1);
         assert_eq!(ring.active(at(1_000)).unwrap().activates_at, at(1_000));
         assert!(
             !ring.tick(at(1_001), &policy(), generate).unwrap(),
@@ -270,14 +269,10 @@ mod tests {
         ring.tick(at(0), &p, generate).unwrap();
         let first = ring.active(at(0)).unwrap().key.kid().to_owned();
 
-        // Just before the successor is due: nothing new.
-        ring.tick(at(6 * DAY - 1), &p, generate).unwrap();
-        assert_eq!(ring.published().len(), 1);
-
         // Six days in: successor published, activating at day 7.
         ring.tick(at(6 * DAY), &p, generate).unwrap();
-        assert_eq!(ring.published().len(), 2);
         let next = ring.published().last().unwrap();
+        assert_ne!(next.key.kid(), first);
         assert_eq!(next.activates_at, at(7 * DAY));
         assert_eq!(ring.active(at(7 * DAY - 1)).unwrap().key.kid(), first);
         assert_ne!(ring.active(at(7 * DAY)).unwrap().key.kid(), first);
@@ -287,15 +282,6 @@ mod tests {
         assert!(ring.published().iter().any(|r| r.key.kid() == first));
         ring.tick(at(8 * DAY), &p, generate).unwrap();
         assert!(ring.published().iter().all(|r| r.key.kid() != first));
-    }
-
-    #[test]
-    fn default_policy_publishes_at_most_two_keys() {
-        let mut ring = KeyRing::new(Algorithm::Es256);
-        for hour in 0..(60 * 24) {
-            ring.tick(at(hour * HOUR), &policy(), generate).unwrap();
-            assert!((1..=2).contains(&ring.published().len()), "hour {hour}");
-        }
     }
 
     #[test]

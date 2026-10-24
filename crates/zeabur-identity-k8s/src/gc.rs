@@ -297,6 +297,10 @@ mod tests {
         UnixTime::from_secs(secs)
     }
 
+    fn names(due: &[Due]) -> Vec<&str> {
+        due.iter().map(|d| d.name.as_str()).collect()
+    }
+
     #[test]
     fn schedules_by_expiry_and_uses_latest_version() {
         let mut s = Schedule::default();
@@ -304,16 +308,13 @@ mod tests {
         s.apply(&meta("b", "1", Some(50)));
         assert_eq!(s.next_due(), Some(t(50)));
         assert_eq!(s.due(t(49)), []);
-        assert_eq!(s.due(t(50)).len(), 1);
+        assert_eq!(names(&s.due(t(50))), ["b"]);
 
         // A refresh extends "b" and changes its resourceVersion.
         s.apply(&meta("b", "2", Some(500)));
         assert_eq!(s.next_due(), Some(t(100)));
         let due = s.due(t(1_000));
-        assert_eq!(
-            due.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
-            ["a", "b"]
-        );
+        assert_eq!(names(&due), ["a", "b"]);
         assert_eq!(due[1].resource_version, "2");
     }
 
@@ -342,8 +343,7 @@ mod tests {
         s.begin_relist();
         s.apply(&meta("b", "1", Some(20)));
         s.end_relist();
-        assert_eq!(s.len(), 1);
-        assert_eq!(s.due(t(100))[0].name, "b");
+        assert_eq!(names(&s.due(t(100))), ["b"]);
     }
 
     #[test]
@@ -352,7 +352,7 @@ mod tests {
         s.apply(&meta("a", "1", Some(10)));
         s.postpone("a", t(40));
         assert_eq!(s.due(t(39)), []);
-        assert_eq!(s.due(t(40)).len(), 1);
+        assert_eq!(names(&s.due(t(40))), ["a"]);
         s.remove("a");
         assert!(s.is_empty() && s.next_due().is_none());
     }

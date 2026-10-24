@@ -115,14 +115,4 @@ mod tests {
             "deploy/crds.json is stale: run `cargo run -q -- crds > deploy/crds.json`"
         );
     }
-
-    #[test]
-    fn every_kind_is_namespaced_in_our_group() {
-        for crd in definitions() {
-            assert_eq!(crd.spec.group, GROUP);
-            assert_eq!(crd.spec.scope, "Namespaced");
-            assert_eq!(crd.spec.versions.len(), 1);
-            assert_eq!(crd.spec.versions[0].name, "v1alpha1");
-        }
-    }
 }

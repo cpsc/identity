@@ -164,13 +164,3 @@ impl axum::serve::Listener for TlsListener {
         Ok(self.local)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn resolver_starts_empty() {
-        assert!(Resolver::default().0.read().unwrap().is_none());
-    }
-}

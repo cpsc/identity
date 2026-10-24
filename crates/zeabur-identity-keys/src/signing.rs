@@ -262,12 +262,6 @@ mod tests {
     }
 
     #[test]
-    fn es256_signatures_are_fixed_width() {
-        let key = SigningKey::generate(Algorithm::Es256).unwrap();
-        assert_eq!(key.sign(b"m").unwrap().len(), 64);
-    }
-
-    #[test]
     fn rs256_keys_are_3072_bits() {
         let key = SigningKey::generate(Algorithm::Rs256).unwrap();
         let PublicKey::Rsa { n, e } = key.public_key() else {

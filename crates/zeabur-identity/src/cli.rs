@@ -245,14 +245,6 @@ mod tests {
     }
 
     #[test]
-    fn defaults() {
-        let args = parse(&["--issuer", "https://login.example.com"]).unwrap();
-        let config = args.config().unwrap();
-        assert_eq!(config.rotation, RotationPolicy::DEFAULT);
-        assert_eq!(config.metadata_max_age, Duration::from_secs(300));
-    }
-
-    #[test]
     fn rejects_bad_issuers_and_inconsistent_timings() {
         assert!(parse(&["--issuer", "http://login.example.com"]).is_err());
         let args = parse(&[

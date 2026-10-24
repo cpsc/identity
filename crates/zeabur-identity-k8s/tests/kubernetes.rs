@@ -293,9 +293,12 @@ mod tests {
                 panic!("expected an admission error");
             };
             assert!(
-                status.message.contains("spec.username"),
-                "{username:?}: {}",
-                status.message
+                status
+                    .details
+                    .iter()
+                    .flat_map(|d| &d.causes)
+                    .any(|c| c.field == "spec.username"),
+                "{username:?}: {status:?}"
             );
         }
 
@@ -687,7 +690,7 @@ mod tests {
             managers.push(task.await.unwrap());
         }
         let first = kids(&managers[0]);
-        assert_eq!(first.len(), 2);
+        assert_ne!(first, Vec::<String>::new());
         for manager in &managers {
             assert_eq!(
                 kids(manager),

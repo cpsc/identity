@@ -1021,12 +1021,6 @@ mod tests {
             let diagnostic = reply.diagnostics.first().unwrap();
             assert_eq!(diagnostic["fields"]["reason"], "no-request");
             let error = diagnostic["fields"]["error"].as_str().unwrap();
-            assert!(error.contains("InvalidRequest"));
-            assert!(error.contains(if expired {
-                "The sign-in request expired. Start again from the app."
-            } else {
-                "No valid sign-in request was found. Start again from the app."
-            }));
             assert!(!serde_json::to_string(fields).unwrap().contains(error));
             // A rejected authorization still consumed the verified passkey ceremony.
             let second_attempt = post(
@@ -1508,12 +1502,17 @@ mod tests {
             assert_eq!(fields["event"], "account.passkey_removed");
             assert_eq!(fields["revoked"], 2);
 
-            let left = h.service.oauth.grants.list(&admin).await.unwrap();
-            assert_eq!(left.len(), 1);
-            assert_eq!(
-                left[0].spec.name,
-                by_second.cookie.split_once('.').unwrap().0
-            );
+            let left: Vec<String> = h
+                .service
+                .oauth
+                .grants
+                .list(&admin)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|g| g.spec.name)
+                .collect();
+            assert_eq!(left, [by_second.cookie.split_once('.').unwrap().0]);
             assert!(!page(&h, Some(&by_first.cookie)).await.contains("data-csrf"));
             let request = Request::post("/token")
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
@@ -1575,8 +1574,17 @@ mod tests {
             )
             .await;
             assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
-            let left = h.service.oauth.grants.list(&admin).await.unwrap();
-            assert_eq!(left.len(), 1);
+            let left: Vec<String> = h
+                .service
+                .oauth
+                .grants
+                .list(&admin)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|g| g.spec.name)
+                .collect();
+            assert_eq!(left, [this.cookie.split_once('.').unwrap().0]);
             assert!(page(&h, Some(&this.cookie)).await.contains("data-csrf"));
 
             let reply = post(

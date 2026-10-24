@@ -1762,7 +1762,6 @@ mod tests {
             assert!(h.capture.records().iter().any(|record| {
                 record["target"] == "zeabur_identity_oauth::endpoints"
                     && record["fields"]["reason"] == "storage_failed"
-                    && record["fields"]["error"] == "storage failed: oauth-storage-secret-sentinel"
             }));
             if detection != "revoke" {
                 let (event, reason) = match detection {

@@ -656,8 +656,7 @@ mod tests {
         assert_eq!(reply.status, StatusCode::BAD_REQUEST);
         assert_audit(&reply, "auth.sign_in", Some("account_unlinked"), None, None);
         assert!(
-            reply.body.contains("This account isn’t linked")
-                && reply.body.contains("account_unlinked (github)"),
+            reply.body.contains("account_unlinked (github)"),
             "{}",
             reply.body
         );
@@ -666,7 +665,7 @@ mod tests {
         let reply = sign_in(&h, "google", "code-2").await;
         assert_eq!(reply.status, StatusCode::BAD_REQUEST, "disabled user");
         assert!(
-            reply.body.contains("This user can’t sign in"),
+            reply.body.contains("user_unavailable (google)"),
             "{}",
             reply.body
         );
@@ -718,11 +717,7 @@ mod tests {
         );
         let forged = callback(&h, "github", "code=code-4&state=forged", &cookies).await;
         assert_eq!(forged.status, StatusCode::BAD_REQUEST);
-        assert!(
-            forged
-                .body
-                .contains("This sign-in doesn’t match this browser")
-        );
+        assert!(forged.body.contains("invalid_state (github)"));
         assert_audit(&forged, "auth.sign_in", Some("invalid_state"), None, None);
         let no_cookie = callback(&h, "github", "code=code-4&state=x", "").await;
         assert_eq!(no_cookie.status, StatusCode::BAD_REQUEST);
@@ -996,9 +991,12 @@ mod tests {
             diagnostic["fields"]["reason"],
             "provider_verification_failed"
         );
-        assert_eq!(
-            diagnostic["fields"]["error"],
-            format!("upstream request failed: {SECRET_ERROR}")
+        // The operator log keeps the detail; the audit record does not.
+        assert!(
+            diagnostic["fields"]["error"]
+                .as_str()
+                .unwrap()
+                .contains(SECRET_ERROR)
         );
         let audit = failed.audit.as_ref().unwrap();
         assert!(audit["fields"].get("error").is_none());

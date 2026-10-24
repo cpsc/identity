@@ -195,9 +195,14 @@ mod tests {
         assert_eq!(headers[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
         let set: Value = serde_json::from_slice(&body).unwrap();
         let keys = set["keys"].as_array().unwrap();
-        assert_eq!(keys.len(), 2);
+        let algs: HashSet<&str> = keys.iter().map(|k| k["alg"].as_str().unwrap()).collect();
+        assert_eq!(
+            algs,
+            HashSet::from(["ES256", "RS256"]),
+            "both advertised algorithms"
+        );
         let kids: HashSet<&str> = keys.iter().map(|k| k["kid"].as_str().unwrap()).collect();
-        assert_eq!(kids.len(), 2, "distinct kids (RFC 7517 §4.5)");
+        assert_eq!(kids.len(), keys.len(), "distinct kids (RFC 7517 §4.5)");
         for key in keys {
             assert_eq!(key["use"], "sig");
             for private in ["d", "p", "q", "dp", "dq", "qi"] {

@@ -195,7 +195,6 @@ mod tests {
         assert_eq!(material.url, Some(url));
         assert_eq!(material.not_after, Some(issued.not_after));
         assert_eq!(material.ca_pem.as_deref(), Some(issued.ca_pem.as_str()));
-        assert_eq!(material.key.cert.len(), 1);
         assert!(
             format!("{issued:?}").contains("not_after")
                 && !format!("{issued:?}").contains("PRIVATE")

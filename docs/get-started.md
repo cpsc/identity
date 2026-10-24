@@ -77,7 +77,7 @@ Log in to the server:
 ssh "$SERVER"
 ```
 
-Choose a version from [GitHub Releases](https://github.com/zeabur/identity/releases).
+Choose a version from [GitHub Releases](https://github.com/zeabur-oss/identity/releases).
 The examples use `v0.0.1`. Set `arch` to `amd64` for x86_64 or `arm64` for aarch64:
 
 ```sh
@@ -93,12 +93,12 @@ before installing `zeabur-identityctl`:
 (
   set -eu
   cd ~/zeabur-identity-download
-  url="https://github.com/zeabur/identity/releases/download/$version"
+  url="https://github.com/zeabur-oss/identity/releases/download/$version"
   archive="zeabur-identityctl-$version-linux-$arch.tar.gz"
   for file in "$archive" SHA256SUMS SHA256SUMS.sigstore.json image-digests.txt; do
     curl --fail --location "$url/$file" --output "$file"
   done
-  identity="https://github.com/zeabur/identity/.github/workflows/release.yml@refs/tags/$version"
+  identity="https://github.com/zeabur-oss/identity/.github/workflows/release.yml@refs/tags/$version"
   cosign verify-blob --bundle SHA256SUMS.sigstore.json \
     --certificate-identity "$identity" \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
@@ -115,7 +115,7 @@ holds the release's exact image digest, which you will use when installing:
 ```sh
 ZEABUR_IDENTITY_IMAGE=$(awk '$1 == "index" {print $2}' ~/zeabur-identity-download/image-digests.txt)
 export ZEABUR_IDENTITY_IMAGE
-identity="https://github.com/zeabur/identity/.github/workflows/release.yml@refs/tags/$version"
+identity="https://github.com/zeabur-oss/identity/.github/workflows/release.yml@refs/tags/$version"
 cosign verify --certificate-identity "$identity" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com "$ZEABUR_IDENTITY_IMAGE"
 cosign verify-attestation --type cyclonedx --certificate-identity "$identity" \

@@ -100,6 +100,6 @@ the system's CJK fonts.
 [csp]: https://www.w3.org/TR/CSP3/
 [tt]: https://www.w3.org/TR/trusted-types/
 [wcag]: https://www.w3.org/TR/WCAG22/
-[zds]: https://github.com/zeabur/design-system
+[zds]: https://github.com/zeabur-oss/design-system
 [shadcn]: https://ui.shadcn.com
 [geist]: https://github.com/vercel/geist-font

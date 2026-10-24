@@ -19,7 +19,7 @@ Use a Linux machine matching your cluster's architecture, with Docker running an
 flakes enabled:
 
 ```sh
-git clone https://github.com/zeabur/identity.git
+git clone https://github.com/zeabur-oss/identity.git
 cd zeabur-identity
 nix develop
 cargo build --release --locked -p zeabur-identityctl

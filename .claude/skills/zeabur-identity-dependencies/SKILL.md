@@ -34,7 +34,7 @@ description: Add or upgrade a Rust or frontend dependency in Zeabur Identity und
 - Commit `package.json` and `bun.lock` together; CI installs with `bun ci`, which fails if they
   disagree.
 - `@zeabur/design-system` is a Git dependency pinned to a commit
-  (`github:zeabur/design-system#<commit>`), in the same form as web. To try an unpublished
+  (`github:zeabur-oss/design-system#<commit>`), in the same form as web. To try an unpublished
   design-system commit, point it at a local tarball (`file:/…/zeabur-design-system-0.1.0.tgz`,
   see the design system's `design-system-change` skill) and `bun install`; never commit
   `package.json` or `bun.lock` with that path.

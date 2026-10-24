@@ -60,7 +60,7 @@ its container image.
 | Image: static binary, non-root, no shell | `Containerfile`, `zeabur-identity-k8s/src/deployment.rs` | `zeabur-identity-k8s: deployment::tests::deployment_is_locked_down`; *(e2e)* | Met |
 | Image size and idle memory measured in CI | `scripts/build-image.sh`, e2e measurement | CI `kubernetes` job summary | Met (about 20 MB; pod working set within the 30 MiB budget) |
 | Image signing (Sigstore) and SBOM | `.github/workflows/release.yml`, `scripts/release-{build,publish,verify}.sh` | Exact-digest signature/SBOM verification and public pull in both native release rehearsal jobs | Partial: pipeline implemented; public OIDC publication evidence requires a successful tag-triggered run ([release procedure](releases.md)) |
-| Versioned CLI archives, checksums, signed provenance and SBOMs | Same workflow; `scripts/release-smoke.sh` | Signed checksum manifest; downloaded archive execution and Kubernetes-backed container startup on Linux amd64/arm64 while release stays draft; separate maintainer publication after installation acceptance | Partial: pipeline implemented; local smoke is not evidence of a published release; [#43](https://github.com/zeabur/identity/issues/43) remains unverified |
+| Versioned CLI archives, checksums, signed provenance and SBOMs | Same workflow; `scripts/release-smoke.sh` | Signed checksum manifest; downloaded archive execution and Kubernetes-backed container startup on Linux amd64/arm64 while release stays draft; separate maintainer publication after installation acceptance | Partial: pipeline implemented; local smoke is not evidence of a published release; [#43](https://github.com/zeabur-oss/identity/issues/43) remains unverified |
 
 ## OpenID Connect Discovery 1.0 and RFC 8414
 

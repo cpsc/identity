@@ -739,6 +739,7 @@ where
 
         let authentication = Authentication {
             user: user.name.clone(),
+            subject: user.subject.clone(),
             auth_time: now,
             amr: PASSKEY_AMR.iter().map(|m| (*m).to_owned()).collect(),
             credential: Some(verified.credential.clone()),

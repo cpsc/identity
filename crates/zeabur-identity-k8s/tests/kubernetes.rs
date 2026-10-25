@@ -1027,7 +1027,8 @@ mod tests {
 
         let env = Env::new().await;
         let pp = PostParams::default();
-        env.admin_api::<User>()
+        let alice_uid = env
+            .admin_api::<User>()
             .create(
                 &pp,
                 &User::new(
@@ -1042,6 +1043,8 @@ mod tests {
                 ),
             )
             .await
+            .unwrap()
+            .uid()
             .unwrap();
         env.admin_api::<OAuthClient>()
             .create(
@@ -1145,6 +1148,7 @@ mod tests {
             .unwrap();
         let auth = Authentication {
             user: "alice".into(),
+            subject: alice_uid,
             auth_time: zeabur_identity_core::clock::Clock::now(&SystemClock),
             amr: vec!["hwk".into()],
             credential: None,

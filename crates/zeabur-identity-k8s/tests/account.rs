@@ -507,6 +507,7 @@ mod tests {
     async fn grants_are_listed_by_uid_and_reauthenticated_by_secret() {
         let mut backend = Backend::default();
         backend.insert("grants", grant("s-1", Some(ALICE_UID)));
+        // A grant without a recorded UID belongs to no one.
         backend.insert("grants", grant("g-legacy", None));
         backend.insert("grants", grant("s-old", Some("uid-old-alice")));
         let mock = mock(backend).await;
@@ -518,7 +519,7 @@ mod tests {
             .into_iter()
             .map(|g| g.spec.name)
             .collect();
-        assert_eq!(names, ["g-legacy", "s-1"]);
+        assert_eq!(names, ["s-1"]);
 
         let verification = Verification {
             at: UnixTime::from_secs(1_800_000_200),

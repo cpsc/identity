@@ -40,6 +40,9 @@ pub struct CodeClaims {
     pub request: AuthorizationRequest,
     /// `User` object name.
     pub user: String,
+    /// UID of that `User` at sign-in. A new `User` with the same name has a new UID and does not
+    /// get the code.
+    pub subject: String,
     /// When the user authenticated.
     pub auth_time: UnixTime,
     /// Authentication methods.
@@ -69,6 +72,7 @@ pub fn issue(
         id: hex(&random::<16>()?),
         request,
         user: authentication.user,
+        subject: authentication.subject,
         auth_time: authentication.auth_time,
         amr: authentication.amr,
         credential: authentication.credential,
@@ -121,6 +125,7 @@ mod tests {
         let sealer = Sealer::ephemeral().unwrap();
         let auth = Authentication {
             user: "alice".into(),
+            subject: "uid-alice".into(),
             auth_time: UnixTime::from_secs(5),
             amr: vec!["hwk".into()],
             credential: None,

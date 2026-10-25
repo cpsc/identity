@@ -192,7 +192,7 @@ mod tests {
             "spec":{"user":"alice","client":"kubectl","audience":"kubernetes",
                 "authTime":now.as_secs(),"scopes":["openid"],"amr":["swk"],
                 "expiresAt":now.as_secs()+3600,"initialIdleExpiresAt":now.as_secs()+3600,
-                "initialHash":token.hash()}}),
+                "initialHash":token.hash(),"subject":"uid-alice"}}),
             ),
         }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

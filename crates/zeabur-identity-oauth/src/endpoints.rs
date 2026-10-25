@@ -501,6 +501,7 @@ async fn exchange_code<D: Directory, G: GrantStore, C: Clock>(
 
     let user = active_user(server, &claims.user)
         .await?
+        .filter(|user| user.subject == claims.subject)
         .ok_or(INVALID_GRANT)?;
     if claims.request.is_elevated() {
         return elevated_tokens(server, client, &user, &claims, now);

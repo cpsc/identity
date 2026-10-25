@@ -262,7 +262,7 @@ where
     else {
         return Ok(None);
     };
-    if user.disabled || session.spec.subject.as_deref() != Some(user.subject.as_str()) {
+    if user.disabled || !session.belongs_to(&user) {
         return Ok(None);
     }
     Ok(Some(Account {

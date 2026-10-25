@@ -175,7 +175,7 @@ pub struct NewGrant {
     pub expires_at: UnixTime,
     /// `sha256:<hex>` of the first refresh token.
     pub initial_hash: String,
-    /// UID of the `User` at sign-in. Absent on grants created before it was recorded.
+    /// UID of the `User` at sign-in. A grant without one belongs to no one.
     pub subject: Option<String>,
     /// `Credential` object name the user signed in with.
     pub credential: Option<String>,
@@ -228,16 +228,11 @@ impl Grant {
         })
     }
 
-    /// Whether the grant belongs to `user`: same object name, and the same UID when one was
-    /// recorded.
+    /// Whether the grant belongs to `user`: the same object name and the same UID. A grant
+    /// without a recorded UID belongs to no one.
     #[must_use]
     pub fn belongs_to(&self, user: &User) -> bool {
-        self.spec.user == user.name
-            && self
-                .spec
-                .subject
-                .as_ref()
-                .is_none_or(|subject| *subject == user.subject)
+        self.spec.user == user.name && self.spec.subject.as_deref() == Some(user.subject.as_str())
     }
 }
 

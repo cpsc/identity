@@ -335,6 +335,8 @@ pub struct Flow {
 pub struct Authentication {
     /// `User` object name.
     pub user: String,
+    /// UID of that `User`. The token endpoint issues tokens only to a `User` with this UID.
+    pub subject: String,
     /// When the user authenticated.
     pub auth_time: UnixTime,
     /// Authentication methods (RFC 8176).

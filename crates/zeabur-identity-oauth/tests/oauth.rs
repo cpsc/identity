@@ -314,6 +314,7 @@ mod tests {
         );
         let auth = Authentication {
             user: user.into(),
+            subject: format!("uid-{user}"),
             auth_time: h.clock.now(),
             amr: amr.iter().map(|m| (*m).to_owned()).collect(),
             credential: None,
@@ -439,6 +440,7 @@ mod tests {
 
         let auth = Authentication {
             user: "alice".into(),
+            subject: "uid-alice".into(),
             auth_time: h.clock.now(),
             amr: vec!["hwk".into(), "user".into()],
             credential: None,
@@ -1019,6 +1021,7 @@ mod tests {
         // A forged or expired flow cannot be completed.
         let auth = Authentication {
             user: "alice".into(),
+            subject: "uid-alice".into(),
             auth_time: h.clock.now(),
             amr: vec![],
             credential: None,
@@ -1081,6 +1084,7 @@ mod tests {
         assert_eq!(reply.status, StatusCode::SEE_OTHER);
         let auth = Authentication {
             user: "alice".into(),
+            subject: "uid-alice".into(),
             auth_time: h.clock.now(),
             amr: vec![],
             credential: None,
@@ -1328,6 +1332,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_code_for_a_removed_user_is_not_redeemed_for_a_new_user_of_that_name() {
+        for (case, uri, amr) in [
+            ("plain", kubectl_authorize(&[]), PASSKEY),
+            ("elevated", elevate_uri(), PASSKEY),
+        ] {
+            let h = harness_with(elevating()).await;
+            let code = sign_in_with(&h, "alice", &uri, amr).await;
+            // Remove alice after sign-in, then give the name to a new person.
+            h.server.directory.remove_user("alice");
+            let newcomer = User {
+                name: "alice".into(),
+                subject: "uid-recreated".into(),
+                username: "alice".into(),
+                groups: vec!["admins".into()],
+                elevated_groups: vec!["cluster-admins".into()],
+                ..User::default()
+            };
+            h.server.directory.put_user(newcomer.clone());
+            assert_eq!(exchange(&h, &code).await.error(), "invalid_grant", "{case}");
+            assert!(
+                h.server.grants.list(&newcomer).await.unwrap().is_empty(),
+                "{case}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn elevation_issues_short_lived_tokens_without_refresh() {
         let h = harness_with(elevating()).await;
         let code = sign_in_with(&h, "alice", &elevate_uri(), PASSKEY).await;
@@ -1386,6 +1417,7 @@ mod tests {
         let reply = get(&h.app, &elevate_uri()).await;
         let auth = Authentication {
             user: "alice".into(),
+            subject: "uid-alice".into(),
             auth_time: h.clock.now(),
             amr: vec![],
             credential: None,

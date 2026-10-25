@@ -369,6 +369,7 @@ where
             let flow = cookie(&headers, FLOW_COOKIE).ok_or(("missing_flow", ErrorReason::RequestExpired, None))?;
             let authentication = Authentication {
                 user: user.name.clone(),
+                subject: user.subject.clone(),
                 auth_time: now,
                 amr: Vec::new(),
                 credential: Some(name.clone()),

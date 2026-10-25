@@ -1659,6 +1659,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_session_left_from_a_removed_user_does_not_refresh_as_a_new_user_of_that_name() {
+        let h = harness().await;
+        let token = exchange(&h, &sign_in(&h, "alice", &kubectl_authorize(&[])).await)
+            .await
+            .json()["refresh_token"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        // Remove alice but not her session, then give the name to a new person.
+        h.server.directory.remove_user("alice");
+        h.server.directory.put_user(User {
+            name: "alice".into(),
+            subject: "uid-recreated".into(),
+            username: "alice".into(),
+            ..User::default()
+        });
+        assert_eq!(refresh(&h, &token).await.error(), "invalid_grant");
+    }
+
+    #[tokio::test]
     async fn userinfo_rejects_unknown_and_ambiguous_subjects() {
         let h = harness().await;
         let code = sign_in(&h, "alice", &kubectl_authorize(&[])).await;

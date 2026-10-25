@@ -819,8 +819,12 @@ async fn refresh<D: Directory, G: GrantStore, C: Clock>(
         Rotation::Invalid | Rotation::NotFound => return Err(INVALID_GRANT),
     };
     // Re-check the user on every refresh: disabled or deleted users get nothing more, and groups
-    // come from the user as it is now, not as it was at sign-in.
-    let Some(user) = active_user(server, &grant.spec.user).await? else {
+    // come from the user as it is now, not as it was at sign-in. A new user with the name of a
+    // deleted one has a new UID and does not get the deleted user's sessions.
+    let Some(user) = active_user(server, &grant.spec.user)
+        .await?
+        .filter(|user| grant.belongs_to(user))
+    else {
         server
             .grants
             .revoke(presented.grant())

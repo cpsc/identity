@@ -202,23 +202,24 @@ deleted, so you can undo it:
 kubectl -n zeabur-identity patch zbuser alice --type=merge -p '{"spec":{"disabled":true}}'
 ```
 
-**To remove someone for good**, delete their credentials, sessions and invitations first, then
-the `User`:
+**To remove someone for good**, delete the `User`:
+
+```sh
+kubectl -n zeabur-identity delete zbuser alice
+```
+
+Their passkeys, linked GitHub or Google accounts, sessions and invitation links then stop working.
+Each one is bound to the UID of this `User`, and a new `User` with the same name gets a new UID.
+The token already in hand still works until it expires, within ten minutes.
+
+Kubernetes garbage collection deletes those objects soon after. To delete them at once, run this
+too, before or after you delete the `User`:
 
 ```sh
 for kind in zbcred zbgrant zbinvite; do
   kubectl -n zeabur-identity delete "$kind" -l identity.zeabur.com/user=alice
 done
-kubectl -n zeabur-identity delete zbuser alice
 ```
-
-> [!WARNING]
-> Keep this order. If you delete only the `User`, its invitations stay until Kubernetes garbage
-> collection removes them. If you create a new `User` with the same name in that time, an old
-> invitation link adds a passkey to the new user.
-
-Old passkeys and linked GitHub or Google accounts do not sign in as a new `User` with the same
-name. Each one is bound to the UID of the `User` it was added for.
 
 ## Keep users in Git
 

@@ -180,7 +180,7 @@ async fn login(Path(state): Path<String>, RawQuery(q): RawQuery, h: HeaderMap) -
 const PASSKEYS: [PasskeyRow<'static>; 3] = [
     PasskeyRow {
         name: "cred-1",
-        label: Some("Apple Passwords"),
+        label: Some("Work laptop"),
         added: Some(1_790_000_000),
         last_used: Some(1_792_000_000),
         storage: Storage::Synced,

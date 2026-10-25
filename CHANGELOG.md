@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+
+- `zeabur-identityctl kube-config --distro` no longer accepts `k0s`, `kubeadm` or `kubesolo`.
+  Use `k3s` on K3s/RKE2 and `generic` elsewhere.
+- A new passkey without a name is no longer named after its authenticator or browser. The
+  account page shows it as "Passkey added" and its creation date. Existing names stay.
+
 ## v0.0.1
 
 First alpha for evaluating passkey-based access to self-managed Kubernetes clusters.

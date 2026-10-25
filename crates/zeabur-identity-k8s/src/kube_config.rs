@@ -21,9 +21,8 @@
 //! Zeabur Identity's own CA as `certificateAuthority` ([`crate::internal_tls`]). kube-apiserver
 //! starts even while Zeabur Identity is down and retries discovery every 10 s; it fetches discovery
 //! once, when the authenticator starts. A static JWK set is not an option: KEP-3331 lists other key
-//! discovery methods as a non-goal. `egressSelectorType` is never set: k3s dials a host name
-//! through it as a node name, and kubeadm has no egress configuration, so the authenticator would
-//! fail.
+//! discovery methods as a non-goal. `egressSelectorType` is never set: K3s/RKE2 dial a host name
+//! through it as a node name, so the authenticator would fail.
 //!
 //! # Rules kube-apiserver enforces
 //!
@@ -45,28 +44,19 @@
 //!
 //! | `--distro` | `anonymous` section | Internal discovery |
 //! |---|---|---|
-//! | `k3s` | `enabled: false` | With the embedded agent |
-//! | `k0s` | omitted | With a worker on the controller |
-//! | `kubeadm`, kind | health paths only | Yes |
-//! | `kubesolo` | unsupported | - |
+//! | `k3s` (K3s/RKE2) | `enabled: false` | With the agent on the server |
 //! | `generic` | omitted | Depends on the cluster |
 //!
-//! - **k3s** normally passes `--anonymous-auth=false` but drops it when it sees an authentication
-//!   configuration file, so the file restores it. Internal discovery needs kube-proxy on the
-//!   server, which `--disable-agent` removes.
-//! - **k0s** keeps `--anonymous-auth=false`, and releases before v1.34.11+k0s.0, v1.35.8+k0s.0 and
-//!   v1.36.3+k0s.1 refuse to start kube-apiserver when the file has an `anonymous` field.
-//!   kube-apiserver runs as the user `kube-apiserver`, so the file must be readable by it (mode
-//!   0644; it holds no secrets). Dedicated controllers run no kube-proxy and use public discovery.
-//! - **kubeadm** runs kube-apiserver as a static pod whose probes the kubelet sends without
-//!   credentials, so anonymous access stays on for `/livez`, `/readyz` and `/healthz` only. The
-//!   directory, not the file, is mounted into the pod: a single-file bind mount would keep showing
-//!   the old file after an atomic replace.
-//! - **KubeSolo** v1.2.1 hard-codes kube-apiserver's flags, so the file cannot be passed
-//!   ([KubeSolo]).
+//! - **K3s/RKE2** normally pass `--anonymous-auth=false` but drop it when they see an
+//!   authentication configuration file, so the file restores it. Internal discovery needs
+//!   kube-proxy on the server, which the K3s flag `--disable-agent` removes.
+//! - **RKE2** runs kube-apiserver as a static pod. The directory, not the file, is mounted into the
+//!   pod with `kube-apiserver-extra-mount`: a single-file bind mount would keep showing the old
+//!   file after an atomic replace.
 //!
-//! Installation follows each distribution's documented mechanism ([k3s], [k0s], [kubeadm]); see
-//! [`instructions`].
+//! Installation follows the documented mechanism of K3s and RKE2 ([K3s], [RKE2]); see
+//! [`instructions`]. The RKE2 steps write the same files, flags and mount as the Zeabur installer,
+//! which runs `zeabur-identityctl kube-config --distro k3s` on RKE2 (see "installer" below).
 //!
 //! # References
 //!
@@ -79,20 +69,18 @@
 //! - [DNS] The Kubernetes Authors, "DNS for Services and Pods," Kubernetes documentation.
 //! - [RFC 9068] V. Bertocci, "JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens," RFC 9068,
 //!   IETF, Oct. 2021.
-//! - [k3s] K3s project, K3s documentation, `k3s server` command reference.
-//! - [k0s] k0s project, k0s documentation, configuration reference.
-//! - [kubeadm] The Kubernetes Authors, Kubernetes documentation, kubeadm control-plane flags.
-//! - [KubeSolo] Portainer, KubeSolo, GitHub repository.
+//! - [K3s] K3s project, K3s documentation, `k3s server` command reference.
+//! - [RKE2] RKE2 project, RKE2 documentation, server configuration reference.
+//! - installer: Zeabur repository, `zeabur-installer-plan/src/rke2.rs` and
+//!   `zeabur-installer/src/apply.rs`.
 //!
 //! [KEP-3331]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-auth/3331-structured-authentication-configuration
 //! [oidc.go]: https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/plugin/pkg/authenticator/token/oidc/oidc.go
 //! [validation.go]: https://github.com/kubernetes/kubernetes/blob/v1.37.1/staging/src/k8s.io/apiserver/pkg/apis/apiserver/validation/validation.go
 //! [DNS]: https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/
 //! [RFC 9068]: https://www.rfc-editor.org/rfc/rfc9068
-//! [k3s]: https://docs.k3s.io/cli/server
-//! [k0s]: https://docs.k0sproject.io/stable/configuration/
-//! [kubeadm]: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/control-plane-flags/
-//! [KubeSolo]: https://github.com/portainer/kubesolo
+//! [K3s]: https://docs.k3s.io/cli/server
+//! [RKE2]: https://docs.rke2.io/reference/server_config
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -121,14 +109,8 @@ const RENEW_BEFORE: Duration = Duration::from_hours(30 * 24);
 /// Where kube-apiserver runs; decides the `anonymous` section and the install instructions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Distro {
-    /// k3s (kube-apiserver inside the k3s process).
+    /// K3s/RKE2.
     K3s,
-    /// k0s with a worker on each controller (`--enable-worker` or `--single`).
-    K0s,
-    /// kubeadm, and kind, which uses it (kube-apiserver as a static pod).
-    Kubeadm,
-    /// KubeSolo: not supported, it cannot pass flags to kube-apiserver.
-    Kubesolo,
     /// Any other distribution: the configuration file only.
     Generic,
 }
@@ -172,11 +154,6 @@ pub struct ApiserverOptions {
 /// Why `kube-config` failed.
 #[derive(Debug, Error)]
 pub enum KubeConfigError {
-    /// The distribution cannot be configured.
-    #[error(
-        "KubeSolo hard-codes kube-apiserver's flags, so it cannot use an AuthenticationConfiguration yet"
-    )]
-    Unsupported,
     /// The Kubernetes API failed.
     #[error("Kubernetes API request failed: {0}")]
     Kubernetes(#[from] kube::Error),
@@ -224,12 +201,8 @@ const ID_TOKEN_MESSAGE: &str = "    message: \"only Zeabur Identity access token
 ///
 /// # Errors
 ///
-/// Returns [`KubeConfigError::Unsupported`] for KubeSolo, and [`KubeConfigError::BadAudience`]
-/// for an empty or unusual audience.
+/// Returns [`KubeConfigError::BadAudience`] for an empty or unusual audience.
 pub fn authentication_configuration(options: &ApiserverOptions) -> Result<String, KubeConfigError> {
-    if options.distro == Distro::Kubesolo {
-        return Err(KubeConfigError::Unsupported);
-    }
     if let Some(bad) = options
         .audiences
         .iter()
@@ -246,22 +219,12 @@ pub fn authentication_configuration(options: &ApiserverOptions) -> Result<String
     line("apiVersion: apiserver.config.k8s.io/v1");
     line("kind: AuthenticationConfiguration");
     match options.distro {
-        // k3s drops its own --anonymous-auth=false when it sees this file; restore it.
+        // K3s/RKE2 drop their own --anonymous-auth=false when they see this file; restore it.
         Distro::K3s => {
             line("anonymous:");
             line("  enabled: false");
         }
-        // kubelet probes the static pod anonymously.
-        Distro::Kubeadm => {
-            line("anonymous:");
-            line("  enabled: true");
-            line("  conditions:");
-            for path in ["/livez", "/readyz", "/healthz"] {
-                line(&format!("  - path: {path}"));
-            }
-        }
-        // k0s keeps --anonymous-auth=false; older k0s refuses the field.
-        Distro::K0s | Distro::Generic | Distro::Kubesolo => {}
+        Distro::Generic => {}
     }
     line("jwt:");
     line("- issuer:");
@@ -339,50 +302,22 @@ pub fn authentication_configuration(options: &ApiserverOptions) -> Result<String
 pub fn instructions(distro: Distro, discovery: DiscoveryMode) -> String {
     let (path, steps): (&str, &[&str]) = match distro {
         Distro::K3s => (
-            "/etc/rancher/k3s/zeabur-identity/authn.yaml",
+            "/etc/rancher/k3s/zeabur-identity/authn.yaml on K3s, /etc/rancher/rke2/zeabur-identity/authn.yaml on RKE2",
             &[
-                "On every server node, save the configuration above as /etc/rancher/k3s/zeabur-identity/authn.yaml.",
-                "Add /etc/rancher/k3s/config.yaml.d/50-zeabur-identity.yaml containing:",
+                "On every server node, save the configuration above as authn.yaml in /etc/rancher/k3s/zeabur-identity/ (K3s) or /etc/rancher/rke2/zeabur-identity/ (RKE2).",
+                "On K3s, add /etc/rancher/k3s/config.yaml.d/50-zeabur-identity.yaml containing:",
                 "    kube-apiserver-arg:",
                 "      - \"authentication-config=/etc/rancher/k3s/zeabur-identity/authn.yaml\"",
-                "Run `systemctl restart k3s` once. kube-apiserver reloads later changes to authn.yaml within about a minute.",
-                "Internal discovery needs the node's embedded agent (it does not work with --disable-agent).",
+                "On RKE2, add /etc/rancher/rke2/config.yaml.d/50-zeabur-identity.yaml containing:",
+                "    kube-apiserver-arg:",
+                "      - \"authentication-config=/etc/rancher/rke2/zeabur-identity/authn.yaml\"",
+                "    kube-apiserver-extra-mount:",
+                "      - \"/etc/rancher/rke2/zeabur-identity:/etc/rancher/rke2/zeabur-identity:ro\"",
+                "Run `systemctl restart k3s` (K3s) or `systemctl restart rke2-server` (RKE2) once. kube-apiserver reloads later changes to authn.yaml within about a minute.",
+                "On K3s, internal discovery needs the node's embedded agent (it does not work with --disable-agent).",
             ],
         ),
-        Distro::K0s => (
-            "/etc/k0s/zeabur-identity/authn.yaml",
-            &[
-                "On every controller, save the configuration above as /etc/k0s/zeabur-identity/authn.yaml with mode 0644 (kube-apiserver runs as user kube-apiserver).",
-                "In /etc/k0s/k0s.yaml set:",
-                "    spec:",
-                "      api:",
-                "        extraArgs:",
-                "          authentication-config: /etc/k0s/zeabur-identity/authn.yaml",
-                "Remove any oidc-* extraArgs (they cannot be combined with authentication-config).",
-                "Run `systemctl restart k0scontroller` on each controller, one at a time.",
-                "Internal discovery needs a worker on the controller (--enable-worker or --single); dedicated controllers should use --discovery public.",
-            ],
-        ),
-        Distro::Kubeadm => (
-            "/etc/kubernetes/zeabur-identity/authn.yaml",
-            &[
-                "On every control-plane node, save the configuration above as /etc/kubernetes/zeabur-identity/authn.yaml.",
-                "Add to the ClusterConfiguration (kubeadm.k8s.io/v1beta4, `kubectl -n kube-system edit cm kubeadm-config`):",
-                "    apiServer:",
-                "      extraArgs:",
-                "      - name: authentication-config",
-                "        value: /etc/kubernetes/zeabur-identity/authn.yaml",
-                "      extraVolumes:",
-                "      - name: zeabur-identity",
-                "        hostPath: /etc/kubernetes/zeabur-identity",
-                "        mountPath: /etc/kubernetes/zeabur-identity",
-                "        readOnly: true",
-                "        pathType: DirectoryOrCreate",
-                "Then on each control-plane node: `kubeadm init phase control-plane apiserver --config <file>`.",
-                "Mounting the directory rather than the file lets kube-apiserver see a replaced authn.yaml.",
-            ],
-        ),
-        Distro::Generic | Distro::Kubesolo => (
+        Distro::Generic => (
             "authn.yaml",
             &[
                 "Save the configuration above where kube-apiserver can read it and start kube-apiserver with --authentication-config=<path>.",
@@ -443,12 +378,9 @@ pub struct Prepared {
 ///
 /// # Errors
 ///
-/// Returns [`KubeConfigError`] if the distribution is unsupported, Zeabur Identity's Service is
-/// missing, or the API refuses a request.
+/// Returns [`KubeConfigError`] if Zeabur Identity's Service is missing, an audience is invalid,
+/// or the API refuses a request.
 pub async fn prepare(client: Client, request: &Request) -> Result<Prepared, KubeConfigError> {
-    if request.distro == Distro::Kubesolo {
-        return Err(KubeConfigError::Unsupported);
-    }
     let (internal, issued_until) = match request.discovery {
         DiscoveryMode::Public => (None, None),
         DiscoveryMode::Internal => {
@@ -612,17 +544,9 @@ jwt:
     }
 
     #[test]
-    fn anonymous_section_follows_the_distribution() {
-        let kubeadm = authentication_configuration(&options(Distro::Kubeadm, true)).unwrap();
-        assert!(kubeadm.contains("  enabled: true\n  conditions:\n  - path: /livez\n"));
-        for distro in [Distro::K0s, Distro::Generic] {
-            let yaml = authentication_configuration(&options(distro, true)).unwrap();
-            assert!(!yaml.contains("anonymous"), "{distro:?}");
-        }
-        assert!(matches!(
-            authentication_configuration(&options(Distro::Kubesolo, true)),
-            Err(KubeConfigError::Unsupported)
-        ));
+    fn generic_configuration_has_no_anonymous_section() {
+        let yaml = authentication_configuration(&options(Distro::Generic, true)).unwrap();
+        assert!(!yaml.contains("anonymous"));
     }
 
     #[test]
@@ -646,13 +570,18 @@ jwt:
     #[test]
     fn instructions_name_the_file_and_the_restart() {
         let k3s = instructions(Distro::K3s, DiscoveryMode::Internal);
+        for expected in [
+            "authentication-config=/etc/rancher/k3s/zeabur-identity/authn.yaml",
+            "systemctl restart k3s",
+            "authentication-config=/etc/rancher/rke2/zeabur-identity/authn.yaml",
+            "/etc/rancher/rke2/zeabur-identity:/etc/rancher/rke2/zeabur-identity:ro",
+            "systemctl restart rke2-server",
+        ] {
+            assert!(k3s.contains(expected), "{expected}");
+        }
+        let generic = instructions(Distro::Generic, DiscoveryMode::Public);
         assert!(
-            k3s.contains("/etc/rancher/k3s/zeabur-identity/authn.yaml")
-                && k3s.contains("systemctl restart k3s")
+            generic.contains("--authentication-config") && generic.contains("Public discovery")
         );
-        let k0s = instructions(Distro::K0s, DiscoveryMode::Internal);
-        assert!(k0s.contains("0644") && k0s.contains("oidc-*"));
-        let kubeadm = instructions(Distro::Kubeadm, DiscoveryMode::Public);
-        assert!(kubeadm.contains("extraVolumes") && kubeadm.contains("Public discovery"));
     }
 }

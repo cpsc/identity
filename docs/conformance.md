@@ -20,7 +20,7 @@ its container image.
 | RFC 8414 OAuth 2.0 Authorization Server Metadata | RFC | Met |
 | RFC 7515 JWS, RFC 7517 JWK, RFC 7518 JWA, RFC 7638 thumbprints | RFC | Met |
 | RFC 7519 JWT, RFC 8725 JWT BCP, RFC 9068 JWT access tokens | RFC | Met |
-| KEP-3331 Structured Authentication Configuration (`apiserver.config.k8s.io/v1`) | GA in Kubernetes 1.34 | Met on k3s; k0s and kubeadm configuration generation implemented, clean release installations unverified; KubeSolo cannot pass the flag |
+| KEP-3331 Structured Authentication Configuration (`apiserver.config.k8s.io/v1`) | GA in Kubernetes 1.34 | Met on k3s; RKE2 configuration generation implemented, clean release installation unverified |
 | RFC 6749 OAuth 2.0 (authorization code, refresh) | RFC | Met |
 | RFC 7636 PKCE | RFC | Met (S256 only) |
 | RFC 9700 OAuth 2.0 Security BCP | BCP 240 | Partial: sender-constrained tokens (DPoP) not implemented |
@@ -97,7 +97,7 @@ its container image.
 | `validation.go` | `discoveryURL` https and different from `url` | internal TLS listener at the Service's ClusterIP | *(e2e)* | Met |
 | `oidc.go` | Internal discovery keeps `issuer`; `jwks_uri` from that document | `zeabur-identity-oauth/src/discovery.rs` | `zeabur-identity-oauth: discovery::tests::internal_variant_changes_only_the_jwks_uri`; *(e2e)* | Met |
 | AuthenticationConfiguration | Prefixed usernames and groups; no `system:`; access tokens only (`has(claims.client_id)`); lifetime bound; elevated groups only in short, fresh tokens | `zeabur-identity-k8s/src/kube_config.rs` | `zeabur-identity-k8s: kube_config::tests::*`; *(e2e)* `passkey_sign_in_then_kubectl_auth_whoami` | Met |
-| Distributions | `anonymous` per distribution; install steps for k3s, k0s, kubeadm; KubeSolo refused | `kube_config.rs` | `zeabur-identity-k8s: kube_config::tests::anonymous_section_follows_the_distribution` | Partial: configuration generation tested; cluster E2E covers k3s only, k0s/kubeadm release installation unverified |
+| Distributions | `anonymous` per distribution; install steps for K3s/RKE2 | `kube_config.rs` | `zeabur-identity-k8s: kube_config::tests::*` | Partial: configuration generation tested; cluster E2E covers k3s only, RKE2 release installation unverified |
 | Project requirement | `kubectl auth whoami` on k3s | — | *(e2e)* | Met |
 
 ## Kubernetes storage
@@ -203,7 +203,7 @@ Tests are in `zeabur-identity-signin/tests/signin.rs` unless noted.
 | WebAuthn Signal API | `signalAllAcceptedCredentials` only with a complete, non-empty list; `signalUnknownCredential` for an unregistered credential | — | `lib.rs` `accepted`, `Refused`; `ui/src/webauthn.ts` `signal` | `removing_a_passkey_revokes_what_it_signed_in` | Met |
 | Passkey Endpoints well-known URL | `/.well-known/passkey-endpoints` returns `enroll` and `manage`, 200 JSON, no redirect | — | `account.rs` `passkey_endpoints` | `passkey_endpoints_are_published` | Met |
 | Project requirement | Add, rename, remove and session revocation leave a `zeabur_identity::audit` log line and an `Event` on the `User` (actor, credential, AAGUID, client IP, user agent) | MUST | `account.rs` `log_outcome`, `record`; `zeabur-identity-k8s/src/credentials.rs` `record` | `adding_and_removing_need_a_recent_verified_passkey`, `rename_needs_the_csrf_token_and_same_origin`; `zeabur-identity-k8s/tests/account.rs: only_the_users_own_passkeys_are_listed_or_changed` | Met |
-| Project requirement | A new passkey's default label is its authenticator's name from a vendored AAGUID list (names only) | — | `zeabur-identity-ui/src/aaguid.rs` | `zeabur-identity-ui: aaguid::tests::*` | Met |
+| Project requirement | A passkey's label is the one the user typed; without one, the account page names it by its creation date | — | `lib.rs` `new_passkey`; `zeabur-identity-ui/templates/account.html` | `a_passkey_without_a_label_shows_its_creation_date` | Met |
 
 ## Upstream sign-in (GitHub, Google)
 

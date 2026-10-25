@@ -1282,6 +1282,22 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn a_passkey_without_a_label_shows_its_creation_date() {
+            let h = harness().await;
+            let mut dana_device = enrol_dana(&h).await;
+            let dana = sign_in_to_account(&h, &mut dana_device).await;
+            let stored = h
+                .service
+                .credentials
+                .passkeys(&user(&h, "dana").await)
+                .await
+                .unwrap();
+            assert!(stored.iter().all(|p| p.label.is_none()));
+            let html = page(&h, Some(&dana.cookie)).await;
+            assert!(html.contains("data-format=\"Passkey added %date%\""));
+        }
+
+        #[tokio::test]
         async fn changes_cannot_reach_another_users_objects() {
             let (h, _first, admin) = signed_in().await;
             let mut dana_device = enrol_dana(&h).await;

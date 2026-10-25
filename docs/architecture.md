@@ -1,8 +1,8 @@
 # Architecture
 
 Zeabur Identity is a passkey-first OpenID Connect issuer for
-self-managed Kubernetes clusters. k3s is tested in CI; k0s and kubeadm have configuration
-support but no release-installation verification. kube-apiserver verifies Zeabur Identity's tokens
+self-managed Kubernetes clusters. k3s is tested in CI; RKE2 uses the same configuration but has
+no release-installation verification. kube-apiserver verifies Zeabur Identity's tokens
 itself through [Structured Authentication Configuration][kep-3331], so people sign in with a
 passkey instead of carrying a long-lived admin kubeconfig that cannot be revoked. Any OpenID
 Connect client (Argo CD, Grafana, Headlamp, …) can use the same issuer.

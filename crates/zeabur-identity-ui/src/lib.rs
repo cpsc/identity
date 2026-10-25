@@ -1,6 +1,5 @@
 #![doc = include_str!("../README.md")]
 
-pub mod aaguid;
 pub mod assets;
 pub mod i18n;
 pub mod pages;

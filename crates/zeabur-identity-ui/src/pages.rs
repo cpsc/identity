@@ -331,7 +331,7 @@ pub enum Storage {
 pub struct PasskeyRow<'a> {
     /// `Credential` object name.
     pub name: &'a str,
-    /// The label, or `None` to show a generic name.
+    /// The label the user gave, or `None` to show a name with the creation date.
     pub label: Option<&'a str>,
     /// When it was added, in Unix seconds.
     pub added: Option<u64>,
@@ -411,7 +411,7 @@ const fn civil(days: i64) -> (i64, i64, i64) {
 
 struct PasskeyItem<'a> {
     name: &'a str,
-    label: &'a str,
+    label: Option<&'a str>,
     added: Option<Date>,
     last_used: Option<Date>,
     storage: &'static str,
@@ -457,10 +457,7 @@ pub fn account_page(lang: Lang, view: Option<AccountView<'_>>) -> Response {
             .iter()
             .map(|p| PasskeyItem {
                 name: p.name,
-                label: p
-                    .label
-                    .filter(|l| !l.trim().is_empty())
-                    .unwrap_or(m.passkey_unnamed),
+                label: p.label.filter(|l| !l.trim().is_empty()),
                 added: p.added.map(Date::new),
                 last_used: p.last_used.map(Date::new),
                 storage: match p.storage {

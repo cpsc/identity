@@ -1002,7 +1002,6 @@ where
             &account.user.name,
             &request.credential,
             request.label.as_deref(),
-            &requester,
             now,
         )?;
         audit.credential = Some(stored.name.clone());

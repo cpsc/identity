@@ -60,7 +60,11 @@
         </div>
         <div class="flex min-w-0 flex-1 flex-col gap-1">
           <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            <p class="min-w-0 text-sm leading-5 font-medium break-words text-main">{{ p.label }}</p>
+            <p class="min-w-0 text-sm leading-5 font-medium break-words text-main">
+              {%- if let Some(label) = p.label %}{{ label }}
+              {%- else if let Some(added) = p.added %}<time datetime="{{ added.iso }}" data-format="{{ m.passkey_unnamed_dated }}">{{ m.passkey_unnamed_dated.replace("%date%", added.text) }}</time>
+              {%- else %}{{ m.passkey_unnamed }}{% endif -%}
+            </p>
             {%- if p.this_device %}
             <span data-slot="badge" class="{{ ds::badge() }}">{{ m.passkey_this_device }}</span>
             {%- endif %}
@@ -81,7 +85,7 @@
           {%- endif %}
           <form data-rename hidden class="mt-1 flex flex-col gap-2" novalidate>
             <label class="sr-only" for="label-{{ loop.index }}">{{ m.setup_label }}</label>
-            <input id="label-{{ loop.index }}" name="label" type="text" maxlength="64" required autocomplete="off" value="{{ p.label }}" class="{{ ds::input() }}">
+            <input id="label-{{ loop.index }}" name="label" type="text" maxlength="64" required autocomplete="off" value="{{ p.label.unwrap_or_default() }}" class="{{ ds::input() }}">
             <div class="flex gap-2">
               <button type="submit" class="{{ ds::button("primary", "sm") }}">{{ m.save }}</button>
               <button type="button" data-action="cancel" class="{{ ds::button("secondary", "sm") }}">{{ m.cancel }}</button>

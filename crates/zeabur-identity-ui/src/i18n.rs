@@ -177,6 +177,8 @@ pub struct Messages {
     pub sign_out: &'static str,
     pub passkeys_title: &'static str,
     pub passkey_unnamed: &'static str,
+    /// The name of a passkey without a label. `%date%` is replaced with its creation date.
+    pub passkey_unnamed_dated: &'static str,
     /// `%date%` is replaced with a date.
     pub passkey_added: &'static str,
     /// `%date%` is replaced with a date.
@@ -280,6 +282,7 @@ pub const EN: Messages = Messages {
     sign_out: "Sign out",
     passkeys_title: "Passkeys",
     passkey_unnamed: "Passkey",
+    passkey_unnamed_dated: "Passkey added %date%",
     passkey_added: "Added %date%",
     passkey_last_used: "Last used %date%",
     passkey_synced: "Synced",
@@ -431,6 +434,7 @@ pub const ZH_TW: Messages = Messages {
     sign_out: "登出",
     passkeys_title: "通行密鑰",
     passkey_unnamed: "通行密鑰",
+    passkey_unnamed_dated: "%date% 新增的通行密鑰",
     passkey_added: "%date% 新增",
     passkey_last_used: "上次使用：%date%",
     passkey_synced: "已同步",
@@ -582,6 +586,7 @@ pub const ZH_CN: Messages = Messages {
     sign_out: "退出登录",
     passkeys_title: "通行密钥",
     passkey_unnamed: "通行密钥",
+    passkey_unnamed_dated: "%date% 添加的通行密钥",
     passkey_added: "%date% 添加",
     passkey_last_used: "上次使用：%date%",
     passkey_synced: "已同步",
@@ -743,7 +748,12 @@ mod tests {
             assert!(m.open_app.contains("%app%"), "{lang:?}");
             assert!(m.signed_in_as.contains("%user%"), "{lang:?}");
             assert!(m.session_passkey.contains("%name%"), "{lang:?}");
-            for dated in [m.passkey_added, m.passkey_last_used, m.session_signed_in] {
+            for dated in [
+                m.passkey_unnamed_dated,
+                m.passkey_added,
+                m.passkey_last_used,
+                m.session_signed_in,
+            ] {
                 assert!(dated.contains("%date%"), "{lang:?}");
             }
         }

@@ -44,20 +44,22 @@ You need two things that keep working when Zeabur Identity doesn't:
 
    | Distribution | Admin kubeconfig |
    |---|---|
-   | k3s | `/etc/rancher/k3s/k3s.yaml` |
-   | k0s | the output of `k0s kubeconfig admin`, saved to a file |
-   | kubeadm | `/etc/kubernetes/admin.conf` |
+   | K3s | `/etc/rancher/k3s/k3s.yaml` |
+   | RKE2 | `/etc/rancher/rke2/rke2.yaml` |
 
 2. **SSH or console access to every control-plane machine.** The admin kubeconfig only helps
    while kube-apiserver is running. If a bad configuration stops it from starting, the fix
    happens on the machine itself.
 
 Check that the admin kubeconfig really works on its own before you change kube-apiserver's
-authentication. For k3s:
+authentication. For K3s/RKE2:
 
 ```sh
-sudo k3s kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml auth whoami
-sudo k3s kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get --raw=/readyz
+# Run the line for your distribution.
+KUBECTL="k3s kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml"                         # K3s
+KUBECTL="/var/lib/rancher/rke2/bin/kubectl --kubeconfig=/etc/rancher/rke2/rke2.yaml"  # RKE2
+sudo $KUBECTL auth whoami
+sudo $KUBECTL get --raw=/readyz
 ```
 
 Then look after it:
@@ -76,8 +78,8 @@ distribution and Kubernetes version, which configuration files it reads, and any
 will need this to undo the change. The service unit shows where the settings come from:
 
 ```sh
-sudo systemctl cat k3s              # k3s
-sudo systemctl cat k0scontroller    # k0s
+sudo systemctl cat k3s              # K3s
+sudo systemctl cat rke2-server      # RKE2
 ```
 
 Then save a copy of the current configuration on each machine, in a root-only directory that
@@ -87,17 +89,8 @@ kube-apiserver and the kubelet don't watch:
 RECOVERY=/var/backups/zeabur-identity-control-plane/$(date -u +%Y%m%dT%H%M%SZ)
 sudo install -d -m 0700 "$RECOVERY"
 # Run the line for your distribution.
-sudo cp -a /etc/rancher/k3s "$RECOVERY/k3s"           # k3s
-sudo cp -a /etc/k0s/k0s.yaml "$RECOVERY/k0s.yaml"      # k0s
-sudo cp -a /etc/kubernetes "$RECOVERY/kubernetes"     # kubeadm
-```
-
-On kubeadm, also save the cluster configuration while the API still answers:
-
-```sh
-umask 077
-kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system \
-  get configmap kubeadm-config -o yaml > kubeadm-config.before-zeabur-identity.yaml
+sudo cp -a /etc/rancher/k3s "$RECOVERY/k3s"           # K3s
+sudo cp -a /etc/rancher/rke2 "$RECOVERY/rke2"         # RKE2
 ```
 
 These copies can contain private keys, so treat them like the admin kubeconfig: keep an
@@ -117,13 +110,8 @@ Two kube-apiserver rules trip people up when they undo a change:
 So when you go back, restore the previous authentication **and** anonymous settings together.
 Each distribution handles anonymous access a little differently in Zeabur Identity's output:
 
-- **k3s:** the file sets `anonymous.enabled: false`, because k3s drops its own
+- **K3s/RKE2:** the file sets `anonymous.enabled: false`, because K3s/RKE2 drop their own
   `--anonymous-auth=false` once an authentication file is in use.
-- **k0s:** the file has no `anonymous` section and k0s keeps its flag. Don't add one; some k0s
-  releases reject the combination.
-- **kubeadm:** the file allows anonymous access only to `/livez`, `/readyz` and `/healthz`, so
-  the kubelet's health checks keep working. If you remove all anonymous access without changing
-  those checks, the kubelet keeps restarting a healthy kube-apiserver.
 - **generic:** anonymous access is left to you.
 
 A running kube-apiserver reloads a valid authentication file by itself. A missing or broken
@@ -607,147 +595,52 @@ Check each machine directly, at its own address, with the admin kubeconfig. A re
 load balancer may land on a machine you haven't touched. Don't use
 `--insecure-skip-tls-verify`.
 
-### k3s
+### K3s/RKE2
 
-Zeabur Identity's setup adds:
+Zeabur Identity's setup adds, with `k3s` on K3s and `rke2` on RKE2 in each path:
 
 - the authentication file `/etc/rancher/k3s/zeabur-identity/authn.yaml`;
-- the drop-in `/etc/rancher/k3s/config.yaml.d/50-zeabur-identity.yaml`, which points kube-apiserver at it.
+- the drop-in `/etc/rancher/k3s/config.yaml.d/50-zeabur-identity.yaml`, which points kube-apiserver
+  at it. On RKE2, it also mounts `/etc/rancher/rke2/zeabur-identity` into the kube-apiserver pod.
 
-k3s reads drop-ins in alphabetical order, and a later file **replaces** an earlier list unless
-the key ends in `+`. So `50-zeabur-identity.yaml` may have hidden `kube-apiserver-arg` values from
-earlier files. Before removing it, check what will come back.
+The Zeabur installer sets up these files on RKE2.
+
+K3s/RKE2 read drop-ins in alphabetical order, and a later file **replaces** an earlier list
+unless the key ends in `+`. So `50-zeabur-identity.yaml` may have hidden `kube-apiserver-arg`
+values from earlier files. Before removing it, check what will come back.
 
 If `50-zeabur-identity.yaml` exists only for Zeabur Identity, and nothing else sets `--authentication-config`, move
 it out of the way:
 
 ```sh
+# Run the line for your distribution.
+DIR=/etc/rancher/k3s; UNIT=k3s; KUBECTL="k3s kubectl --kubeconfig=$DIR/k3s.yaml"                                   # K3s
+DIR=/etc/rancher/rke2; UNIT=rke2-server; KUBECTL="/var/lib/rancher/rke2/bin/kubectl --kubeconfig=$DIR/rke2.yaml"  # RKE2
 RECOVERY=/var/backups/zeabur-identity-emergency/$(date -u +%Y%m%dT%H%M%SZ)
 sudo install -d -m 0700 "$RECOVERY"
-if sudo test -f /etc/rancher/k3s/zeabur-identity/authn.yaml; then
-  sudo cp -a /etc/rancher/k3s/zeabur-identity/authn.yaml "$RECOVERY/authn.failed.yaml"
+if sudo test -f "$DIR/zeabur-identity/authn.yaml"; then
+  sudo cp -a "$DIR/zeabur-identity/authn.yaml" "$RECOVERY/authn.failed.yaml"
 fi
-sudo mv /etc/rancher/k3s/config.yaml.d/50-zeabur-identity.yaml "$RECOVERY/50-zeabur-identity.failed.yaml"
-sudo systemctl restart k3s
-sudo journalctl -u k3s --since '5 minutes ago' --no-pager
-sudo k3s kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get --raw=/readyz
+sudo mv "$DIR/config.yaml.d/50-zeabur-identity.yaml" "$RECOVERY/50-zeabur-identity.failed.yaml"
+sudo systemctl restart "$UNIT"
+sudo journalctl -u "$UNIT" --since '5 minutes ago' --no-pager
+sudo $KUBECTL get --raw=/readyz
 ```
 
 If the drop-in already existed before Zeabur Identity, restore its earlier contents instead. If you put
 the flag in `config.yaml`, another drop-in or the systemd unit, undo it there and keep the rest
 of the arguments.
 
-Leave `authn.yaml` where it is. Without the flag, k3s ignores it, and you may want to compare it
-with the broken version.
+Leave `authn.yaml` where it is. Without the flag, kube-apiserver ignores it, and you may want to
+compare it with the broken version.
 
 Next time, merge Zeabur Identity's arguments into your existing list rather than replacing it.
-
-### k0s
-
-Zeabur Identity's setup adds:
-
-- the authentication file `/etc/k0s/zeabur-identity/authn.yaml`;
-- the key `spec.api.extraArgs.authentication-config` in the controller configuration, usually
-  `/etc/k0s/k0s.yaml`. Check the `k0scontroller` service for the file it actually uses.
-
-Save a copy, then edit the active file:
-
-```sh
-K0S_CONFIG=/etc/k0s/k0s.yaml   # the file the service actually uses
-RECOVERY=/var/backups/zeabur-identity-emergency/$(date -u +%Y%m%dT%H%M%SZ)
-sudo install -d -m 0700 "$RECOVERY"
-sudo cp -a "$K0S_CONFIG" "$RECOVERY/k0s.failed.yaml"
-sudoedit "$K0S_CONFIG"
-```
-
-Remove `spec.api.extraArgs.authentication-config` if Zeabur Identity added it; otherwise put back its
-previous value. Restore any `oidc-*` entries you removed when installing. Also check
-`spec.api.rawArgs`, which can carry authentication flags too. Leave everything else as it was.
-
-```sh
-sudo systemctl restart k0scontroller
-sudo journalctl -u k0scontroller --since '5 minutes ago' --no-pager
-sudo k0s kubectl --kubeconfig=/var/lib/k0s/pki/admin.conf get --raw=/readyz
-```
-
-`k0s kubectl` is the `kubectl` built into k0s, so it works even where `kubectl` isn't
-installed. `/var/lib/k0s/pki/admin.conf` is the controller's own admin kubeconfig; adjust the
-path if you use a different data directory. Controller-only machines don't show up in
-`kubectl get nodes`, so use `/readyz` to check them.
-
-`spec.api` isn't part of k0s's dynamic configuration, so `k0s config edit` won't help here. If
-you manage the cluster with k0sctl or another tool, update its configuration too, or the next run
-puts the broken setting back.
-
-### kubeadm and kind
-
-Zeabur Identity's setup adds:
-
-- the directory `/etc/kubernetes/zeabur-identity`, with `authn.yaml` inside, mounted into kube-apiserver;
-- an `--authentication-config` argument and a `zeabur-identity` volume in
-  `/etc/kubernetes/manifests/kube-apiserver.yaml`;
-- matching entries in the `kubeadm-config` ConfigMap.
-
-The kubelet watches the manifest file and restarts kube-apiserver when it changes, even with the
-API down. So fix the file on the machine first.
-
-> [!WARNING]
-> The kubelet runs **every** file in `/etc/kubernetes/manifests`, whatever its name. Never leave
-> a `.bak`, an editor swap file or any other copy there. Keep copies elsewhere, and only use a
-> manifest from the same machine.
-
-If you have the manifest from before Zeabur Identity, and the Kubernetes version hasn't changed since,
-put it back. Set `NODE_API` to this machine's own API address, not the load balancer's, so the
-last check talks to the kube-apiserver you just fixed:
-
-```sh
-BEFORE=/var/backups/zeabur-identity-control-plane/20260101T000000Z   # saved before installing Zeabur Identity
-NODE_API=https://10.0.0.11:6443                              # this machine's own address
-RECOVERY=/var/backups/zeabur-identity-emergency/$(date -u +%Y%m%dT%H%M%SZ)
-sudo install -d -m 0700 "$RECOVERY"
-sudo cp -a /etc/kubernetes/manifests/kube-apiserver.yaml "$RECOVERY/kube-apiserver.failed.yaml"
-sudo cp -a "$BEFORE/kubernetes/manifests/kube-apiserver.yaml" \
-  "$RECOVERY/kube-apiserver.recovered.yaml"
-sudo mv "$RECOVERY/kube-apiserver.recovered.yaml" /etc/kubernetes/manifests/kube-apiserver.yaml
-sudo journalctl -u kubelet --since '5 minutes ago' --no-pager
-sudo crictl ps -a --name kube-apiserver
-sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf --server="$NODE_API" get --raw=/readyz
-```
-
-The `mv` replaces the file in one step only if both paths are on the same filesystem; if
-your backup directory isn't, copy the file next to `/etc/kubernetes` first. While the API is
-down, read kube-apiserver's logs with `sudo crictl logs <container-id>`. On kind, run all of this
-inside the control-plane container.
-
-If the old manifest is out of date, copy the current one somewhere outside `manifests`, and in
-the copy:
-
-1. remove the `--authentication-config` argument, or restore its previous value;
-2. remove the `zeabur-identity` volume and volume mount, if nothing else uses them;
-3. put back any OIDC or anonymous flags you removed, and leave everything else alone;
-
-then move it into place as above.
-
-Once kube-apiserver is healthy, update `kubeadm-config` so a later `kubeadm upgrade` doesn't
-bring the change back:
-
-```sh
-sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf -n kube-system edit configmap kubeadm-config
-```
-
-Under `data.ClusterConfiguration.apiServer`, remove the `authentication-config` entry from
-`extraArgs` and the `zeabur-identity` entry from `extraVolumes`, and restore any earlier OIDC or anonymous
-settings. Edit only those entries; don't replace the whole ConfigMap with an old copy. This
-doesn't change the other machines: fix each one's manifest the same way.
 
 ### Other distributions
 
 `--distro generic` only writes an authentication file. Before you use it, write down how your
 cluster starts kube-apiserver and how to undo the change without the API. On managed Kubernetes,
 use your provider's supported way to configure authentication, if there is one.
-
-KubeSolo isn't supported: it doesn't let you pass an authentication configuration to
-kube-apiserver. Don't work around this with another `--distro` value.
 
 ### Check the result
 
@@ -918,12 +811,11 @@ How Zeabur Identity does it:
 
 Platform documentation:
 
-- k3s: [configuration](https://docs.k3s.io/installation/configuration),
+- K3s: [configuration](https://docs.k3s.io/installation/configuration),
   [cluster access](https://docs.k3s.io/cluster-access) and
   [backup and restore](https://docs.k3s.io/datastore/backup-restore).
-- k0s: [configuration](https://docs.k0sproject.io/stable/configuration/) and
-  [dynamic configuration](https://docs.k0sproject.io/stable/dynamic-configuration/).
+- RKE2: [configuration](https://docs.rke2.io/install/configuration) and
+  [cluster access](https://docs.rke2.io/cluster_access).
 - Kubernetes: [authentication](https://kubernetes.io/docs/reference/access-authn-authz/authentication/),
-  [reconfiguring kubeadm](https://kubernetes.io/docs/tasks/administer-cluster/kubeadm/kubeadm-reconfigure/),
   [static pods](https://kubernetes.io/docs/tasks/configure-pod-container/static-pod/) and
   [rolling back a Deployment](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#rolling-back-a-deployment).

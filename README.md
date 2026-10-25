@@ -30,7 +30,7 @@ and restarting a deployment is refused with 403 until you ask for admin rights.*
   admin tokens cannot be renewed at all. Revoke a person's sessions and their access ends when
   the token in hand expires, within ten minutes.
 - **Runs inside the cluster it protects.** One small pod (about 20 MB), no database, no extra
-  servers. Tested in CI on k3s; k0s and kubeadm configuration is available but installation is
+  servers. Tested in CI on k3s; the same configuration covers RKE2, but installation there is
   unverified. OpenID Connect apps such as Argo CD or Grafana can use the same issuer.
 
 ## What it looks like

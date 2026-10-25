@@ -32,7 +32,6 @@ use zeabur_identity_store::{
     Consume, CreateCredential, CredentialStore, Directory, GrantStore, NewPasskey, SetupStore, User,
 };
 
-use crate::device::Requester;
 use crate::passkeys::{Passkeys, authenticator, credential_name};
 use crate::problem::Problem;
 
@@ -261,36 +260,23 @@ pub(crate) fn clean_label(label: Option<&str>) -> Option<String> {
     (!label.is_empty()).then_some(label)
 }
 
-/// The record to store for a newly registered passkey. Without a label from the user, it is
-/// named after the authenticator (by AAGUID), else the browser and system.
+/// The record to store for a newly registered passkey. The label is the one the user typed, if
+/// any. The account page shows a passkey without a label by its creation date.
 pub(crate) fn new_passkey(
     passkey: &Passkey,
     user: &str,
     response: &RegisterPublicKeyCredential,
     label: Option<&str>,
-    requester: &Requester,
     now: UnixTime,
 ) -> Result<NewPasskey, Problem> {
     let credential_id: Vec<u8> = AsRef::<[u8]>::as_ref(passkey.cred_id()).to_vec();
     let found = authenticator(response);
-    let label = clean_label(label).or_else(|| {
-        let named = found
-            .aaguid
-            .as_deref()
-            .and_then(zeabur_identity_ui::aaguid::name);
-        clean_label(
-            named
-                .map(str::to_owned)
-                .or_else(|| requester.device_name())
-                .as_deref(),
-        )
-    });
     Ok(NewPasskey {
         name: credential_name(&credential_id),
         user: user.to_owned(),
         credential_id: URL_SAFE_NO_PAD.encode(&credential_id),
         record: serde_json::to_string(passkey).map_err(internal)?,
-        label,
+        label: clean_label(label),
         aaguid: found.aaguid,
         backup_eligible: found.backup_eligible,
         created_at: now,
@@ -558,7 +544,6 @@ where
 
 async fn setup_finish<D, G, C, K, S>(
     State(service): State<Shared<D, G, C, K, S>>,
-    requester: Requester,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response
@@ -606,7 +591,6 @@ where
             &token.user,
             &request.credential,
             request.label.as_deref(),
-            &requester,
             now,
         )?;
         match service

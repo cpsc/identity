@@ -32,6 +32,8 @@
 - Issuing and redeeming a setup link or invitation each record a core `Event` on the `User`
   (`SetupLinkIssued`, `InvitationIssued`, `SetupLinkRedeemed`, `InvitationRedeemed`). If
   `zeabur-identityctl` cannot record the `Event`, it does not print the link.
+- A disabled user (`spec.disabled: true`) cannot redeem a setup link or an invitation. Before, a
+  suspended person could add a passkey that worked as soon as the account was enabled again.
 
 ### Removed
 

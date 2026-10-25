@@ -113,6 +113,11 @@ pub(crate) const SETUP_INVALID: Problem = Problem::new(
     "setup-invalid",
     "This setup link is invalid, already used, or expired. Ask your cluster administrator for a new link.",
 );
+pub(crate) const ACCOUNT_DISABLED: Problem = Problem::new(
+    StatusCode::FORBIDDEN,
+    "account-disabled",
+    "This account is disabled, so the link does not work. Ask your cluster administrator to enable it.",
+);
 pub(crate) const CEREMONY_EXPIRED: Problem = Problem::new(
     StatusCode::BAD_REQUEST,
     "ceremony-expired",
@@ -511,7 +516,9 @@ pub(crate) fn redeemed(token: &str) -> &'static str {
 /// current `User`.
 ///
 /// The `User` must have the UID the token was issued for. A token left over from a deleted
-/// `User` thus does not enrol a new `User` with the same name.
+/// `User` thus does not enrol a new `User` with the same name. A disabled `User` cannot redeem
+/// a token: otherwise a suspended person could add a passkey that works when the account is
+/// enabled again.
 pub(crate) async fn valid_setup_token<S: SetupStore, D: Directory>(
     setup: &S,
     directory: &D,
@@ -547,6 +554,9 @@ pub(crate) async fn valid_setup_token<S: SetupStore, D: Directory>(
             "the setup token was issued for an earlier user of this name"
         );
         return Err(SETUP_INVALID);
+    }
+    if user.disabled {
+        return Err(ACCOUNT_DISABLED);
     }
     Ok((stored, user))
 }

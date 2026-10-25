@@ -702,6 +702,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_disabled_user_cannot_redeem_a_link() {
+        for (token, name) in [(SETUP_TOKEN, "admin"), (INVITATION, "dana")] {
+            let h = harness().await;
+            let mut device = device();
+            // The ceremony starts while the user is enabled, then an admin disables them.
+            let (credential, ceremony) = start_enrolment(&h, &mut device, token).await;
+            let directory = &h.service.oauth.directory;
+            let mut user = directory.user(name).await.unwrap().unwrap();
+            user.disabled = true;
+            directory.put_user(user.clone());
+
+            let options = post(&h.app, "/setup/options", json!({ "token": token }), &[]).await;
+            assert_eq!(options.status, StatusCode::FORBIDDEN, "{name}");
+            assert_eq!(
+                options.kind(),
+                "urn:zeabur-identity:problem:account-disabled",
+                "{name}"
+            );
+            let finish = post(
+                &h.app,
+                "/setup",
+                json!({ "token": token, "credential": credential }),
+                &[(CEREMONY_COOKIE, &ceremony)],
+            )
+            .await;
+            assert_eq!(
+                finish.kind(),
+                "urn:zeabur-identity:problem:account-disabled",
+                "{name}"
+            );
+            assert!(
+                h.service
+                    .credentials
+                    .passkeys(&user)
+                    .await
+                    .unwrap()
+                    .is_empty(),
+                "{name}"
+            );
+
+            // The link still works once an admin enables the user again.
+            user.disabled = false;
+            directory.put_user(user);
+            let options = post(&h.app, "/setup/options", json!({ "token": token }), &[]).await;
+            assert_eq!(options.status, StatusCode::OK, "{name}");
+        }
+    }
+
+    #[tokio::test]
     async fn setup_token_is_single_use() {
         let h = harness().await;
         enrol(&h, &mut device()).await;

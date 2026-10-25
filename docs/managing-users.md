@@ -96,6 +96,13 @@ kubectl -n zeabur-identity rollout status deploy/zeabur-identity
 `zeabur-identityctl manifests` does not remember earlier options. Pass the same image, namespace,
 `--config-secret` and `--serve-arg` options you installed with, plus the new one.
 
+A link also does not work while the user is disabled. Enable the user, and the same link works
+again until it expires:
+
+```sh
+kubectl -n zeabur-identity patch zbuser alice --type=merge -p '{"spec":{"disabled":false}}'
+```
+
 ## Change groups or the display name
 
 Edit the `User`:
@@ -331,8 +338,8 @@ an invitation instead, which can also link GitHub or Google.
 
 ## Suspend or remove someone
 
-**Suspend first.** A disabled user cannot sign in, and their sessions stop renewing. Nothing is
-deleted, so you can undo it:
+**Suspend first.** A disabled user cannot sign in, their sessions stop renewing, and their
+setup links and invitations stop working. Nothing is deleted, so you can undo it:
 
 ```sh
 kubectl -n zeabur-identity patch zbuser alice --type=merge -p '{"spec":{"disabled":true}}'

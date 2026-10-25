@@ -11,6 +11,7 @@ use thiserror::Error;
 use webauthn_rs::prelude::{
     DiscoverableAuthentication, DiscoverableKey, Passkey, PasskeyRegistration, PublicKeyCredential,
     RegisterPublicKeyCredential, RequestChallengeResponse, Url, Uuid, Webauthn, WebauthnBuilder,
+    WebauthnError,
 };
 use zeabur_identity_core::config::BaseUrl;
 
@@ -158,7 +159,13 @@ impl Passkeys {
         let result = self
             .webauthn
             .finish_discoverable_authentication(response, state, &[DiscoverableKey::from(passkey)])
-            .map_err(|e| PasskeyError::Verification(e.to_string()))?;
+            .map_err(|e| {
+                if matches!(e, WebauthnError::UserNotVerified) {
+                    PasskeyError::NotUserVerified
+                } else {
+                    PasskeyError::Verification(e.to_string())
+                }
+            })?;
         // The library requires UV under this policy; check again so a library change cannot
         // silently weaken it (Pocket ID advisory
         // GHSA-pgqv-hh75-xx4x: UV was required in the options but not checked).

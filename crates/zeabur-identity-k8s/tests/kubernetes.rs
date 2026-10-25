@@ -1730,6 +1730,19 @@ mod tests {
             .replace("zeabur-identity-user-sync", &policy);
         let (ok, stderr) = kubectl(&["apply", "-f", "-"], &manifests);
         assert!(ok, "{stderr}");
+        // The message of the guide's validation that starts with this expression.
+        let rule = |expression: &str| {
+            let (_, rest) = manifests
+                .split_once(&format!("- expression: {expression}"))
+                .unwrap_or_else(|| panic!("no validation {expression}"));
+            let (_, message) = rest.split_once("message: ").unwrap();
+            message.lines().next().unwrap().to_owned()
+        };
+        let created_only = rule("variables.wasManaged");
+        let keeps_label = rule("variables.managed");
+        let name_is_username = rule("object.spec.username == object.metadata.name");
+        let allowlisted = rule("\"!has(object.spec.groups)");
+        let elevated = rule("variables.elevated == variables.wasElevated");
 
         // A user created by an admin, outside the tool's reach.
         env.admin_api::<User>()
@@ -1789,10 +1802,7 @@ mod tests {
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
         let refused = refused.expect("the policy never took effect");
-        assert!(
-            refused.contains("never assigns or changes elevated groups"),
-            "{refused}"
-        );
+        assert!(refused.contains(&elevated), "{refused}");
 
         // Server-side apply: create (CREATE) and change (UPDATE) a managed user.
         let (ok, stderr) = apply(&user("ana", "ana", true, ", groups: [dev]"));
@@ -1806,20 +1816,11 @@ mod tests {
         assert!(ok, "{stderr}");
 
         for (manifest, message) in [
-            (
-                user("ana", "ana", true, ", groups: [admins]"),
-                "only assign allowlisted groups",
-            ),
-            (
-                user("ana", "ana", false, ", groups: [dev]"),
-                "must keep the label",
-            ),
-            (user("bob", "bob", false, ""), "must keep the label"),
-            (user("eve", "root", true, ""), "must equal the username"),
-            (
-                user("root", "root", true, ", groups: [dev]"),
-                "only change users it created",
-            ),
+            (user("ana", "ana", true, ", groups: [admins]"), &allowlisted),
+            (user("ana", "ana", false, ", groups: [dev]"), &keeps_label),
+            (user("bob", "bob", false, ""), &keeps_label),
+            (user("eve", "root", true, ""), &name_is_username),
+            (user("root", "root", true, ", groups: [dev]"), &created_only),
         ] {
             let (ok, stderr) = apply(&manifest);
             assert!(!ok && stderr.contains(message), "{manifest}\n{stderr}");
@@ -1840,10 +1841,7 @@ mod tests {
             ],
             "",
         );
-        assert!(
-            !ok && stderr.contains("only change users it created"),
-            "{stderr}"
-        );
+        assert!(!ok && stderr.contains(&created_only), "{stderr}");
         let (ok, stderr) = kubectl(
             &[
                 "-n",
@@ -1858,10 +1856,7 @@ mod tests {
             ],
             "",
         );
-        assert!(
-            !ok && stderr.contains("never assigns or changes elevated groups"),
-            "{stderr}"
-        );
+        assert!(!ok && stderr.contains(&elevated), "{stderr}");
 
         // Elevated groups an admin adds to a managed user survive the tool's updates, which may
         // neither drop nor change them.
@@ -1891,10 +1886,7 @@ mod tests {
             ),
         ] {
             let (ok, stderr) = apply(&manifest);
-            assert!(
-                !ok && stderr.contains("never assigns or changes elevated groups"),
-                "{manifest}\n{stderr}"
-            );
+            assert!(!ok && stderr.contains(&elevated), "{manifest}\n{stderr}");
         }
 
         // RBAC: no delete, nothing but users.

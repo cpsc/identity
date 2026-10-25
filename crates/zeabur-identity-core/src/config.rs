@@ -24,7 +24,7 @@ pub enum ConfigError {
         /// The configuration field.
         field: &'static str,
         /// The rule that was broken.
-        reason: &'static str,
+        reason: BaseUrlRule,
     },
     /// The value is not a valid duration.
     #[error(
@@ -37,6 +37,44 @@ pub enum ConfigError {
     /// The key rotation timings are inconsistent.
     #[error("key rotation: {0}")]
     BadRotationPolicy(&'static str),
+}
+
+/// A rule for issuer-style base URLs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BaseUrlRule {
+    /// No fragment.
+    Fragment,
+    /// The `https` scheme.
+    Scheme,
+    /// No credentials.
+    Credentials,
+    /// No query.
+    Query,
+    /// No path.
+    Path,
+    /// No trailing slash.
+    TrailingSlash,
+    /// A host.
+    Host,
+    /// Lower-case scheme and host, no default port.
+    Normalised,
+}
+
+impl fmt::Display for BaseUrlRule {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Fragment => "must not contain a fragment",
+            Self::Scheme => "must use the https scheme",
+            Self::Credentials => "must not contain credentials",
+            Self::Query => "must not contain a query",
+            Self::Path => "must not contain a path",
+            Self::TrailingSlash => "must not end with a slash",
+            Self::Host => "must have a host",
+            Self::Normalised => {
+                "must be in normalised form (lower-case scheme and host, no default port)"
+            }
+        })
+    }
 }
 
 /// An `https` URL with a host and no path, query, fragment or credentials, written without a
@@ -68,7 +106,7 @@ impl BaseUrl {
     pub fn parse(field: &'static str, input: &str) -> Result<Self, ConfigError> {
         let bad = |reason| ConfigError::BadBaseUrl { field, reason };
         if input.contains('#') {
-            return Err(bad("must not contain a fragment"));
+            return Err(bad(BaseUrlRule::Fragment));
         }
         let uri: Uri = input
             .parse()
@@ -83,23 +121,23 @@ impl BaseUrl {
             });
         };
         if scheme != "https" {
-            return Err(bad("must use the https scheme"));
+            return Err(bad(BaseUrlRule::Scheme));
         }
         if authority.as_str().contains('@') {
-            return Err(bad("must not contain credentials"));
+            return Err(bad(BaseUrlRule::Credentials));
         }
         if uri.query().is_some() {
-            return Err(bad("must not contain a query"));
+            return Err(bad(BaseUrlRule::Query));
         }
         if !matches!(uri.path(), "" | "/") {
-            return Err(bad("must not contain a path"));
+            return Err(bad(BaseUrlRule::Path));
         }
         if input.ends_with('/') {
-            return Err(bad("must not end with a slash"));
+            return Err(bad(BaseUrlRule::TrailingSlash));
         }
         let host = authority.host();
         if host.is_empty() {
-            return Err(bad("must have a host"));
+            return Err(bad(BaseUrlRule::Host));
         }
         // The identifier must be exactly what verifiers compare against, so only the normal
         // form is accepted: lower-case ASCII scheme and host (internationalised names in their
@@ -109,9 +147,7 @@ impl BaseUrl {
             || host.bytes().any(|b| b.is_ascii_uppercase())
             || authority.port_u16() == Some(443)
         {
-            return Err(bad(
-                "must be in normalised form (lower-case scheme and host, no default port)",
-            ));
+            return Err(bad(BaseUrlRule::Normalised));
         }
         Ok(Self(input.to_owned()))
     }
@@ -185,23 +221,14 @@ mod tests {
     #[test]
     fn rejects_everything_else() {
         let cases = [
-            ("http://login.example.com", "must use the https scheme"),
-            ("https://login.example.com/", "must not end with a slash"),
-            ("https://login.example.com/auth", "must not contain a path"),
-            ("https://login.example.com?a=b", "must not contain a query"),
-            ("https://login.example.com#x", "must not contain a fragment"),
-            (
-                "https://u:p@login.example.com",
-                "must not contain credentials",
-            ),
-            (
-                "https://Login.Example.com",
-                "must be in normalised form (lower-case scheme and host, no default port)",
-            ),
-            (
-                "https://login.example.com:443",
-                "must be in normalised form (lower-case scheme and host, no default port)",
-            ),
+            ("http://login.example.com", BaseUrlRule::Scheme),
+            ("https://login.example.com/", BaseUrlRule::TrailingSlash),
+            ("https://login.example.com/auth", BaseUrlRule::Path),
+            ("https://login.example.com?a=b", BaseUrlRule::Query),
+            ("https://login.example.com#x", BaseUrlRule::Fragment),
+            ("https://u:p@login.example.com", BaseUrlRule::Credentials),
+            ("https://Login.Example.com", BaseUrlRule::Normalised),
+            ("https://login.example.com:443", BaseUrlRule::Normalised),
         ];
         for (input, reason) in cases {
             assert_eq!(

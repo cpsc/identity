@@ -30,7 +30,7 @@ mod tests {
     use zeabur_identity_keys::store::MemoryKeyStore;
     use zeabur_identity_oauth::endpoints::{self, FLOW_COOKIE};
     use zeabur_identity_oauth::{AuthorizationServer, Lifetimes, OneTimeIds};
-    use zeabur_identity_signin::passkeys::Passkeys;
+    use zeabur_identity_signin::passkeys::{PasskeyError, Passkeys};
     use zeabur_identity_signin::{CEREMONY_COOKIE, SignIn};
     use zeabur_identity_store::{
         Client, ClientType, MemoryCredentialStore, MemoryDirectory, MemoryGrantStore,
@@ -506,11 +506,9 @@ mod tests {
         // Refused by the UV check, not by the signature, challenge or origin checks.
         let diagnostic = rejected.diagnostics.first().unwrap();
         assert_eq!(diagnostic["fields"]["reason"], "passkey-failed");
-        assert!(
-            diagnostic["fields"]["error"]
-                .as_str()
-                .unwrap()
-                .contains("user verified bit is not set"),
+        assert_eq!(
+            diagnostic["fields"]["error"],
+            PasskeyError::NotUserVerified.to_string(),
             "{diagnostic}"
         );
 

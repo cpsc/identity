@@ -41,6 +41,7 @@ mod tests {
         external_credential_name,
     };
     use zeabur_identity_test_support::logging::Capture;
+    use zeabur_identity_ui::i18n::Lang;
 
     const ISSUER: &str = "https://login.example.com";
     const CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
@@ -807,7 +808,9 @@ mod tests {
             assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{claim}={value}");
             // A token outside its validity window points at this server's clock.
             assert_eq!(
-                reply.body.contains("The server’s clock looks wrong"),
+                reply
+                    .body
+                    .contains(Lang::En.messages().err_clock_skew.title),
                 matches!(claim, "exp" | "iat"),
                 "{claim}={value}"
             );

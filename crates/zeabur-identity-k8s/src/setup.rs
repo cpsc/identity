@@ -15,9 +15,14 @@
 //! Redeeming is a delete with `uid` and `resourceVersion` preconditions, so exactly one of any
 //! number of concurrent redemptions succeeds, and issuing a new link (which replaces the Secret)
 //! invalidates every earlier one. The token travels in the URL fragment, which browsers do not
-//! send to servers or proxies. A user who already has passkeys gets a link only with `--reset`,
-//! which also deletes the user's credentials and grants: otherwise the link's holder could add a
-//! passkey to an account that someone else controls.
+//! send to servers or proxies. A user who already has passkeys or linked accounts gets a setup
+//! link or an invitation only with `--reset`, which also deletes the user's credentials and
+//! grants: otherwise the link's holder could add a passkey to an account that someone else
+//! controls. A credential owned by an earlier `User` of the same name does not count: it does not
+//! sign in as this `User`, and garbage collection deletes it.
+//!
+//! A link stays valid for at most [`MAX_VALID_FOR`]: the lifetime of an invitation from Zeabur and
+//! the default of `invite`. A link sent through chat or email can leak, so its lifetime has a cap.
 //!
 //! Reset deletes the user's invitations first, then credentials, then grants. Invitations go
 //! first because each one can enrol another passkey: one left behind would let whoever holds it
@@ -50,7 +55,7 @@ use zeabur_identity_store::{Consume, SetupStore, SetupToken, StoreError, invitat
 
 use super::MANAGED_BY;
 use super::objects::{DeleteOutcome, delete_if_unchanged};
-use super::users::user_owner_uid;
+use super::users::{owned_by_another, user_owner_uid};
 use crate::crd::credential::Credential;
 use crate::crd::grant::Grant;
 use crate::crd::invitation::Invitation;
@@ -62,6 +67,9 @@ pub const SETUP_SECRET: &str = "zeabur-identity-setup";
 /// Its `type`.
 pub const SECRET_TYPE: &str = "identity.zeabur.com/setup";
 pub use zeabur_identity_core::protocol::ADMIN_GROUP;
+
+/// The longest a setup link or an invitation stays valid.
+pub const MAX_VALID_FOR: Duration = Duration::from_hours(7 * 24);
 
 const USER_KEY: &str = "user";
 const HASH_KEY: &str = "token-hash";
@@ -210,15 +218,15 @@ impl SetupStore for KubeSetupStore {
     }
 }
 
-/// Why a setup link could not be issued.
+/// Why a setup link or an invitation could not be issued.
 #[derive(Debug, Error)]
-pub enum SetupLinkError {
+pub enum LinkError {
     /// The Kubernetes API failed (often: the kubeconfig lacks the rights).
     #[error("Kubernetes API request failed: {0}")]
     Kubernetes(#[from] kube::Error),
-    /// The user already has passkeys; issuing a link would let its holder add another.
+    /// The user can already sign in; a link would let its holder add another passkey.
     #[error(
-        "user {user} already has {count} passkey(s); pass --reset to remove them, their sessions, and pending invitations"
+        "user {user} already has {count} passkey(s) or linked account(s); pass --reset to remove them, their sessions, and pending invitations"
     )]
     HasCredentials {
         /// User object name.
@@ -226,60 +234,47 @@ pub enum SetupLinkError {
         /// How many credentials exist.
         count: usize,
     },
+    /// The requested lifetime is longer than [`MAX_VALID_FOR`].
+    #[error(
+        "a link stays valid for at most {} days; pass a shorter --valid-for",
+        MAX_VALID_FOR.as_secs() / 86_400
+    )]
+    TooLong,
     /// Randomness failed.
     #[error("unable to generate the token")]
     Crypto,
 }
 
-/// A freshly issued setup link.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SetupLink {
-    /// `https://<issuer>/setup#token=<token>`. The token is in the fragment, so it never reaches
-    /// server or proxy logs.
-    pub url: String,
-    /// When the link stops working.
-    pub expires_at: UnixTime,
+/// Refuses a lifetime longer than [`MAX_VALID_FOR`].
+pub(crate) fn check_valid_for(valid_for: Duration) -> Result<(), LinkError> {
+    if valid_for > MAX_VALID_FOR {
+        return Err(LinkError::TooLong);
+    }
+    Ok(())
 }
 
-/// Issues a setup link for `username` using the caller's (cluster admin's) credentials.
-///
-/// # Errors
-///
-/// [`SetupLinkError`] if the API calls fail, or the user already has passkeys and `reset` is
-/// false.
-pub async fn issue_setup_link(
-    client: Client,
+/// Refuses a link for `user` if the user can already sign in, unless `reset` is true. With
+/// `reset`, deletes the user's invitations, then credentials, then grants.
+pub(crate) async fn prepare_enrolment(
+    client: &Client,
     namespace: &str,
-    issuer: &BaseUrl,
-    username: &str,
-    valid_for: Duration,
+    user: &User,
     reset: bool,
-    now: UnixTime,
-) -> Result<SetupLink, SetupLinkError> {
-    let pp = PostParams::default();
-    let users: Api<User> = Api::namespaced(client.clone(), namespace);
-    let user = if let Some(user) = users.get_opt(username).await? {
-        user
-    } else {
-        let user = User::new(
-            username,
-            UserSpec {
-                username: username.to_owned(),
-                display_name: None,
-                groups: Vec::new(),
-                disabled: false,
-                account_type: AccountType::Admin,
-            },
-        );
-        users.create(&pp, &user).await?
-    };
-
+) -> Result<(), LinkError> {
+    let username = user.name_any();
+    let subject = user.uid().unwrap_or_default();
     let selector = ListParams::default().labels(&format!("{USER_LABEL}={username}"));
     let credentials: Api<Credential> = Api::namespaced(client.clone(), namespace);
-    let existing = credentials.list(&selector).await?.items.len();
+    let existing = credentials
+        .list(&selector)
+        .await?
+        .items
+        .iter()
+        .filter(|credential| !owned_by_another(&credential.metadata, &subject))
+        .count();
     if existing > 0 && !reset {
-        return Err(SetupLinkError::HasCredentials {
-            user: username.to_owned(),
+        return Err(LinkError::HasCredentials {
+            user: username,
             count: existing,
         });
     }
@@ -298,8 +293,56 @@ pub async fn issue_setup_link(
             .delete_collection(&DeleteParams::default(), &selector)
             .await?;
     }
+    Ok(())
+}
 
-    let token = URL_SAFE_NO_PAD.encode(random::<32>().map_err(|_crypto| SetupLinkError::Crypto)?);
+/// A freshly issued setup link.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SetupLink {
+    /// `https://<issuer>/setup#token=<token>`. The token is in the fragment, so it never reaches
+    /// server or proxy logs.
+    pub url: String,
+    /// When the link stops working.
+    pub expires_at: UnixTime,
+}
+
+/// Issues a setup link for `username` using the caller's (cluster admin's) credentials.
+///
+/// # Errors
+///
+/// [`LinkError`] if `valid_for` is longer than [`MAX_VALID_FOR`], the API calls fail, or the user
+/// already has passkeys or linked accounts and `reset` is false.
+pub async fn issue_setup_link(
+    client: Client,
+    namespace: &str,
+    issuer: &BaseUrl,
+    username: &str,
+    valid_for: Duration,
+    reset: bool,
+    now: UnixTime,
+) -> Result<SetupLink, LinkError> {
+    check_valid_for(valid_for)?;
+    let pp = PostParams::default();
+    let users: Api<User> = Api::namespaced(client.clone(), namespace);
+    let user = if let Some(user) = users.get_opt(username).await? {
+        user
+    } else {
+        let user = User::new(
+            username,
+            UserSpec {
+                username: username.to_owned(),
+                display_name: None,
+                groups: Vec::new(),
+                disabled: false,
+                account_type: AccountType::Admin,
+            },
+        );
+        users.create(&pp, &user).await?
+    };
+
+    prepare_enrolment(&client, namespace, &user, reset).await?;
+
+    let token = URL_SAFE_NO_PAD.encode(random::<32>().map_err(|_crypto| LinkError::Crypto)?);
     let expires_at = now.saturating_add(valid_for);
     let secrets: Api<Secret> = Api::namespaced(client, namespace);
     let mut secret = Secret {

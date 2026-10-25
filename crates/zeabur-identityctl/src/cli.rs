@@ -134,9 +134,13 @@ pub(crate) struct InviteArgs {
     /// the `admins` group.
     #[arg(long)]
     pub admin: bool,
-    /// How long the link stays valid.
+    /// How long the link stays valid, at most 7 days.
     #[arg(long, default_value = "7d", value_parser = parse_duration)]
     pub valid_for: Duration,
+    /// Remove the user's pending invitations, passkeys, linked accounts and sessions first
+    /// (account recovery). Without it, a user who can already sign in gets no invitation.
+    #[arg(long)]
+    pub reset: bool,
     /// Namespace Zeabur Identity runs in.
     #[arg(long, env = "ZEABUR_IDENTITY_NAMESPACE", default_value = zeabur_identity_k8s::rbac::DEFAULT_NAMESPACE)]
     pub namespace: String,
@@ -220,10 +224,11 @@ pub(crate) struct SetupLinkArgs {
     /// Namespace Zeabur Identity runs in.
     #[arg(long, env = "ZEABUR_IDENTITY_NAMESPACE", default_value = zeabur_identity_k8s::rbac::DEFAULT_NAMESPACE)]
     pub namespace: String,
-    /// How long the link stays valid.
+    /// How long the link stays valid, at most 7 days.
     #[arg(long, default_value = "60m", value_parser = parse_duration)]
     pub valid_for: Duration,
-    /// Remove the user's pending invitations, passkeys and sessions first (account recovery).
+    /// Remove the user's pending invitations, passkeys, linked accounts and sessions first
+    /// (account recovery).
     #[arg(long)]
     pub reset: bool,
 }

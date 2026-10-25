@@ -45,10 +45,14 @@ Alice over a channel you trust. When she opens it, she creates a passkey, or lin
 Things to know:
 
 - **Anyone with the link can become Alice** until it is used or expires. Send it only to her.
-- **The link lasts 7 days.** Use `--valid-for 24h`, for example, for a shorter window.
+- **The link lasts 7 days, and no longer.** Use `--valid-for 24h`, for example, for a shorter
+  window.
 - **Options apply only to new users.** `--group`, `--admin` and `--display-name` set
   up a new user. For an existing username, the invitation only adds a passkey or a linked
   GitHub or Google account; it does not change groups or the name.
+- **Only for someone who cannot sign in yet.** If the user already has a passkey or a linked
+  account, `invite` stops with an error. `--reset` deletes them first; see
+  [Lost passkey](#lost-passkey-account-recovery).
 - **Repeat `--group`** to add several groups.
 - **Zeabur Identity sends no mail.** The link goes to stdout and everything else to stderr, so a script
   can deliver it however your team works:
@@ -278,13 +282,11 @@ An account-page session lasts an hour. Password managers find the page through
 
 Most passkeys sync through the platform account (iCloud Keychain, Google Password Manager), so
 a new phone usually needs nothing. For a separate security key, the person can add it on the
-[account page](#the-account-page). To link a GitHub or Google account, or when they cannot sign
-in, invite the same username again. The new link adds one passkey or linked account and
-leaves everything else as it is:
+[account page](#the-account-page).
 
-```sh
-zeabur-identityctl invite --username alice
-```
+`invite` does not add a passkey or a linked account to a user who can already sign in. If a
+link went to the wrong person, its holder could then sign in as that user. When someone cannot
+sign in any more, follow [Lost passkey](#lost-passkey-account-recovery).
 
 ## Remove a passkey or linked account
 
@@ -316,7 +318,9 @@ zeabur-identityctl setup-link --username alice --reset
 
 This deletes all of Alice's credentials (passkeys and any linked GitHub or Google account),
 sessions and pending invitations, and prints a new one-time link that lasts an hour. Whoever
-opens the link becomes Alice, so confirm you are talking to her before you send it.
+opens the link becomes Alice, so confirm you are talking to her before you send it. For a
+regular account, `zeabur-identityctl invite --username alice --reset` does the same and prints
+an invitation instead, which can also link GitHub or Google.
 
 ## Suspend or remove someone
 

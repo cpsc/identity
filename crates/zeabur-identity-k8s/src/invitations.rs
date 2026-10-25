@@ -7,29 +7,18 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use kube::api::{Api, ObjectMeta, PostParams};
 use kube::{Client, Resource as _, ResourceExt as _};
-use thiserror::Error;
 use zeabur_identity_core::clock::UnixTime;
 use zeabur_identity_core::config::BaseUrl;
 use zeabur_identity_core::crypto::{hash_secret, hex, random};
 
 use super::MANAGED_BY;
+use super::setup::{LinkError, check_valid_for, prepare_enrolment};
 use crate::crd::invitation::{Invitation, InvitationSpec};
 use crate::crd::user::{AccountType, User, UserSpec};
 use crate::crd::{EXPIRES_AT_ANNOTATION, EXPIRY_BUCKET_LABEL, USER_LABEL};
 
 /// Path of the enrolment page; the token goes in the fragment.
 pub const ENROL_PATH: &str = "/setup";
-
-/// Why an invitation could not be created.
-#[derive(Debug, Error)]
-pub enum InviteError {
-    /// The Kubernetes API failed (often: the kubeconfig lacks the rights).
-    #[error("Kubernetes API request failed: {0}")]
-    Kubernetes(#[from] kube::Error),
-    /// Randomness failed.
-    #[error("unable to generate the token")]
-    Crypto,
-}
 
 /// Who to invite.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,9 +50,9 @@ pub struct Invited {
 ///
 /// # Errors
 ///
-/// Returns [`InviteError::Crypto`] if randomness fails.
-pub fn new_token(name: &str) -> Result<String, InviteError> {
-    let secret = random::<32>().map_err(|_crypto| InviteError::Crypto)?;
+/// Returns [`LinkError::Crypto`] if randomness fails.
+pub fn new_token(name: &str) -> Result<String, LinkError> {
+    let secret = random::<32>().map_err(|_crypto| LinkError::Crypto)?;
     Ok(format!("{name}.{}", URL_SAFE_NO_PAD.encode(secret)))
 }
 
@@ -75,17 +64,24 @@ pub fn link(issuer: &BaseUrl, token: &str) -> String {
 
 /// Creates the user (if missing) and an invitation, with the caller's (admin's) credentials.
 ///
+/// A user who already has passkeys or linked accounts gets an invitation only with `reset`, which
+/// first deletes the user's invitations, credentials and grants, as for a setup link (see
+/// [`crate::setup`]).
+///
 /// # Errors
 ///
-/// [`InviteError`] if an API call fails.
+/// [`LinkError`] if `valid_for` is longer than [`MAX_VALID_FOR`](crate::setup::MAX_VALID_FOR), an
+/// API call fails, or the user already has credentials and `reset` is false.
 pub async fn invite(
     client: Client,
     namespace: &str,
     issuer: &BaseUrl,
     invitee: &Invitee,
     valid_for: Duration,
+    reset: bool,
     now: UnixTime,
-) -> Result<Invited, InviteError> {
+) -> Result<Invited, LinkError> {
+    check_valid_for(valid_for)?;
     let pp = PostParams::default();
     let users: Api<User> = Api::namespaced(client.clone(), namespace);
     let (user, created_user) = if let Some(user) = users.get_opt(&invitee.username).await? {
@@ -103,10 +99,11 @@ pub async fn invite(
         );
         (users.create(&pp, &user).await?, true)
     };
+    prepare_enrolment(&client, namespace, &user, reset).await?;
 
     let name = format!(
         "inv-{}",
-        hex(&random::<8>().map_err(|_crypto| InviteError::Crypto)?)
+        hex(&random::<8>().map_err(|_crypto| LinkError::Crypto)?)
     );
     let expires_at = now.saturating_add(valid_for);
     let token = new_token(&name)?;

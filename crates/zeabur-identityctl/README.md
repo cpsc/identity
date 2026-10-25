@@ -28,10 +28,12 @@ Replace the example URL with your own issuer. `zeabur-identityctl` reads `ZEABUR
   `AuthenticationConfiguration` on stdout and how to install it on stderr. `k3s` covers K3s/RKE2.
 - `zeabur-identityctl setup-link [--username admin] [--reset]`: a one-time link that
   enrols a passkey for the first admin (created as an admin account, with no groups), or recovers
-  the account with `--reset`, which first deletes the user's pending invitations, passkeys and
-  sessions. It expires after 60 minutes by default.
-- `zeabur-identityctl invite --username <name> [--admin]`: creates the `User` if needed and a
-  one-time enrolment link (7 days by default), printed for you to send.
+  the account with `--reset`, which first deletes the user's pending invitations, passkeys,
+  linked accounts and sessions. It expires after 60 minutes by default, 7 days at most.
+- `zeabur-identityctl invite --username <name> [--admin] [--reset]`: creates the `User` if
+  needed and a one-time enrolment link (7 days by default and at most), printed for you to send.
+  A user who already has a passkey or a linked account gets a link only with `--reset`, which
+  works as for `setup-link`.
 - `zeabur-identityctl account-type <name> <admin|regular>`: changes a user's account type and
   removes `admins` from its groups. The change applies at the user's next sign-in or refresh.
 - `zeabur-identityctl client create <client-id> --type <public|confidential> --redirect-uri <uri>`:
@@ -58,7 +60,11 @@ creating a new user**; inviting an existing user does not change their name, gro
 type. Edit that user's `User` resource, or use `account-type`, to change those fields. Groups
 appear to Kubernetes as `zeabur:<group>`. `--admin` makes the new user an admin account: it
 signs in with a passkey only, and its tokens carry `zeabur:admins`. `--valid-for` controls how
-long the link can be redeemed (default `7d`). Send the printed link privately.
+long the link can be redeemed (default `7d`, at most `7d`). Send the printed link privately.
+
+`invite` refuses a user who already has a passkey or a linked account: whoever holds the link
+could add a passkey and sign in as that user. `--reset` first deletes the user's pending
+invitations, credentials and sessions, as `setup-link --reset` does.
 
 ### Configure token limits and the internal certificate
 

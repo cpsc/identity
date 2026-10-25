@@ -96,6 +96,7 @@ fn invite(args: &InviteArgs) -> ExitCode {
             &args.issuer,
             &invitee,
             args.valid_for,
+            args.reset,
             zeabur_identity_core::clock::SystemClock.now(),
         )
         .await

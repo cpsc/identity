@@ -80,11 +80,12 @@ The sign-in page now shows **Continue with GitHub**.
 People link their GitHub account with the same one-time link they would use for a passkey:
 
 - for a new person, [invite them](managing-users.md#add-someone);
-- for an existing user, [invite the same username again](managing-users.md#add-another-passkey-or-device).
+- for an existing user who cannot sign in yet, invite the same username again. If the user
+  already has a passkey or a linked account, the invitation needs `--reset`, which deletes them
+  first (see [account recovery](managing-users.md#lost-passkey-account-recovery)).
 
 On the link, they choose **Continue with GitHub** instead of creating a passkey, and sign in to
-the GitHub account they want to use. Each link adds one passkey or one account; send another
-link to add more.
+the GitHub account they want to use. Each link adds one passkey or one account.
 
 ### Advanced: link an account without a link
 

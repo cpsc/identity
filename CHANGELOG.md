@@ -25,6 +25,10 @@
 - The ConfigMap `zeabur-identity-settings` holds install-wide settings: `teams`
   (`single` or `multiple`) and `admin-aal3`, which limits admin accounts to device-bound
   passkeys.
+- `zeabur-identityctl invite` refuses a user who already has a passkey or a linked account, as
+  `setup-link` does. `invite --reset` deletes them, the user's sessions and pending invitations
+  first. Before, an invitation silently added another passkey to the account.
+- Setup links and invitations stay valid for 7 days at most (`--valid-for`).
 
 ### Removed
 

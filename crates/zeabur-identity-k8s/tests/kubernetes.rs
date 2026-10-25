@@ -1302,6 +1302,19 @@ mod tests {
 
         let mut original = None;
         for (generation, digit) in [("old", "1"), ("fresh", "2")] {
+            // Before the credentials: a user who can sign in gets an invitation only with reset.
+            // The old User's credentials, not yet collected, do not count.
+            let invitation = invite(
+                env.admin.clone(),
+                &env.namespace,
+                &issuer,
+                &invitee,
+                valid_for,
+                false,
+                time,
+            )
+            .await
+            .unwrap();
             let passkey = NewPasskey {
                 name: passkey_credential_name(generation.as_bytes()),
                 user: "alice".into(),
@@ -1327,16 +1340,6 @@ mod tests {
                 .create(&new_grant(&grant, t0), UnixTime::from_secs(t0 + 1800))
                 .await
                 .unwrap();
-            let invitation = invite(
-                env.admin.clone(),
-                &env.namespace,
-                &issuer,
-                &invitee,
-                valid_for,
-                time,
-            )
-            .await
-            .unwrap();
             let metadata = [
                 credentials.get(&passkey.name).await.unwrap().metadata,
                 credentials.get(&external.name).await.unwrap().metadata,
@@ -1403,7 +1406,7 @@ mod tests {
     async fn setup_link_is_single_use_and_replaceable() {
         use zeabur_identity_core::config::BaseUrl;
         use zeabur_identity_k8s::setup::{
-            KubeSetupStore, SETUP_SECRET, SetupLinkError, issue_setup_link,
+            KubeSetupStore, LinkError, SETUP_SECRET, issue_setup_link,
         };
         use zeabur_identity_store::{Consume, SetupStore};
 
@@ -1493,6 +1496,33 @@ mod tests {
             Some(403)
         );
 
+        // Pending invitations: root's must not survive the reset, someone else's must.
+        let pending = |username: &str| zeabur_identity_k8s::invitations::Invitee {
+            username: username.into(),
+            display_name: None,
+            groups: vec![],
+            account_type: AccountType::Regular,
+        };
+        let mut tokens = Vec::new();
+        for username in ["root", "eve"] {
+            let invited = zeabur_identity_k8s::invitations::invite(
+                env.admin.clone(),
+                &env.namespace,
+                &issuer,
+                &pending(username),
+                Duration::from_hours(1),
+                false,
+                t0,
+            )
+            .await
+            .unwrap();
+            tokens.push(invited.url.split("#token=").nth(1).unwrap().to_owned());
+        }
+        let with_invitations = KubeSetupStore::new(env.zeabur_identity_api())
+            .with_invitations(env.zeabur_identity_api());
+        for token in &tokens {
+            assert!(with_invitations.load(token).await.unwrap().is_some());
+        }
         // A user who already has passkeys needs an explicit reset.
         let credentials: Api<zeabur_identity_k8s::crd::credential::Credential> =
             env.zeabur_identity_api();
@@ -1525,35 +1555,24 @@ mod tests {
         .await
         .unwrap_err();
         assert!(
-            matches!(error, SetupLinkError::HasCredentials { count: 1, .. }),
+            matches!(error, LinkError::HasCredentials { count: 1, .. }),
             "{error}"
         );
-        // Pending invitations: root's must not survive the reset, someone else's must.
-        let pending = |username: &str| zeabur_identity_k8s::invitations::Invitee {
-            username: username.into(),
-            display_name: None,
-            groups: vec![],
-            account_type: AccountType::Regular,
-        };
-        let mut tokens = Vec::new();
-        for username in ["root", "eve"] {
-            let invited = zeabur_identity_k8s::invitations::invite(
-                env.admin.clone(),
-                &env.namespace,
-                &issuer,
-                &pending(username),
-                Duration::from_hours(1),
-                t0,
-            )
-            .await
-            .unwrap();
-            tokens.push(invited.url.split("#token=").nth(1).unwrap().to_owned());
-        }
-        let with_invitations = KubeSetupStore::new(env.zeabur_identity_api())
-            .with_invitations(env.zeabur_identity_api());
-        for token in &tokens {
-            assert!(with_invitations.load(token).await.unwrap().is_some());
-        }
+        let error = zeabur_identity_k8s::invitations::invite(
+            env.admin.clone(),
+            &env.namespace,
+            &issuer,
+            &pending("root"),
+            Duration::from_hours(1),
+            false,
+            t0,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(error, LinkError::HasCredentials { count: 1, .. }),
+            "{error}"
+        );
         issue_setup_link(
             env.admin.clone(),
             &env.namespace,
@@ -1610,6 +1629,7 @@ mod tests {
             &issuer,
             &invitee,
             Duration::from_hours(1),
+            false,
             t0,
         )
         .await

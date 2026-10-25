@@ -96,11 +96,13 @@ The sign-in page now shows **Continue with Google**.
 People link their Google account with the same one-time link they would use for a passkey:
 
 - for a new person, [invite them](managing-users.md#add-someone);
-- for an existing user, [invite the same username again](managing-users.md#add-another-passkey-or-device).
+- for an existing user who cannot sign in yet, invite the same username again. If the user
+  already has a passkey or a linked account, the invitation needs `--reset`, which deletes them
+  first (see [account recovery](managing-users.md#lost-passkey-account-recovery)).
 
 On the link, they choose **Continue with Google** and pick the Google account they want to use.
 Whoever opens the link controls that Zeabur Identity user, so make sure it reaches the right person.
-Each link adds one passkey or one account; send another link to add more. A Google account can
+Each link adds one passkey or one account. A Google account can
 be linked to only one user at a time.
 
 To try it with the `kubectl` setup from Get started, clear the cached session so kubelogin

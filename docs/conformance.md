@@ -56,7 +56,7 @@ its container image.
 | Dependency `unsafe`/native code listed for approval | `scripts/unsafe-report.sh`, `supply-chain/unsafe-allowlist.toml` | CI `unsafe-report` | Met |
 | clippy pedantic + restriction set, rustfmt | `Cargo.toml [workspace.lints]`, `clippy.toml`, `rustfmt.toml` | CI `clippy`, `format`, `docs` | Met |
 | DCO sign-off | `CONTRIBUTING.md`, `scripts/check-dco.sh` | CI `dco` | Met |
-| One toolchain source for rustup and Nix | `rust-toolchain.toml`, `flake.nix` | `nix develop` hash check | Met |
+| One pinned Rust toolchain | `flake.nix`, `flake.lock` | CI `clippy`, `format` in `nix develop` | Met |
 | Image: static binary, non-root, no shell | `Containerfile`, `zeabur-identity-k8s/src/deployment.rs` | `zeabur-identity-k8s: deployment::tests::deployment_is_locked_down`; *(e2e)* | Met |
 | Image size and idle memory measured in CI | `scripts/build-image.sh`, e2e measurement | CI `kubernetes` job summary | Met (about 20 MB; pod working set within the 30 MiB budget) |
 | Image signing (Sigstore) and SBOM | `.github/workflows/release.yml`, `scripts/release-{build,publish,verify}.sh` | Exact-digest signature/SBOM verification and public pull in both native release rehearsal jobs | Partial: pipeline implemented; public OIDC publication evidence requires a successful tag-triggered run ([release procedure](releases.md)) |

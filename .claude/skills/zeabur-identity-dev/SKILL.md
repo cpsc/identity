@@ -7,8 +7,8 @@ description: Day-to-day development loop for the Zeabur Identity repository — 
 
 ## Environment
 - Everything runs inside the Nix dev shell: prefix commands with `nix develop -c …` (or enter
-  `nix develop`). Do not use system-installed toolchains; `rust-toolchain.toml` pins the
-  compiler and the flake reads it.
+  `nix develop`). Do not use system-installed toolchains; `flake.lock` pins the
+  Rust nightly.
 - The workspace is a flat `crates/` directory; dependencies only point downwards (see the crate
   table in `README.md`). Put new code in the lowest crate that can hold it; never add an upward
   dependency. Binaries: `zeabur-identity` (in-cluster server) and `zeabur-identityctl` (admin CLI).

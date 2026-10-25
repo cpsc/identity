@@ -36,7 +36,9 @@ The options:
   only when the application calls the Kubernetes API as the signed-in person.
 - **`--allow-elevation`** lets the client ask for admin rights (the user's elevated groups, after
   a fresh passkey sign-in). Leave it off unless the client is for administering the cluster,
-  like `kubectl`. See [Admin rights](managing-users.md#admin-rights).
+  like `kubectl`. The client's ID tokens then carry `can_elevate: true` for users who have
+  elevated groups, so it can offer admin rights only to them. See
+  [Admin rights](managing-users.md#admin-rights).
 - **`--home-url`** is where people open the application, such as
   `https://zeabur.example.com/`. With it, the sign-in page offers "Open *display name*" when
   someone reaches it with nothing to sign in to, and after they set up a passkey. Anyone who

@@ -1476,6 +1476,55 @@ mod tests {
         assert_eq!(exchange(&h, &code).await.error(), "invalid_grant");
     }
 
+    fn can_elevate(h: &Harness, tokens: &Value) -> Value {
+        let (_, access) = verify(h, tokens["access_token"].as_str().unwrap(), "kubernetes");
+        assert!(access.get("can_elevate").is_none(), "{access}");
+        let (_, id) = verify(h, tokens["id_token"].as_str().unwrap(), "kubectl");
+        id["can_elevate"].clone()
+    }
+
+    #[tokio::test]
+    async fn the_id_token_says_whether_elevation_can_succeed() {
+        let h = harness_with(elevating()).await;
+        let code = sign_in_with(&h, "alice", &kubectl_authorize(&[]), PASSKEY).await;
+        let tokens = exchange(&h, &code).await.json();
+        assert_eq!(can_elevate(&h, &tokens), Value::Bool(true));
+
+        // Refresh reads the user as it is now.
+        h.server.directory.put_user(User {
+            name: "alice".into(),
+            subject: "uid-alice".into(),
+            username: "alice".into(),
+            groups: vec!["admins".into()],
+            ..User::default()
+        });
+        let refreshed = refresh(&h, tokens["refresh_token"].as_str().unwrap())
+            .await
+            .json();
+        assert_eq!(can_elevate(&h, &refreshed), Value::Null);
+        let code = sign_in_with(&h, "alice", &elevate_uri(), PASSKEY).await;
+        assert_eq!(exchange(&h, &code).await.error(), "invalid_scope");
+
+        let h = harness_with(elevating()).await;
+        h.server.directory.put_client(kubectl_client(false));
+        let code = sign_in_with(&h, "alice", &kubectl_authorize(&[]), PASSKEY).await;
+        assert_eq!(
+            can_elevate(&h, &exchange(&h, &code).await.json()),
+            Value::Null
+        );
+
+        let h = harness_with(Lifetimes {
+            elevated_token: None,
+            ..Lifetimes::DEFAULT
+        })
+        .await;
+        let code = sign_in_with(&h, "alice", &kubectl_authorize(&[]), PASSKEY).await;
+        assert_eq!(
+            can_elevate(&h, &exchange(&h, &code).await.json()),
+            Value::Null
+        );
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
     async fn an_elevated_code_is_redeemed_at_most_once_under_concurrency() {
         let h = Arc::new(harness_with(elevating()).await);

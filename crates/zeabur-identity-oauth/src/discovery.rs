@@ -106,6 +106,7 @@ impl ProviderMetadata {
                 "preferred_username",
                 "name",
                 "groups",
+                "can_elevate",
             ],
         }
     }

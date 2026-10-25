@@ -681,6 +681,9 @@ fn issue_tokens<D: Directory, G: GrantStore, C: Clock>(
         scopes: &grant.scopes,
         auth_time: grant.auth_time,
         amr: &grant.amr,
+        can_elevate: server.lifetimes.elevated_token.is_some()
+            && client.allow_elevation
+            && !user.elevated_groups.is_empty(),
     };
     let access_token = tokens::access_token(&keys, &subject, now, now.saturating_add(lifetime))?;
     let id_token = if grant.scopes.iter().any(|s| s == "openid") {

@@ -15,6 +15,17 @@
 //!
 //! Elevated tokens are access tokens whose `groups` additionally hold `elevated:<group>` names
 //! (see [`crate::endpoints::ELEVATED_GROUP_PREFIX`]).
+//!
+//! The ID token carries `can_elevate: true` when an `elevate` request from this client would
+//! succeed for this user now: elevation is on, the client has `allowElevation`, and the user has
+//! elevated groups. The claim is absent otherwise. It lets the client offer admin rights only to
+//! people who can get them; it grants nothing, because only the elevated access token holds the
+//! groups. It is in the ID token only, because the ID token is the token for the client
+//! ([oidc-core] §2) and the access token is for kube-apiserver. It is a private claim name
+//! ([rfc7519] §4.3).
+//!
+//! [oidc-core]: https://openid.net/specs/openid-connect-core-1_0.html#IDToken
+//! [rfc7519]: https://www.rfc-editor.org/rfc/rfc7519#section-4.3
 
 use serde::Serialize;
 use zeabur_identity_core::clock::UnixTime;
@@ -43,6 +54,8 @@ pub struct Subject<'a> {
     pub auth_time: UnixTime,
     /// Authentication methods.
     pub amr: &'a [String],
+    /// Whether an `elevate` request would succeed for this user and client.
+    pub can_elevate: bool,
 }
 
 impl Subject<'_> {
@@ -90,6 +103,8 @@ struct IdTokenClaims<'a> {
     name: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     groups: Option<&'a [String]>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    can_elevate: bool,
 }
 
 fn signer(
@@ -176,6 +191,7 @@ pub fn id_token(
         groups: subject
             .has_scope("groups")
             .then_some(subject.user.groups.as_slice()),
+        can_elevate: subject.can_elevate,
     };
     let key = signer(keys, subject.client.id_token_alg, now)?;
     sign_compact(&key, "JWT", &claims).map_err(|error| {

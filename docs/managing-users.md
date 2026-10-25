@@ -213,10 +213,12 @@ kubectl -n zeabur-identity delete zbuser alice
 ```
 
 > [!WARNING]
-> Keep this order. Deleting only the `User` leaves the old credentials (passkeys and linked GitHub
-> or Google accounts) around for a while: until Kubernetes garbage collection removes them, or
-> forever for objects created by hand without an owner reference. If you create a new `User` with
-> the same name in the meantime, the old credentials sign in as that new user.
+> Keep this order. If you delete only the `User`, its invitations stay until Kubernetes garbage
+> collection removes them. If you create a new `User` with the same name in that time, an old
+> invitation link adds a passkey to the new user.
+
+Old passkeys and linked GitHub or Google accounts do not sign in as a new `User` with the same
+name. Each one is bound to the UID of the `User` it was added for.
 
 ## Keep users in Git
 

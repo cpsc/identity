@@ -94,12 +94,10 @@ to be exactly right:
 - its **name** is derived from GitHub's numeric account ID, because Zeabur Identity looks the account up
   by name;
 - the **user label** lets the commands in [Managing users](managing-users.md) find it;
-- the **owner reference** ties it to the `User`, so it is cleaned up when the user is deleted.
+- the **owner reference** ties it to the `User`: it names the UID of the one `User` the account
+  signs in as, and Kubernetes deletes the credential when that user is deleted.
 
-> [!WARNING]
-> Without the owner reference, the credential outlives the `User`. Anyone later given the same
-> username would be signed in by this GitHub account. Even with it, cleanup is not immediate;
-> follow the [removal order](managing-users.md#suspend-or-remove-someone).
+Without the owner reference, or with the UID of another `User`, the GitHub account cannot sign in.
 
 ```sh
 LOGIN=octocat

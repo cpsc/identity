@@ -192,6 +192,7 @@ object, so how you restore decides whether people keep their identity:
 |---|---|---|
 | User UIDs | Kept | New |
 | Existing passkeys | Keep working | Everyone enrols again |
+| Linked GitHub and Google accounts | Keep working | Everyone links again |
 | Apps that track users by `sub` | See the same people | See new people |
 | Sessions | Delete them; everyone signs in again | Don't restore them |
 

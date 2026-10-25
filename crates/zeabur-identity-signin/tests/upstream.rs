@@ -577,6 +577,7 @@ mod tests {
                 kind: kind.credential_type(),
                 issuer: kind.issuer().into(),
                 subject: subject.into(),
+                user_subject: format!("uid-{user}"),
             })
             .await
             .unwrap();
@@ -648,6 +649,30 @@ mod tests {
         assert_eq!(claims["sub"], "uid-alice");
         // No passkey: no `amr`, and so never elevation.
         assert!(claims.get("amr").is_none(), "{claims}");
+    }
+
+    #[tokio::test]
+    async fn a_link_left_from_a_removed_user_does_not_sign_in_as_a_new_user_of_that_name() {
+        let h = harness().await;
+        link(&h, Kind::GitHub, &GITHUB_ID.to_string(), "alice").await;
+        // Remove alice but not her link, then give the name to a new person.
+        let directory = &h.service.sign_in.oauth.directory;
+        directory.remove_user("alice");
+        directory.put_user(User {
+            name: "alice".into(),
+            subject: "uid-alice-new".into(),
+            username: "alice".into(),
+            groups: vec!["dev".into()],
+            ..User::default()
+        });
+        let reply = sign_in(&h, "github", "code-1").await;
+        assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{}", reply.body);
+        assert!(
+            reply.body.contains("account_unlinked (github)"),
+            "{}",
+            reply.body
+        );
+        assert!(!reply.headers.contains_key(header::LOCATION));
     }
 
     #[tokio::test]
@@ -772,11 +797,11 @@ mod tests {
             h.service
                 .sign_in
                 .credentials
-                .linked_user(&name)
+                .linked_account(&name)
                 .await
                 .unwrap()
-                .as_deref(),
-            Some("dana")
+                .map(|linked| (linked.user, linked.user_subject)),
+            Some(("dana".to_owned(), Some("uid-dana".to_owned())))
         );
         // The invitation is used up.
         let again = start(&h, "google", &json!({ "token": INVITATION }), "").await;

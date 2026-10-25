@@ -18,7 +18,8 @@ mod tests {
     use zeabur_identity_k8s::credentials::KubeCredentialStore;
     use zeabur_identity_k8s::grants::KubeGrantStore;
     use zeabur_identity_store::{
-        AccountEvent, CredentialStore as _, GrantStore as _, Removal, Rename, User, Verification,
+        AccountEvent, CredentialStore as _, CredentialType, GrantStore as _, NewExternal, Removal,
+        Rename, User, Verification,
     };
 
     const ALICE_UID: &str = "uid-alice";
@@ -224,6 +225,21 @@ mod tests {
         object
     }
 
+    fn github(name: &str, owners: &[&str]) -> Value {
+        let owners: Vec<Value> = owners
+            .iter()
+            .map(|uid| {
+                json!({"apiVersion":"identity.zeabur.com/v1alpha1",
+                "kind":"User","name":"alice","uid":uid})
+            })
+            .collect();
+        json!({"apiVersion":"identity.zeabur.com/v1alpha1","kind":"Credential",
+            "metadata":{"name":name,"labels":{"identity.zeabur.com/user":"alice"},
+                "ownerReferences":owners},
+            "spec":{"user":"alice","type":"GitHub",
+                "external":{"issuer":"https://github.com","subject":name}}})
+    }
+
     fn grant(name: &str, subject: Option<&str>) -> Value {
         json!({"apiVersion":"identity.zeabur.com/v1alpha1","kind":"Grant",
             "metadata":{"name":name,"labels":{"identity.zeabur.com/user":"alice"}},
@@ -342,6 +358,50 @@ mod tests {
         assert_eq!(event["involvedObject"]["uid"], ALICE_UID);
         assert_eq!(event["reason"], "PasskeyRenamed");
         assert_eq!(event["metadata"]["generateName"], "alice.");
+    }
+
+    #[tokio::test]
+    async fn a_linked_account_signs_in_only_as_the_user_that_owns_it() {
+        let mut backend = Backend::default();
+        let cases = [
+            ("current", vec![ALICE_UID], true),
+            ("earlier-alice", vec!["uid-old-alice"], false),
+            ("no-owner", vec![], false),
+            ("two-owners", vec![ALICE_UID, "uid-old-alice"], false),
+        ];
+        for (name, owners, _) in &cases {
+            backend.insert("credentials", github(name, owners));
+        }
+        backend.insert(
+            "users",
+            json!({"apiVersion":"identity.zeabur.com/v1alpha1","kind":"User",
+                "metadata":{"name":"alice"},"spec":{"username":"alice"}}),
+        );
+        let mock = mock(backend).await;
+        let store = credentials(&mock);
+        for (name, _, signs_in) in cases {
+            let linked = store.linked_account(name).await.unwrap().unwrap();
+            assert_eq!(linked.signs_in_as(&alice()), signs_in, "{name}");
+        }
+
+        // A link for a User that was replaced after the caller read it.
+        let stale = NewExternal {
+            name: "new".into(),
+            user: "alice".into(),
+            kind: CredentialType::GitHub,
+            issuer: "https://github.com".into(),
+            subject: "new".into(),
+            user_subject: "uid-old-alice".into(),
+        };
+        assert!(store.link(&stale).await.is_err());
+        assert!(
+            !mock
+                .state
+                .lock()
+                .await
+                .names("credentials")
+                .contains(&"new".to_owned())
+        );
     }
 
     #[tokio::test]

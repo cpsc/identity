@@ -18,7 +18,8 @@ fn backend(error: &kube::Error) -> StoreError {
 /// dependent, and one deleted before the dependent is created leaves it to the collector.
 /// It is not a controller reference and does not set `blockOwnerDeletion`, which would need
 /// `delete` on Users. Collection is eventual and skipped by orphan deletion, so it is cleanup,
-/// not revocation: reads do not check the owner's UID.
+/// not revocation. Reads that sign someone in compare the owner's UID with the `User` (see
+/// [`user_owner_uid`]).
 ///
 /// Like `Resource::owner_ref`, returns `None` for a User without a UID; API-server responses
 /// always have one. Requires a namespaced API to keep owner and dependent in the same namespace.
@@ -46,4 +47,17 @@ pub(crate) fn owned_by_another(meta: &ObjectMeta, subject: &str) -> bool {
         .iter()
         .flatten()
         .any(|owner| owner.kind == "User" && owner.uid != subject)
+}
+
+/// The UID of the one `User` that owns `meta`. `None` if no `User` owns it, or if two `User`
+/// owners have different UIDs.
+pub(crate) fn user_owner_uid(meta: &ObjectMeta) -> Option<&str> {
+    let mut uids = meta
+        .owner_references
+        .iter()
+        .flatten()
+        .filter(|owner| owner.kind == "User")
+        .map(|owner| owner.uid.as_str());
+    let first = uids.next()?;
+    uids.all(|uid| uid == first).then_some(first)
 }

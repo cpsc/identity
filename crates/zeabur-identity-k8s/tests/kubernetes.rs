@@ -1316,6 +1316,7 @@ mod tests {
                 kind: CredentialType::GitHub,
                 issuer: "https://github.com".into(),
                 subject: generation.into(),
+                user_subject: uid.clone(),
             };
             credential_store.link(&external).await.unwrap();
             let grant = format!("g-{}", digit.repeat(64));

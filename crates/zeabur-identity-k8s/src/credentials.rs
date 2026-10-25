@@ -1,6 +1,8 @@
 //! [`CredentialStore`] backed by `Credential` objects.
 //!
 //! Renaming and last-use times go to `status`, so the spec (the key material) stays immutable.
+//! A linked upstream account carries an owner reference with the UID of its `User`. Sign-in
+//! accepts the account only for a `User` with that UID: see [`LinkedAccount::signs_in_as`].
 //! Removing a passkey must never leave a user with none, also when two removals race: see
 //! [`KubeCredentialStore::remove`].
 
@@ -14,8 +16,8 @@ use kube::ResourceExt as _;
 use kube::api::{Api, ListParams, ObjectMeta, Patch, PatchParams, PostParams};
 use zeabur_identity_core::clock::UnixTime;
 use zeabur_identity_store::{
-    AccountEvent, CreateCredential, CredentialStore, NewExternal, NewPasskey, PasskeySummary,
-    Removal, Rename, StoreError, StoredPasskey, User,
+    AccountEvent, CreateCredential, CredentialStore, LinkedAccount, NewExternal, NewPasskey,
+    PasskeySummary, Removal, Rename, StoreError, StoredPasskey, User,
 };
 
 use super::MANAGED_BY;
@@ -23,7 +25,7 @@ use super::objects::{
     CreateOutcome, DeleteOutcome, ReplaceOutcome, create_once, delete_if_unchanged,
     replace_status_if_unchanged,
 };
-use super::users::{owned_by_another, user_owner};
+use super::users::{owned_by_another, user_owner, user_owner_uid};
 use crate::crd::credential::{
     Credential, CredentialSpec, CredentialType, ExternalIdentity, Passkey,
 };
@@ -197,10 +199,15 @@ impl CredentialStore for KubeCredentialStore {
             },
             status: None,
         };
+        let user_subject = external.user_subject.clone();
         async move {
-            object.metadata.owner_references = user_owner(&api, &object.spec.user)
+            // If the User was replaced after the caller read it, the link would bind to the new
+            // User. Refuse it.
+            let owner = user_owner(&api, &object.spec.user)
                 .await?
-                .map(|owner| vec![owner]);
+                .filter(|owner| owner.uid == user_subject)
+                .ok_or_else(|| StoreError("the user changed during linking".to_owned()))?;
+            object.metadata.owner_references = Some(vec![owner]);
             match create_once(&api, &object).await.map_err(|e| backend(&e))? {
                 CreateOutcome::Created(_) => Ok(CreateCredential::Created),
                 CreateOutcome::AlreadyExists => Ok(CreateCredential::AlreadyExists),
@@ -208,17 +215,20 @@ impl CredentialStore for KubeCredentialStore {
         }
     }
 
-    fn linked_user(
+    fn linked_account(
         &self,
         name: &str,
-    ) -> impl Future<Output = Result<Option<String>, StoreError>> + Send {
+    ) -> impl Future<Output = Result<Option<LinkedAccount>, StoreError>> + Send {
         let api = self.api.clone();
         let name = name.to_owned();
         async move {
             let object = api.get_opt(&name).await.map_err(|e| backend(&e))?;
             Ok(object
                 .filter(|o| o.spec.kind != CredentialType::Passkey && o.spec.external.is_some())
-                .map(|o| o.spec.user))
+                .map(|o| LinkedAccount {
+                    user_subject: user_owner_uid(&o.metadata).map(str::to_owned),
+                    user: o.spec.user,
+                }))
         }
     }
 

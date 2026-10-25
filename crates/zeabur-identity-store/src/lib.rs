@@ -634,6 +634,28 @@ pub struct NewExternal {
     pub issuer: String,
     /// Upstream subject: the stable account ID.
     pub subject: String,
+    /// The [`User::subject`] (UID) of the user the account signs in as.
+    pub user_subject: String,
+}
+
+/// The user an upstream account is linked to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkedAccount {
+    /// `User` object name.
+    pub user: String,
+    /// The UID of the `User` the account was linked to. `None` if storage holds no single UID.
+    pub user_subject: Option<String>,
+}
+
+impl LinkedAccount {
+    /// Whether the account signs in as `user`.
+    ///
+    /// A new `User` with the name of a deleted one has a new UID. Thus a link left over from the
+    /// deleted user does not sign in as the new user. A link with no UID signs in as no one.
+    #[must_use]
+    pub fn signs_in_as(&self, user: &User) -> bool {
+        self.user == user.name && self.user_subject.as_deref() == Some(user.subject.as_str())
+    }
 }
 
 /// The `Credential` name for a passkey credential ID.
@@ -702,11 +724,12 @@ pub trait CredentialStore: Send + Sync + 'static {
         &self,
         external: &NewExternal,
     ) -> impl Future<Output = Result<CreateCredential, StoreError>> + Send;
-    /// The `User` object name an upstream account (by credential name) signs in as.
-    fn linked_user(
+    /// The user an upstream account (by credential name) is linked to. Callers check
+    /// [`LinkedAccount::signs_in_as`] before they sign anyone in.
+    fn linked_account(
         &self,
         name: &str,
-    ) -> impl Future<Output = Result<Option<String>, StoreError>> + Send;
+    ) -> impl Future<Output = Result<Option<LinkedAccount>, StoreError>> + Send;
 
     /// The passkeys of `user`, read from storage, not a cache. Adapters that know a credential's
     /// owning `User` UID leave out credentials owned by another UID.
@@ -789,7 +812,7 @@ pub trait SetupStore: Send + Sync + 'static {
 #[derive(Debug, Default)]
 pub struct MemoryCredentialStore {
     passkeys: Mutex<HashMap<String, MemoryPasskey>>,
-    externals: Mutex<HashMap<String, String>>,
+    externals: Mutex<HashMap<String, LinkedAccount>>,
     events: Mutex<Vec<AccountEvent>>,
 }
 
@@ -865,17 +888,23 @@ impl CredentialStore for MemoryCredentialStore {
         let outcome = if externals.contains_key(&external.name) {
             CreateCredential::AlreadyExists
         } else {
-            externals.insert(external.name.clone(), external.user.clone());
+            externals.insert(
+                external.name.clone(),
+                LinkedAccount {
+                    user: external.user.clone(),
+                    user_subject: Some(external.user_subject.clone()),
+                },
+            );
             CreateCredential::Created
         };
         drop(externals);
         future::ready(Ok(outcome))
     }
 
-    fn linked_user(
+    fn linked_account(
         &self,
         name: &str,
-    ) -> impl Future<Output = Result<Option<String>, StoreError>> + Send {
+    ) -> impl Future<Output = Result<Option<LinkedAccount>, StoreError>> + Send {
         let externals = self
             .externals
             .lock()

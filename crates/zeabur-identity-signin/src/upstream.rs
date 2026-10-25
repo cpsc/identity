@@ -11,11 +11,17 @@
 //! created on first sign-in. Upstream sign-ins carry no `amr` value (RFC 8176 defines none for
 //! federation) and therefore never satisfy elevation, which needs a passkey.
 //!
+//! A link names its `User` by UID as well as by name. After a delete, a new object can have the
+//! same name, but every object gets a distinct UID ([Object Names and IDs]). Thus a link left
+//! over from a removed person does not sign in as a new person with the same username.
+//!
 //! The pending request (`state`, `nonce`, PKCE verifier and purpose) is sealed into a `__Host-`
 //! cookie with `SameSite=Lax`, the strictest setting that still accompanies the provider's
 //! top-level redirect back. `state` is compared in constant time and accepted once
 //! (RFC 6749 §10.12, RFC 9700 §2.1). The callback answers with HTML; errors never echo the
 //! provider's text.
+//!
+//! [Object Names and IDs]: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/
 
 pub mod http;
 pub mod provider;
@@ -330,7 +336,7 @@ where
         let name = external_credential_name(issuer, &subject);
         let linked = sign_in
             .credentials
-            .linked_user(&name)
+            .linked_account(&name)
             .await
             .map_err(|error| {
                 tracing::error!(
@@ -341,10 +347,10 @@ where
                 ("credential_lookup_failed", ErrorReason::ServerError, None)
             })?;
         let Some(token) = pending.link else {
-            let user = linked.ok_or(("account_unlinked", ErrorReason::AccountNotLinked, None))?;
+            let linked = linked.ok_or(("account_unlinked", ErrorReason::AccountNotLinked, None))?;
             identity = oauth
                 .directory
-                .user(&user)
+                .user(&linked.user)
                 .await
                 .map_err(|error| {
                     tracing::warn!(reason = "user_lookup_failed", %error, "upstream user lookup failed");
@@ -353,6 +359,10 @@ where
             let user = identity
                 .as_ref()
                 .ok_or(("user_unavailable", ErrorReason::UserUnavailable, None))?;
+            // A link left over from a deleted User must not sign in as a new User with that name.
+            if !linked.signs_in_as(user) {
+                return Err(("account_unlinked", ErrorReason::AccountNotLinked, None));
+            }
             if user.disabled {
                 return Err(("user_unavailable", ErrorReason::UserUnavailable, None));
             }
@@ -388,6 +398,16 @@ where
             .await
             .map_err(|_problem| ("invalid_setup", ErrorReason::SetupLinkInvalid, None))?;
         link_user = Some(stored.user.clone());
+        let user_subject = oauth
+            .directory
+            .user(&stored.user)
+            .await
+            .map_err(|error| {
+                tracing::warn!(reason = "user_lookup_failed", %error, "upstream user lookup failed");
+                ("user_lookup_failed", ErrorReason::ServerError, None)
+            })?
+            .ok_or(("invalid_setup", ErrorReason::SetupLinkInvalid, None))?
+            .subject;
         match sign_in.setup.consume(&stored).await {
             Ok(Consume::Consumed) => {}
             Ok(Consume::AlreadyUsed) => {
@@ -408,6 +428,7 @@ where
             kind: provider.kind().credential_type(),
             issuer: issuer.to_owned(),
             subject,
+            user_subject,
         };
         match sign_in.credentials.link(&external).await {
             Ok(CreateCredential::Created) => {

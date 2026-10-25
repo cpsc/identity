@@ -454,12 +454,17 @@ struct SetupResponse<'a> {
     username: &'a str,
 }
 
-/// Checks a presented setup token against the stored one. Returns the stored token.
-pub(crate) async fn valid_setup_token<S: SetupStore>(
+/// Checks a presented setup token against the stored one. Returns the stored token and its
+/// current `User`.
+///
+/// The `User` must have the UID the token was issued for. A token left over from a deleted
+/// `User` thus does not enrol a new `User` with the same name.
+pub(crate) async fn valid_setup_token<S: SetupStore, D: Directory>(
     setup: &S,
+    directory: &D,
     presented: &str,
     now: UnixTime,
-) -> Result<zeabur_identity_store::SetupToken, Problem> {
+) -> Result<(zeabur_identity_store::SetupToken, User), Problem> {
     let stored = setup
         .load(presented)
         .await
@@ -472,7 +477,25 @@ pub(crate) async fn valid_setup_token<S: SetupStore>(
     if !matches || stored.expires_at <= now {
         return Err(SETUP_INVALID);
     }
-    Ok(stored)
+    let user = directory
+        .user(&stored.user)
+        .await
+        .map_err(internal)?
+        .ok_or_else(|| {
+            tracing::error!(
+                reason = "user_unavailable",
+                "the setup token names a user that does not exist"
+            );
+            SETUP_INVALID
+        })?;
+    if !stored.is_for(&user) {
+        tracing::warn!(
+            reason = "user_replaced",
+            "the setup token was issued for an earlier user of this name"
+        );
+        return Err(SETUP_INVALID);
+    }
+    Ok((stored, user))
 }
 
 async fn setup_options<D, G, C, K, S>(
@@ -492,20 +515,13 @@ where
         check_request(&headers, service.oauth.issuer.as_str())?;
         let request: SetupOptionsRequest = parse(&body)?;
         let now = service.oauth.now();
-        let token = valid_setup_token(&service.setup, &request.token, now).await?;
-        let user = service
-            .oauth
-            .directory
-            .user(&token.user)
-            .await
-            .map_err(internal)?
-            .ok_or_else(|| {
-                tracing::error!(
-                    reason = "user_unavailable",
-                    "the setup token names a user that does not exist"
-                );
-                SETUP_INVALID
-            })?;
+        let (_, user) = valid_setup_token(
+            &service.setup,
+            &service.oauth.directory,
+            &request.token,
+            now,
+        )
+        .await?;
         identity = Some(user);
         let user = identity.as_ref().ok_or(SETUP_INVALID)?;
         let handle = Uuid::parse_str(&user.subject).map_err(internal)?;
@@ -561,7 +577,13 @@ where
         let now = service.oauth.now();
         let ceremony: Ceremony<PasskeyRegistration> =
             open(&service.oauth, &headers, REGISTRATION_PURPOSE, now)?;
-        let token = valid_setup_token(&service.setup, &request.token, now).await?;
+        let (token, _) = valid_setup_token(
+            &service.setup,
+            &service.oauth.directory,
+            &request.token,
+            now,
+        )
+        .await?;
         user = Some(token.user.clone());
         // The ceremony must have been started with this token's user.
         if ceremony.user.as_deref() != Some(token.user.as_str()) {

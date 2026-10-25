@@ -18,8 +18,8 @@ fn backend(error: &kube::Error) -> StoreError {
 /// dependent, and one deleted before the dependent is created leaves it to the collector.
 /// It is not a controller reference and does not set `blockOwnerDeletion`, which would need
 /// `delete` on Users. Collection is eventual and skipped by orphan deletion, so it is cleanup,
-/// not revocation. Reads that sign someone in compare the owner's UID with the `User` (see
-/// [`user_owner_uid`]).
+/// not revocation. Reads that sign someone in or enrol a passkey compare the owner's UID with the
+/// `User` (see [`user_owner_uid`]).
 ///
 /// Like `Resource::owner_ref`, returns `None` for a User without a UID; API-server responses
 /// always have one. Requires a namespaced API to keep owner and dependent in the same namespace.

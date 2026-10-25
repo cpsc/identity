@@ -17,9 +17,10 @@ mod tests {
     use zeabur_identity_core::clock::UnixTime;
     use zeabur_identity_k8s::credentials::KubeCredentialStore;
     use zeabur_identity_k8s::grants::KubeGrantStore;
+    use zeabur_identity_k8s::setup::KubeSetupStore;
     use zeabur_identity_store::{
         AccountEvent, CredentialStore as _, CredentialType, GrantStore as _, NewExternal, Removal,
-        Rename, User, Verification,
+        Rename, SetupStore as _, User, Verification,
     };
 
     const ALICE_UID: &str = "uid-alice";
@@ -402,6 +403,42 @@ mod tests {
                 .names("credentials")
                 .contains(&"new".to_owned())
         );
+    }
+
+    #[tokio::test]
+    async fn an_invitation_enrols_only_the_user_that_owns_it() {
+        let mut backend = Backend::default();
+        let cases = [
+            ("inv-current", vec![ALICE_UID], true),
+            ("inv-earlier-alice", vec!["uid-old-alice"], false),
+            ("inv-no-owner", vec![], false),
+        ];
+        for (name, owners, _) in &cases {
+            let owners: Vec<Value> = owners
+                .iter()
+                .map(|uid| {
+                    json!({"apiVersion":"identity.zeabur.com/v1alpha1",
+                    "kind":"User","name":"alice","uid":uid})
+                })
+                .collect();
+            backend.insert(
+                "invitations",
+                json!({"apiVersion":"identity.zeabur.com/v1alpha1","kind":"Invitation",
+                    "metadata":{"name":name,"ownerReferences":owners},
+                    "spec":{"user":"alice","tokenHash":"sha256:00","expiresAt":1_800_003_600}}),
+            );
+        }
+        let mock = mock(backend).await;
+        let store = KubeSetupStore::new(Api::namespaced(mock.client.clone(), "test"))
+            .with_invitations(Api::namespaced(mock.client.clone(), "test"));
+        for (name, _, enrols) in cases {
+            let token = store
+                .load(&format!("{name}.secret"))
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(token.is_for(&alice()), enrols, "{name}");
+        }
     }
 
     #[tokio::test]

@@ -772,12 +772,26 @@ pub trait CredentialStore: Send + Sync + 'static {
 pub struct SetupToken {
     /// `User` object name the token enrols a passkey for.
     pub user: String,
+    /// The UID of the `User` the token was issued for. `None` if storage holds no single UID.
+    /// The token enrols only a `User` with this UID (see [`SetupToken::is_for`]).
+    pub user_subject: Option<String>,
     /// `sha256:<hex>` of the token.
     pub token_hash: String,
     /// Expiry.
     pub expires_at: UnixTime,
     /// Opaque version, consumed atomically.
     pub version: String,
+}
+
+impl SetupToken {
+    /// Whether the token may enrol a passkey or link an account for `user`.
+    ///
+    /// A new `User` with the name of a deleted one has a new UID. Thus a token left over from
+    /// the deleted user does not enrol the new user. A token with no UID enrols no one.
+    #[must_use]
+    pub fn is_for(&self, user: &User) -> bool {
+        self.user == user.name && self.user_subject.as_deref() == Some(user.subject.as_str())
+    }
 }
 
 /// Outcome of [`SetupStore::consume`].
@@ -1024,9 +1038,10 @@ pub struct MemorySetupStore {
 
 impl MemorySetupStore {
     /// Adds an invitation, as `zeabur-identityctl invite` would.
-    pub fn put_invitation(&self, name: &str, user: &str, token_hash: &str, expires_at: UnixTime) {
+    pub fn put_invitation(&self, name: &str, user: &User, token_hash: &str, expires_at: UnixTime) {
         let token = SetupToken {
-            user: user.to_owned(),
+            user: user.name.clone(),
+            user_subject: Some(user.subject.clone()),
             token_hash: token_hash.to_owned(),
             expires_at,
             version: format!("invitation/{name}"),
@@ -1038,13 +1053,14 @@ impl MemorySetupStore {
     }
 
     /// Replaces the token, as the admin CLI would.
-    pub fn put(&self, user: &str, token_hash: &str, expires_at: UnixTime) {
+    pub fn put(&self, user: &User, token_hash: &str, expires_at: UnixTime) {
         let mut slot = self.token.lock().unwrap_or_else(PoisonError::into_inner);
         let version = slot
             .as_ref()
             .map_or(1, |t| t.version.parse::<u64>().unwrap_or(0) + 1);
         *slot = Some(SetupToken {
-            user: user.to_owned(),
+            user: user.name.clone(),
+            user_subject: Some(user.subject.clone()),
             token_hash: token_hash.to_owned(),
             expires_at,
             version: version.to_string(),

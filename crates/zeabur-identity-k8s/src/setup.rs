@@ -8,6 +8,10 @@
 //! token but never create one, and it never needs RBAC rights: the `zeabur:admins` binding is
 //! created at install.
 //!
+//! The Secret and each invitation carry an owner reference with the UID of their `User`. A token
+//! enrols only a `User` with that UID: see [`SetupToken::is_for`]. Thus a token left over from a
+//! deleted `User` does not enrol a new `User` with the same name.
+//!
 //! Redeeming is a delete with `uid` and `resourceVersion` preconditions, so exactly one of any
 //! number of concurrent redemptions succeeds, and issuing a new link (which replaces the Secret)
 //! invalidates every earlier one. The token travels in the URL fragment, which browsers do not
@@ -46,6 +50,7 @@ use zeabur_identity_store::{Consume, SetupStore, SetupToken, StoreError, invitat
 
 use super::MANAGED_BY;
 use super::objects::{DeleteOutcome, delete_if_unchanged};
+use super::users::user_owner_uid;
 use crate::crd::credential::Credential;
 use crate::crd::grant::Grant;
 use crate::crd::invitation::Invitation;
@@ -126,6 +131,7 @@ async fn load_setup(api: &Api<Secret>) -> Result<Option<SetupToken>, StoreError>
     };
     Ok(Some(SetupToken {
         user,
+        user_subject: user_owner_uid(&secret.metadata).map(str::to_owned),
         token_hash,
         expires_at,
         version: format!("{SETUP_SECRET}/{uid}/{rv}"),
@@ -144,6 +150,7 @@ async fn load_invitation(
     };
     Ok(Some(SetupToken {
         user: invitation.spec.user.clone(),
+        user_subject: user_owner_uid(&invitation.metadata).map(str::to_owned),
         token_hash: invitation.spec.token_hash.clone(),
         expires_at: UnixTime::from_secs(u64::try_from(invitation.spec.expires_at).unwrap_or(0)),
         version: format!("{INVITATION_VERSION}{name}/{uid}/{rv}"),

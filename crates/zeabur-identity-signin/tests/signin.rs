@@ -33,8 +33,8 @@ mod tests {
     use zeabur_identity_signin::passkeys::{PasskeyError, Passkeys};
     use zeabur_identity_signin::{CEREMONY_COOKIE, SignIn};
     use zeabur_identity_store::{
-        Client, ClientType, MemoryCredentialStore, MemoryDirectory, MemoryGrantStore,
-        MemorySetupStore, User,
+        Client, ClientType, CredentialStore as _, MemoryCredentialStore, MemoryDirectory,
+        MemoryGrantStore, MemorySetupStore, User,
     };
     use zeabur_identity_test_support::logging::Capture;
     use zeabur_identity_test_support::{Device, device};
@@ -152,12 +152,20 @@ mod tests {
         let setup = MemorySetupStore::default();
         setup.put_invitation(
             "inv-1",
-            "dana",
+            &User {
+                name: "dana".into(),
+                subject: DANA_UID.into(),
+                ..User::default()
+            },
             &hash_secret(INVITATION.as_bytes()),
             UnixTime::from_secs(START + 3600),
         );
         setup.put(
-            "admin",
+            &User {
+                name: "admin".into(),
+                subject: ADMIN_UID.into(),
+                ..User::default()
+            },
             &hash_secret(SETUP_TOKEN.as_bytes()),
             UnixTime::from_secs(START + 3600),
         );
@@ -620,6 +628,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_link_left_from_a_removed_user_does_not_enrol_a_new_user_of_that_name() {
+        for (token, name) in [(INVITATION, "dana"), (SETUP_TOKEN, "admin")] {
+            let h = harness().await;
+            let mut device = device();
+            // The ceremony starts for the old user, and the link is still unused.
+            let (credential, ceremony) = start_enrolment(&h, &mut device, token).await;
+            // Remove the user but not the link, then give the name to a new person.
+            let directory = &h.service.oauth.directory;
+            directory.remove_user(name);
+            let newcomer = User {
+                name: name.into(),
+                subject: "0e7c5a1b-9d3f-4b2a-8c6e-1f2a3b4c5d6e".into(),
+                username: name.into(),
+                ..User::default()
+            };
+            directory.put_user(newcomer.clone());
+            let finish = post(
+                &h.app,
+                "/setup",
+                json!({ "token": token, "credential": credential }),
+                &[(CEREMONY_COOKIE, &ceremony)],
+            )
+            .await;
+            assert_eq!(
+                finish.kind(),
+                "urn:zeabur-identity:problem:setup-invalid",
+                "{name}"
+            );
+            let options = post(&h.app, "/setup/options", json!({ "token": token }), &[]).await;
+            assert_eq!(
+                options.kind(),
+                "urn:zeabur-identity:problem:setup-invalid",
+                "{name}"
+            );
+            assert!(
+                h.service
+                    .credentials
+                    .passkeys(&newcomer)
+                    .await
+                    .unwrap()
+                    .is_empty(),
+                "{name}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn setup_token_is_single_use() {
         let h = harness().await;
         enrol(&h, &mut device()).await;
@@ -708,7 +763,11 @@ mod tests {
         let mut device = device();
         let (credential, ceremony) = start_enrolment(&h, &mut device, SETUP_TOKEN).await;
         h.service.setup.put(
-            "admin",
+            &User {
+                name: "admin".into(),
+                subject: ADMIN_UID.into(),
+                ..User::default()
+            },
             &hash_secret(b"a-newer-token"),
             UnixTime::from_secs(START + 3600),
         );
@@ -1040,7 +1099,11 @@ mod tests {
         let h = harness().await;
         let token = "secret-setup-for-unknown-local-user";
         h.service.setup.put(
-            "missing-secret-user",
+            &User {
+                name: "missing-secret-user".into(),
+                subject: "uid-missing".into(),
+                ..User::default()
+            },
             &hash_secret(token.as_bytes()),
             UnixTime::from_secs(START + 3600),
         );
@@ -1053,7 +1116,7 @@ mod tests {
 
     mod account {
         use zeabur_identity_signin::account::{REAUTH_WINDOW, SESSION_COOKIE, SESSION_LIFETIME};
-        use zeabur_identity_store::{CredentialStore as _, GrantStore as _, Removal};
+        use zeabur_identity_store::{GrantStore as _, Removal};
 
         use super::*;
 

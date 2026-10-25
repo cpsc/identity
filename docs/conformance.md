@@ -216,6 +216,7 @@ Tests are in `zeabur-identity-signin/tests/upstream.rs`.
 | OIDC Core §3.1.3.7 | ID token: signature from the provider's JWK set, `iss`, `aud` exactly the client ID (no other audience trusted), `azp` if present equal to it, `exp`, `iat`, `nonce` | `upstream/provider.rs` | `google_id_tokens_are_validated` | Met |
 | Project requirement | Only linked accounts sign in; linking only through an enrolment link, once | `upstream.rs` | `an_invitation_links_an_account_once`, `unlinked_disabled_and_replayed_sign_ins_fail` | Met |
 | Kubernetes Object Names and IDs | A linked account signs in only as the `User` whose UID its owner reference names, never as a new `User` with the same name | `upstream.rs` `callback`; `zeabur-identity-k8s/src/credentials.rs` `linked_account`, `link` | `a_link_left_from_a_removed_user_does_not_sign_in_as_a_new_user_of_that_name`; `zeabur-identity-k8s/tests/account.rs: a_linked_account_signs_in_only_as_the_user_that_owns_it` | Met |
+| Kubernetes Object Names and IDs | An invitation or setup link enrols a passkey or links an account only for the `User` whose UID its owner reference names | `lib.rs` `valid_setup_token`; `zeabur-identity-k8s/src/setup.rs` `load_setup`, `load_invitation` | `signin.rs: a_link_left_from_a_removed_user_does_not_enrol_a_new_user_of_that_name`; `zeabur-identity-k8s/tests/account.rs: an_invitation_enrols_only_the_user_that_owns_it` | Met |
 
 ## Sign-in pages
 

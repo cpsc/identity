@@ -176,7 +176,7 @@ where
         let now = sign_in.oauth.now();
         if let Some(token) = &request.token {
             // Linking: check the link now, so a bad one fails before the user leaves.
-            valid_setup_token(&sign_in.setup, token, now).await?;
+            valid_setup_token(&sign_in.setup, &sign_in.oauth.directory, token, now).await?;
         } else {
             // Signing in: there must be a pending request, and it must not ask for elevation.
             let flow = cookie(&headers, FLOW_COOKIE)
@@ -394,20 +394,11 @@ where
         if linked.is_some() {
             return Err(("account_already_linked", ErrorReason::AccountAlreadyLinked, None));
         }
-        let stored = valid_setup_token(&sign_in.setup, &token, now)
+        let (stored, user) = valid_setup_token(&sign_in.setup, &oauth.directory, &token, now)
             .await
             .map_err(|_problem| ("invalid_setup", ErrorReason::SetupLinkInvalid, None))?;
         link_user = Some(stored.user.clone());
-        let user_subject = oauth
-            .directory
-            .user(&stored.user)
-            .await
-            .map_err(|error| {
-                tracing::warn!(reason = "user_lookup_failed", %error, "upstream user lookup failed");
-                ("user_lookup_failed", ErrorReason::ServerError, None)
-            })?
-            .ok_or(("invalid_setup", ErrorReason::SetupLinkInvalid, None))?
-            .subject;
+        let user_subject = user.subject;
         match sign_in.setup.consume(&stored).await {
             Ok(Consume::Consumed) => {}
             Ok(Consume::AlreadyUsed) => {

@@ -36,8 +36,8 @@ mod tests {
     use zeabur_identity_signin::upstream::provider::{Endpoints, Kind, Provider};
     use zeabur_identity_signin::upstream::{self, UPSTREAM_COOKIE, Upstream};
     use zeabur_identity_store::{
-        Client, ClientType, CredentialStore as _, MemoryCredentialStore, MemoryDirectory,
-        MemoryGrantStore, MemorySetupStore, NewExternal, SetupStore as _, User,
+        Client, ClientType, CredentialStore as _, Directory as _, MemoryCredentialStore,
+        MemoryDirectory, MemoryGrantStore, MemorySetupStore, NewExternal, SetupStore as _, User,
         external_credential_name,
     };
     use zeabur_identity_test_support::logging::Capture;
@@ -240,9 +240,10 @@ mod tests {
             used_request_uris: OneTimeIds::default(),
         });
         let setup = MemorySetupStore::default();
+        let dana = oauth.directory.user("dana").await.unwrap().unwrap();
         setup.put_invitation(
             "inv-1",
-            "dana",
+            &dana,
             &hash_secret(INVITATION.as_bytes()),
             zeabur_identity_core::clock::UnixTime::from_secs(SystemClock.now().as_secs() + 3600),
         );

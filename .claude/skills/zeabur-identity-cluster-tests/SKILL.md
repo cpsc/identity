@@ -11,29 +11,18 @@ about; sync the working tree there with `rsync -a --delete --exclude target ./ h
 run the commands below inside `nix develop` on that machine.
 
 ## Cluster with a writable authentication config
-kube-apiserver reads its `AuthenticationConfiguration` from a file and re-reads it about once a
-minute, so mount a host *directory* (atomic renames inside it are seen) and start with no issuer:
+`scripts/k3d-up.sh` creates it, as CI does. kube-apiserver re-reads `<dir>/authn/authn.yaml` about
+once a minute; the file starts with no issuer:
 
 ```sh
-mkdir -p ~/zeabur-identity-authn
-cat > ~/zeabur-identity-authn/authn.yaml <<'EOF'
-apiVersion: apiserver.config.k8s.io/v1
-kind: AuthenticationConfiguration
-anonymous:
-  enabled: false
-jwt: []
-EOF
-k3d cluster create zeabur-identity --image rancher/k3s:v1.36.5-k3s1 --no-lb --wait \
-  --volume "$HOME/zeabur-identity-authn:/etc/rancher/k3s/zeabur-identity@server:0" \
-  --k3s-arg "--kube-apiserver-arg=authentication-config=/etc/rancher/k3s/zeabur-identity/authn.yaml@server:0"
+./scripts/k3d-up.sh ~/zeabur-identity-k3d && export KUBECONFIG=~/zeabur-identity-k3d/kubeconfig
 ```
-The `anonymous` section cannot change on reload; keep it as above for k3s.
 
 ## Run
 ```sh
 cargo nextest run --locked --run-ignored only -E 'binary(kubernetes)'          # storage, RBAC, admission
 ./scripts/build-image.sh zeabur-identity:e2e && k3d image import zeabur-identity:e2e -c zeabur-identity
-ZEABUR_IDENTITY_E2E_IMAGE=zeabur-identity:e2e ZEABUR_IDENTITY_E2E_AUTHN_DIR=$HOME/zeabur-identity-authn \
+ZEABUR_IDENTITY_E2E_IMAGE=zeabur-identity:e2e ZEABUR_IDENTITY_E2E_AUTHN_DIR=$HOME/zeabur-identity-k3d/authn \
 ZEABUR_IDENTITY_E2E_MEASUREMENTS=/tmp/m.json \
   cargo nextest run --locked --run-ignored only -E 'binary(e2e)'
 ```

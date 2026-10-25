@@ -146,31 +146,19 @@ and permission to use Docker. Enter `nix develop` for the tools, including k3d a
 Do not use a production cluster: the tests create and delete resources and replace the
 API server's authentication configuration.
 
-CI uses `$RUNNER_TEMP/authn`; locally, give `RUNNER_TEMP` a fresh disposable directory:
+`scripts/k3d-up.sh` creates the cluster, as CI does. Give it a fresh disposable directory:
 
 ```sh
 nix develop
-export RUNNER_TEMP=$(mktemp -d)
-export KUBECONFIG="$RUNNER_TEMP/kubeconfig"
-mkdir -p "$RUNNER_TEMP/authn"
-cat > "$RUNNER_TEMP/authn/authn.yaml" <<'EOF'
-apiVersion: apiserver.config.k8s.io/v1
-kind: AuthenticationConfiguration
-anonymous:
-  enabled: false
-jwt: []
-EOF
-k3d cluster create zeabur-identity --image rancher/k3s:v1.36.5-k3s1 --no-lb --wait --timeout 300s \
-  --volume "$RUNNER_TEMP/authn:/etc/rancher/k3s/zeabur-identity@server:0" \
-  --k3s-arg "--kube-apiserver-arg=authentication-config=/etc/rancher/k3s/zeabur-identity/authn.yaml@server:0"
-export KUBECONFIG=$(k3d kubeconfig write zeabur-identity)
+dir=$(mktemp -d)
+./scripts/k3d-up.sh "$dir"
+export KUBECONFIG="$dir/kubeconfig"
 kubectl get nodes                         # Ready
 cargo nextest run --locked --run-ignored only -E 'binary(kubernetes)'
 ```
 
-The separate kubeconfig prevents k3d from changing your normal cluster context.
-Mount the directory, not just `authn.yaml`: kube-apiserver must see atomic file replacements.
-Keep `anonymous.enabled: false` unchanged; kube-apiserver cannot change it during a reload.
+The script's header says what it sets up: the API server reads its authentication configuration
+from `$dir/authn/authn.yaml`, which starts with no issuer, and the kubeconfig stays in `$dir`.
 
 Build and import the image, then run the end-to-end scenario against the same cluster:
 
@@ -178,8 +166,8 @@ Build and import the image, then run the end-to-end scenario against the same cl
 ./scripts/build-image.sh zeabur-identity:e2e
 k3d image import zeabur-identity:e2e --cluster zeabur-identity
 ZEABUR_IDENTITY_E2E_IMAGE=zeabur-identity:e2e \
-ZEABUR_IDENTITY_E2E_AUTHN_DIR="$RUNNER_TEMP/authn" \
-ZEABUR_IDENTITY_E2E_MEASUREMENTS="$RUNNER_TEMP/measurements.json" \
+ZEABUR_IDENTITY_E2E_AUTHN_DIR="$dir/authn" \
+ZEABUR_IDENTITY_E2E_MEASUREMENTS="$dir/measurements.json" \
   cargo nextest run --locked --run-ignored only -E 'binary(e2e)'
 ```
 

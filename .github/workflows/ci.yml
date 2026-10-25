@@ -88,14 +88,11 @@ jobs:
         with:
           key: kubernetes
       # kube-apiserver reads its AuthenticationConfiguration from a host directory, so the
-      # end-to-end test can install Zeabur Identity's (and remove it afterwards). It starts with no issuer.
+      # end-to-end test can install Zeabur Identity's (and remove it afterwards).
       - name: Start k3s
         run: |
-          mkdir -p "$RUNNER_TEMP/authn"
-          printf 'apiVersion: apiserver.config.k8s.io/v1\nkind: AuthenticationConfiguration\nanonymous:\n  enabled: false\njwt: []\n' > "$RUNNER_TEMP/authn/authn.yaml"
-          nix develop --command k3d cluster create zeabur-identity --image "rancher/k3s:${{ matrix.k3s }}" --no-lb --wait --timeout 300s \
-            --volume "$RUNNER_TEMP/authn:/etc/rancher/k3s/zeabur-identity@server:0" \
-            --k3s-arg "--kube-apiserver-arg=authentication-config=/etc/rancher/k3s/zeabur-identity/authn.yaml@server:0"
+          K3S_IMAGE="rancher/k3s:${{ matrix.k3s }}" nix develop --command ./scripts/k3d-up.sh "$RUNNER_TEMP"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
       - name: Integration tests
         run: nix develop --command cargo nextest run --locked --run-ignored only -E 'binary(kubernetes)'
       - name: Build the image

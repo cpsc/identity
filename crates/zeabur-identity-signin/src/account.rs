@@ -315,12 +315,12 @@ fn require_fresh(account: &Account, now: UnixTime) -> Result<(), Problem> {
 
 /// What the audit log and the `Event` record about a change.
 #[derive(Default)]
-struct Audit<'a> {
-    credential: Option<String>,
-    aaguid: Option<String>,
-    session: Option<String>,
-    revoked: usize,
-    requester: Option<&'a Requester>,
+pub(crate) struct Audit<'a> {
+    pub(crate) credential: Option<String>,
+    pub(crate) aaguid: Option<String>,
+    pub(crate) session: Option<String>,
+    pub(crate) revoked: usize,
+    pub(crate) requester: Option<&'a Requester>,
 }
 
 fn log_outcome<T>(
@@ -371,7 +371,7 @@ fn log_outcome<T>(
 }
 
 /// Records an `Event` on the user. Best effort: the change is done, so a failure is logged.
-async fn record<D, G, C, K, S>(
+pub(crate) async fn record<D, G, C, K, S>(
     service: &SignIn<D, G, C, K, S>,
     user: &User,
     reason: &'static str,

@@ -30,9 +30,12 @@ use zeabur_identity_oauth::authorize::Authentication;
 use zeabur_identity_oauth::endpoints::{FLOW_COOKIE, complete_authorization};
 use zeabur_identity_oauth::{AuthorizationServer, OneTimeIds, Use};
 use zeabur_identity_store::{
-    Consume, CreateCredential, CredentialStore, Directory, GrantStore, NewPasskey, SetupStore, User,
+    Consume, CreateCredential, CredentialStore, Directory, GrantStore, NewPasskey, SetupStore,
+    User, invitation_name,
 };
 
+use crate::account::{Audit, record};
+use crate::device::Requester;
 use crate::passkeys::{Passkeys, authenticator, backup_flags, credential_name};
 use crate::problem::Problem;
 
@@ -495,6 +498,15 @@ struct SetupResponse<'a> {
     username: &'a str,
 }
 
+/// The `Event` reason for a redeemed setup link or invitation.
+pub(crate) fn redeemed(token: &str) -> &'static str {
+    if invitation_name(token).is_some() {
+        "InvitationRedeemed"
+    } else {
+        "SetupLinkRedeemed"
+    }
+}
+
 /// Checks a presented setup token against the stored one. Returns the stored token and its
 /// current `User`.
 ///
@@ -602,6 +614,7 @@ where
 async fn setup_finish<D, G, C, K, S>(
     State(service): State<Shared<D, G, C, K, S>>,
     headers: HeaderMap,
+    requester: Requester,
     body: Bytes,
 ) -> Response
 where
@@ -674,6 +687,13 @@ where
                 ));
             }
         }
+        let audit = Audit {
+            credential: Some(stored.name.clone()),
+            aaguid: stored.aaguid.clone(),
+            requester: Some(&requester),
+            ..Audit::default()
+        };
+        record(&service, &owner, redeemed(&request.token), &audit, now).await;
         let mut response = json(
             StatusCode::CREATED,
             &SetupResponse {

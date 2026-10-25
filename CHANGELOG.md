@@ -29,6 +29,9 @@
   `setup-link` does. `invite --reset` deletes them, the user's sessions and pending invitations
   first. Before, an invitation silently added another passkey to the account.
 - Setup links and invitations stay valid for 7 days at most (`--valid-for`).
+- Issuing and redeeming a setup link or invitation each record a core `Event` on the `User`
+  (`SetupLinkIssued`, `InvitationIssued`, `SetupLinkRedeemed`, `InvitationRedeemed`). If
+  `zeabur-identityctl` cannot record the `Event`, it does not print the link.
 
 ### Removed
 

@@ -54,10 +54,12 @@ use zeabur_identity_ui::pages::{ErrorReason, accept_language, error_page, notice
 
 use self::http::HttpClient;
 use self::provider::{Exchange, Kind, Provider, UpstreamError};
+use crate::account::{Audit, record};
+use crate::device::Requester;
 use crate::problem::Problem;
 use crate::{
     NO_REQUEST, SignIn, check_account, check_request, clear_cookie, cookie, internal, json, parse,
-    valid_setup_token,
+    redeemed, valid_setup_token,
 };
 
 /// Cookie holding the sealed pending upstream request.
@@ -269,6 +271,7 @@ async fn callback<D, G, C, K, S, H>(
     Path(provider): Path<String>,
     RawQuery(query): RawQuery,
     headers: HeaderMap,
+    requester: Requester,
 ) -> Response
 where
     D: Directory,
@@ -409,7 +412,7 @@ where
             .map_err(|_problem| ("invalid_setup", ErrorReason::SetupLinkInvalid, None))?;
         link_user = Some(stored.user.clone());
         refuse_admin(&oauth.directory, &user).await?;
-        let user_subject = user.subject;
+        let user_subject = user.subject.clone();
         match sign_in.setup.consume(&stored).await {
             Ok(Consume::Consumed) => {}
             Ok(Consume::AlreadyUsed) => {
@@ -434,6 +437,12 @@ where
         };
         match sign_in.credentials.link(&external).await {
             Ok(CreateCredential::Created) => {
+                let audit = Audit {
+                    credential: Some(external.name.clone()),
+                    requester: Some(&requester),
+                    ..Audit::default()
+                };
+                record(sign_in, &user, redeemed(&token), &audit, now).await;
                 let apps = oauth.directory.apps();
                 let mut response = notice_page(
                     lang,

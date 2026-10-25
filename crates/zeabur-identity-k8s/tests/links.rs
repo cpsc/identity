@@ -25,6 +25,10 @@ mod tests {
         credentials: Vec<Value>,
         /// Writes, as `(method, last path segment)`, in order.
         writes: Vec<(Method, String)>,
+        /// Events created.
+        events: Vec<Value>,
+        /// Refuse to create events.
+        refuse_events: bool,
     }
 
     async fn kubernetes(
@@ -67,6 +71,19 @@ mod tests {
                 object["metadata"]["uid"] = json!("uid-object");
                 object["metadata"]["resourceVersion"] = json!("1");
                 (StatusCode::CREATED, Json(object))
+            }
+            (Method::POST, "events") => {
+                let mut state = state.lock().unwrap();
+                if state.refuse_events {
+                    return (
+                        StatusCode::FORBIDDEN,
+                        Json(json!({"apiVersion":"v1","kind":"Status","status":"Failure",
+                            "code":403,"reason":"Forbidden","message":"forbidden"})),
+                    );
+                }
+                state.events.push(body.clone());
+                drop(state);
+                (StatusCode::CREATED, Json(body))
             }
             unexpected => panic!("unexpected Kubernetes request: {unexpected:?} {path}"),
         }
@@ -218,6 +235,46 @@ mod tests {
                 created(&state.lock().unwrap().writes, stored(link)),
                 "{link:?}"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn issuing_a_link_records_an_event_on_the_user() {
+        for (link, reason) in [
+            (Link::Setup, "SetupLinkIssued"),
+            (Link::Invitation, "InvitationIssued"),
+        ] {
+            let (client, state) = fake(vec![credential("uid-alice")]).await;
+            issue(client, link, Duration::from_hours(1), true)
+                .await
+                .unwrap();
+            let events = state.lock().unwrap().events.clone();
+            let event = events
+                .iter()
+                .find(|event| event["reason"] == reason)
+                .unwrap_or_else(|| panic!("{link:?}: no {reason} event in {events:?}"));
+            let user = &event["involvedObject"];
+            assert_eq!(
+                (&user["kind"], &user["name"], &user["uid"]),
+                (&json!("User"), &json!("alice"), &json!("uid-alice")),
+                "{link:?}"
+            );
+            assert!(
+                event["message"].as_str().unwrap().contains("reset=true"),
+                "{link:?}: {event}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_link_whose_event_fails_is_not_shown() {
+        for link in [Link::Setup, Link::Invitation] {
+            let (client, state) = fake(Vec::new()).await;
+            state.lock().unwrap().refuse_events = true;
+            let error = issue(client, link, Duration::from_hours(1), false)
+                .await
+                .unwrap_err();
+            assert!(matches!(error, LinkError::Event(_)), "{link:?}: {error}");
         }
     }
 }

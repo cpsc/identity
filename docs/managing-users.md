@@ -45,6 +45,12 @@ Alice over a channel you trust. When she opens it, she creates a passkey, or lin
 Things to know:
 
 - **Anyone with the link can become Alice** until it is used or expires. Send it only to her.
+  Issuing the link and using it each add an event to the `User` (`InvitationIssued`,
+  `InvitationRedeemed`), so you can see when and from where it was used:
+
+  ```sh
+  kubectl -n zeabur-identity get events --field-selector involvedObject.name=alice
+  ```
 - **The link lasts 7 days, and no longer.** Use `--valid-for 24h`, for example, for a shorter
   window.
 - **Options apply only to new users.** `--group`, `--admin` and `--display-name` set
@@ -318,7 +324,8 @@ zeabur-identityctl setup-link --username alice --reset
 
 This deletes all of Alice's credentials (passkeys and any linked GitHub or Google account),
 sessions and pending invitations, and prints a new one-time link that lasts an hour. Whoever
-opens the link becomes Alice, so confirm you are talking to her before you send it. For a
+opens the link becomes Alice, so confirm you are talking to her before you send it. The
+`User` gets a `SetupLinkIssued` event now and a `SetupLinkRedeemed` event when the link is used. For a
 regular account, `zeabur-identityctl invite --username alice --reset` does the same and prints
 an invitation instead, which can also link GitHub or Google.
 

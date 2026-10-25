@@ -675,6 +675,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn redeeming_a_link_records_an_event_on_the_user() {
+        for (token, user, reason) in [
+            (SETUP_TOKEN, "admin", "SetupLinkRedeemed"),
+            (INVITATION, "dana", "InvitationRedeemed"),
+        ] {
+            let h = harness().await;
+            let mut device = device();
+            let (credential, ceremony) = start_enrolment(&h, &mut device, token).await;
+            let reply = post(
+                &h.app,
+                "/setup",
+                json!({ "token": token, "credential": credential }),
+                &[(CEREMONY_COOKIE, &ceremony)],
+            )
+            .await;
+            assert_eq!(reply.status, StatusCode::CREATED, "{}", reply.body);
+            let events = h.service.credentials.events();
+            let event = events
+                .iter()
+                .find(|event| event.reason == reason)
+                .unwrap_or_else(|| panic!("no {reason} event in {events:?}"));
+            assert_eq!(event.user, user);
+            assert!(event.note.contains("credential="), "{}", event.note);
+        }
+    }
+
+    #[tokio::test]
     async fn setup_token_is_single_use() {
         let h = harness().await;
         enrol(&h, &mut device()).await;

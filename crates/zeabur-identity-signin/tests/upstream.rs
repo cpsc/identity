@@ -830,6 +830,13 @@ mod tests {
                 .map(|linked| (linked.user, linked.user_subject)),
             Some(("dana".to_owned(), Some("uid-dana".to_owned())))
         );
+        let events = h.service.sign_in.credentials.events();
+        assert!(
+            events
+                .iter()
+                .any(|event| event.reason == "InvitationRedeemed" && event.user == "dana"),
+            "{events:?}"
+        );
         // The invitation is used up.
         let again = start(&h, "google", &json!({ "token": INVITATION }), "").await;
         assert_eq!(again.status, StatusCode::UNAUTHORIZED);

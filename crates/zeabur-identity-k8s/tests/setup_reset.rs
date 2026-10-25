@@ -94,6 +94,10 @@ mod tests {
                 state.secret = serde_json::from_slice(&bytes).unwrap();
                 ok(state.secret.clone())
             }
+            (Method::POST, "events") => (
+                StatusCode::CREATED,
+                Json(serde_json::from_slice(&bytes).unwrap()),
+            ),
             (Method::PUT, "status") if path.contains("/grants/") => {
                 let mut grant: Value = serde_json::from_slice(&bytes).unwrap();
                 grant["metadata"]["resourceVersion"] = json!("2");

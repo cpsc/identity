@@ -24,6 +24,9 @@
 //! A link stays valid for at most [`MAX_VALID_FOR`]: the lifetime of an invitation from Zeabur and
 //! the default of `invite`. A link sent through chat or email can leak, so its lifetime has a cap.
 //!
+//! Each issued link is recorded as an `Event` on the `User`, and Zeabur Identity records each
+//! redemption the same way. If the `Event` fails, the command does not show the link.
+//!
 //! Reset deletes the user's invitations first, then credentials, then grants. Invitations go
 //! first because each one can enrol another passkey: one left behind would let whoever holds it
 //! back into the recovered account. Reset always deletes all three collections, even when they
@@ -51,9 +54,13 @@ use thiserror::Error;
 use zeabur_identity_core::clock::UnixTime;
 use zeabur_identity_core::config::BaseUrl;
 use zeabur_identity_core::crypto::{hash_secret, random};
-use zeabur_identity_store::{Consume, SetupStore, SetupToken, StoreError, invitation_name};
+use zeabur_identity_store::{
+    AccountEvent, Consume, CredentialStore as _, SetupStore, SetupToken, StoreError,
+    invitation_name,
+};
 
 use super::MANAGED_BY;
+use super::credentials::KubeCredentialStore;
 use super::objects::{DeleteOutcome, delete_if_unchanged};
 use super::users::{owned_by_another, user_owner_uid};
 use crate::crd::credential::Credential;
@@ -243,6 +250,9 @@ pub enum LinkError {
     /// Randomness failed.
     #[error("unable to generate the token")]
     Crypto,
+    /// The link exists, but the `Event` on the `User` failed, so the link is not shown.
+    #[error("unable to record the link as an Event on the user, so the link is not shown: {0}")]
+    Event(StoreError),
 }
 
 /// Refuses a lifetime longer than [`MAX_VALID_FOR`].
@@ -251,6 +261,33 @@ pub(crate) fn check_valid_for(valid_for: Duration) -> Result<(), LinkError> {
         return Err(LinkError::TooLong);
     }
     Ok(())
+}
+
+/// Records an issued link as an `Event` on `user`. A link without its `Event` is not shown.
+pub(crate) async fn record_issued(
+    client: &Client,
+    namespace: &str,
+    user: &User,
+    reason: &'static str,
+    note: String,
+    now: UnixTime,
+) -> Result<(), LinkError> {
+    let store = KubeCredentialStore::new(Api::namespaced(client.clone(), namespace));
+    let event = AccountEvent {
+        user: user.name_any(),
+        subject: user.uid().unwrap_or_default(),
+        reason,
+        at: now,
+        note,
+    };
+    store.record(&event).await.map_err(LinkError::Event)
+}
+
+/// The `Event` note for an issued link.
+pub(crate) fn issued_note(link: Option<&str>, expires_at: UnixTime, reset: bool) -> String {
+    let invitation = link.map_or_else(String::new, |name| format!("invitation={name} "));
+    let reset = if reset { " reset=true" } else { "" };
+    format!("{invitation}expires_at={}{reset}", expires_at.as_secs())
 }
 
 /// Refuses a link for `user` if the user can already sign in, unless `reset` is true. With
@@ -311,7 +348,8 @@ pub struct SetupLink {
 /// # Errors
 ///
 /// [`LinkError`] if `valid_for` is longer than [`MAX_VALID_FOR`], the API calls fail, or the user
-/// already has passkeys or linked accounts and `reset` is false.
+/// already has passkeys or linked accounts and `reset` is false. Records a `SetupLinkIssued`
+/// `Event` on the `User`.
 pub async fn issue_setup_link(
     client: Client,
     namespace: &str,
@@ -344,7 +382,7 @@ pub async fn issue_setup_link(
 
     let token = URL_SAFE_NO_PAD.encode(random::<32>().map_err(|_crypto| LinkError::Crypto)?);
     let expires_at = now.saturating_add(valid_for);
-    let secrets: Api<Secret> = Api::namespaced(client, namespace);
+    let secrets: Api<Secret> = Api::namespaced(client.clone(), namespace);
     let mut secret = Secret {
         metadata: ObjectMeta {
             name: Some(SETUP_SECRET.to_owned()),
@@ -382,6 +420,8 @@ pub async fn issue_setup_link(
             secrets.create(&pp, &secret).await?;
         }
     }
+    let note = issued_note(None, expires_at, reset);
+    record_issued(&client, namespace, &user, "SetupLinkIssued", note, now).await?;
     Ok(SetupLink {
         url: format!("{}#token={token}", issuer.join("/setup")),
         expires_at,

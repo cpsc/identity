@@ -20,7 +20,7 @@
 //! - **Account settings.** It reads one `ConfigMap`, [`SETTINGS_CONFIG_MAP`], by name. Admins write
 //!   it.
 //! - **Account events.** It creates core `Event`s about users who change their own passkeys or
-//!   sessions, and cannot read, change or delete events.
+//!   sessions or redeem a setup link or invitation, and cannot read, change or delete events.
 //! - **Runtime state is Zeabur Identity's.** Full access to grants; invitations it can read and
 //!   redeem (`delete`), but not create.
 //! - **Nothing else.** No cluster-scoped rights, nothing in other namespaces, no RBAC objects, no
@@ -124,7 +124,7 @@ pub fn rules() -> Vec<PolicyRule> {
         ),
         // Account settings, written by admins.
         rule(&[""], &["configmaps"], &[SETTINGS_CONFIG_MAP], &["get"]),
-        // Account changes users make themselves, as events on the User.
+        // Account changes users make themselves and redeemed links, as events on the User.
         rule(&[""], &["events"], &[], &["create"]),
     ]
 }

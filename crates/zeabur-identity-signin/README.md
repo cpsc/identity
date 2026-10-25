@@ -55,7 +55,8 @@ tests; `zeabur-identity-test-support` provides the software authenticator for th
   (Kanidm's privilege window works the same way). The last passkey cannot be removed; the
   Kubernetes store makes that hold under concurrent removals with `resourceVersion`
   preconditions. Removing a passkey revokes every session and grant it signed in. Changes are
-  logged to `zeabur_identity::audit` and recorded as `Event`s on the `User`.
+  logged to `zeabur_identity::audit` and recorded as `Event`s on the `User`. A redeemed setup
+  link or invitation is recorded the same way (`SetupLinkRedeemed`, `InvitationRedeemed`).
 - **Upstream providers.** An upstream account signs in only if it was linked to a user, either
   by redeeming an enrolment link with it or by an admin creating the `Credential`; nothing is
   created on first sign-in. Accounts are keyed by the provider's stable identifier (GitHub's

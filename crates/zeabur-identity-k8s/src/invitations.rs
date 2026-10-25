@@ -12,7 +12,7 @@ use zeabur_identity_core::config::BaseUrl;
 use zeabur_identity_core::crypto::{hash_secret, hex, random};
 
 use super::MANAGED_BY;
-use super::setup::{LinkError, check_valid_for, prepare_enrolment};
+use super::setup::{LinkError, check_valid_for, issued_note, prepare_enrolment, record_issued};
 use crate::crd::invitation::{Invitation, InvitationSpec};
 use crate::crd::user::{AccountType, User, UserSpec};
 use crate::crd::{EXPIRES_AT_ANNOTATION, EXPIRY_BUCKET_LABEL, USER_LABEL};
@@ -71,7 +71,8 @@ pub fn link(issuer: &BaseUrl, token: &str) -> String {
 /// # Errors
 ///
 /// [`LinkError`] if `valid_for` is longer than [`MAX_VALID_FOR`](crate::setup::MAX_VALID_FOR), an
-/// API call fails, or the user already has credentials and `reset` is false.
+/// API call fails, or the user already has credentials and `reset` is false. Records an
+/// `InvitationIssued` `Event` on the `User`.
 pub async fn invite(
     client: Client,
     namespace: &str,
@@ -132,8 +133,10 @@ pub async fn invite(
             expires_at: i64::try_from(expires_at.as_secs()).unwrap_or(i64::MAX),
         },
     };
-    let invitations: Api<Invitation> = Api::namespaced(client, namespace);
+    let invitations: Api<Invitation> = Api::namespaced(client.clone(), namespace);
     let created = invitations.create(&pp, &invitation).await?;
+    let note = issued_note(Some(&name), expires_at, reset);
+    record_issued(&client, namespace, &user, "InvitationIssued", note, now).await?;
     Ok(Invited {
         name: created.name_any(),
         url: link(issuer, &token),

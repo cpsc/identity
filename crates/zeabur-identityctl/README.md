@@ -66,6 +66,10 @@ long the link can be redeemed (default `7d`, at most `7d`). Send the printed lin
 could add a passkey and sign in as that user. `--reset` first deletes the user's pending
 invitations, credentials and sessions, as `setup-link --reset` does.
 
+`invite` and `setup-link` record each link as an `Event` on the `User` (`InvitationIssued`,
+`SetupLinkIssued`). If the `Event` fails, the command prints no link; your kubeconfig needs
+`create` on `events` in Zeabur Identity's namespace.
+
 ### Configure token limits and the internal certificate
 
 `kube-config` generates a maximum accepted token lifetime of `1h` (`--max-token-lifetime`).

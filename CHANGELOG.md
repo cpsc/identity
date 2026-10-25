@@ -2,7 +2,23 @@
 
 ## Unreleased
 
+### Changed
+
+- Internal discovery needs cert-manager. `zeabur-identityctl kube-config` has cert-manager issue
+  a root CA (10 years) and the internal listener's certificate (90 days, renewed automatically)
+  in Zeabur Identity's namespace. The printed configuration changes only if the root CA or the
+  ClusterIP changes. Without cert-manager, use `--discovery public`.
+- Upgrade: install cert-manager, then run `kube-config` once and install the configuration it
+  prints on every control-plane machine. It replaces the old certificate and its CA. Sign-ins fail
+  until kube-apiserver loads the new configuration, about a minute.
+- The root CA's private key now lives in Secret `zeabur-identity-internal-ca`. Anyone who can read
+  Secrets in Zeabur Identity's namespace can issue a certificate for the internal address.
+
 ### Removed
+
+- `zeabur-identityctl kube-config --renew-certificate` and `--certificate-validity`. cert-manager
+  renews the certificate. See [operations](docs/operations.md#internal-certificate) to replace
+  the root CA.
 
 - `zeabur-identityctl kube-config --distro` no longer accepts `k0s`, `kubeadm` or `kubesolo`.
   Use `k3s` on K3s/RKE2 and `generic` elsewhere.

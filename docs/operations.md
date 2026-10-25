@@ -222,7 +222,7 @@ cluster version, the namespace, the issuer URL and the install options you used:
 | The cluster's datastore backup, plus what the distribution needs to open it (server token, encryption keys, cluster certificates) | The only way to keep UIDs and passkeys. A snapshot you can't decrypt isn't a backup. |
 | `users`, `credentials`, `oauthclients` (`*.identity.zeabur.com`) | People and their groups, passkey records and linked GitHub or Google accounts, registered clients. |
 | Secret `zeabur-identity-signing-keys` | All of Zeabur Identity's private signing keys, including upcoming and retired ones. Can't be rebuilt from anything else. |
-| Secret `zeabur-identity-internal-tls` | The certificate kube-apiserver uses to reach Zeabur Identity internally. Belongs with the authentication file on each control-plane machine. |
+| Secret `zeabur-identity-internal-ca` | The root CA and its private key, which cert-manager uses to sign the certificate kube-apiserver checks on the internal address. Belongs with the authentication file on each control-plane machine. cert-manager issues `zeabur-identity-internal-tls` again from it. |
 | Deployment, Service, ServiceAccount, Role and RoleBinding `zeabur-identity`; ClusterRoleBindings `zeabur-identity-admins` and `zeabur-identity-elevated-admins` | How Zeabur Identity runs and who gets admin rights. Back up your own RoleBindings for other apps too. |
 | Secrets mounted into Zeabur Identity, such as `zeabur-identity-config` | GitHub and Google client secrets. Keep the upstream app registrations with them. |
 | Public TLS and routing | In Get started: Secret `zeabur-identity-tls`, Ingress `zeabur-identity`; for rate limiting, Ingress `zeabur-identity-rate-limited`, Middleware `zeabur-identity-rate-limit` and the `traefik` HelmChartConfig in `kube-system`. |
@@ -279,7 +279,7 @@ for resource in users credentials oauthclients grants invitations; do
   kubectl -n "$NS" get "$resource.identity.zeabur.com" -o json \
     > "$BACKUP/$resource.json"
 done
-kubectl -n "$NS" get secret zeabur-identity-signing-keys zeabur-identity-internal-tls -o json \
+kubectl -n "$NS" get secret zeabur-identity-signing-keys zeabur-identity-internal-ca -o json \
   > "$BACKUP/identity-secrets.json"
 kubectl -n "$NS" get svc zeabur-identity -o json > "$BACKUP/service.json"
 kubectl -n "$NS" get serviceaccount/zeabur-identity role/zeabur-identity rolebinding/zeabur-identity -o json \
@@ -399,8 +399,9 @@ Use this when you have a datastore backup. People keep their identity and passke
    Everyone is signed out. Tokens already issued still work until they expire, because they are
    self-contained: by default 10 minutes, or 5 for admin tokens, unless you changed the limits.
 6. **Restore the rest:** configuration Secrets, app client secrets, public TLS, routes and
-   kube-apiserver's authentication file. Check the internal certificate still matches the
-   `zeabur-identity` Service's address and hasn't expired. If it doesn't, see
+   kube-apiserver's authentication file. Run `zeabur-identityctl kube-config` with the original
+   issuer: it has cert-manager issue the internal certificate from the restored CA, for the
+   `zeabur-identity` Service's address. If its output differs from the authentication file, see
    [Lost signing keys or internal certificate](#lost-signing-keys-or-internal-certificate).
 7. **Start Zeabur Identity** with the same image and issuer, at its usual replica count, then resume
    GitOps. Have an admin sign in fresh, check normal and admin access, and test one passkey
@@ -445,7 +446,7 @@ room.
 
    If `create` fails, stop and find out why. Don't switch to a forced apply or delete what's in
    the way.
-3. **Restore the signing keys**, the internal and public TLS, and the configuration Secrets,
+3. **Restore the signing keys**, the internal CA, the public TLS and the configuration Secrets,
    **before** starting Zeabur Identity:
 
    ```sh
@@ -516,19 +517,43 @@ and start with new keys.
 
 ### Internal certificate
 
-`zeabur-identity-internal-tls` is the certificate kube-apiserver checks when it fetches Zeabur Identity's keys over
-the internal address. `zeabur-identityctl kube-config` throws away the CA's private key after signing, so a
-new certificate always comes with a new CA, and kube-apiserver needs the matching configuration.
-Restoring only the Secret, or only the file on the control-plane machine, leaves them out of
-step.
+cert-manager issues `zeabur-identity-internal-tls`, the certificate kube-apiserver checks when it
+fetches Zeabur Identity's keys over the internal address. It signs it with the root CA in
+`zeabur-identity-internal-ca`, and kube-apiserver trusts only that CA. Check both with
+`kubectl -n zeabur-identity get certificate`.
 
-To replace it, once the `zeabur-identity` Service exists, run `zeabur-identityctl kube-config` for your
-distribution with the original issuer. It doesn't need Zeabur Identity to be running. It reuses the
-certificate if it is still good, and `--renew-certificate` forces a new one. Install the
-configuration it prints on **every** control-plane machine, as in
-[Get started](get-started.md#once-a-year-renew-the-internal-certificate). If the install fails
-halfway, run the command again **without** `--renew-certificate`: it prints the configuration
-for the certificate it just made. Forcing renewal again only makes things worse.
+- **Lost or expired serving certificate:** cert-manager issues it again by itself. Nothing on the
+  control-plane machines changes.
+- **Lost root CA, a leaked CA key, or a CA close to the end of its 10 years:** replace the root
+  CA. Sign-ins fail from step 2 until kube-apiserver has the new configuration.
+
+To replace the root CA:
+
+1. Delete the CA Secret. cert-manager issues a new root CA with a new key:
+
+   ```sh
+   kubectl -n zeabur-identity delete secret zeabur-identity-internal-ca
+   kubectl -n zeabur-identity wait certificate/zeabur-identity-internal-ca --for=condition=Ready --timeout=2m
+   ```
+
+2. Delete the serving certificate's Secret. cert-manager signs a new one with the new CA:
+
+   ```sh
+   kubectl -n zeabur-identity delete secret zeabur-identity-internal-tls
+   kubectl -n zeabur-identity wait certificate/zeabur-identity-internal-tls --for=condition=Ready --timeout=2m
+   ```
+
+3. Run `zeabur-identityctl kube-config` for your distribution with the original issuer. Install
+   the configuration it prints on **every** control-plane machine, as in
+   [Get started](get-started.md#5-let-kube-apiserver-trust-zeabur-identity). With the Zeabur
+   installer, run `zeabur-installer apply` on the first server instead.
+
+> [!WARNING]
+> Anyone who can read Secrets in the `zeabur-identity` namespace can read the CA's private key
+> and issue a certificate for the internal address. With that certificate and a way to answer
+> at the Service's ClusterIP, they can hand kube-apiserver their own signing keys. Give read
+> access to Secrets in this namespace only to cluster admins. Zeabur Identity's own service
+> account can read only `zeabur-identity-internal-tls`.
 
 Don't work around a lost certificate by trusting plain HTTP or skipping certificate checks. If
 you lose the **public** certificate, get a new one for the same host name.
@@ -732,12 +757,11 @@ kubectl -n "$NS" rollout status deployment/zeabur-identity --timeout=5m
 kubectl -n "$NS" logs deployment/zeabur-identity --tail=200
 ```
 
-Keep the `zeabur-identity` Service, `zeabur-identity-internal-tls` and `zeabur-identity-signing-keys` as they are. A new
+Keep the `zeabur-identity` Service, `zeabur-identity-internal-ca` and `zeabur-identity-signing-keys` as they are. A new
 Service may get a new IP, and every kube-apiserver has the old one pinned in its authentication
-file. Don't renew the certificate, change the issuer or delete sessions as part of an upgrade. If
+file. Don't replace the root CA, change the issuer or delete sessions as part of an upgrade. If
 the new version really needs a different kube-apiserver configuration, treat that as its own
-change, one machine at a time. Note that `zeabur-identityctl kube-config` may replace the internal
-certificate as it runs.
+change, one machine at a time.
 
 Afterwards, check the running image, readiness and logs. Then sign in fresh with an existing
 passkey, try something you're allowed to do and something you aren't, and try admin access. A
@@ -787,7 +811,8 @@ These are worth trying, along with what you should see:
 | Datastore restore | Back up, delete a user, then restore | Same UID, the old passkey still works. Sessions revoked after the backup come back until you delete the grants. Tokens already issued keep working until they expire. |
 | Recreate from an export | Delete a user and recreate it from the export | New UID. The old passkey fails, even with a corrected `Credential`. The user can enrol again. |
 | Lost signing keys | Delete the signing-key Secret and recreate it empty | Old tokens and sessions are refused. Users and passkeys still work. |
-| Lost internal certificate | Delete `zeabur-identity-internal-tls` and run `zeabur-identityctl kube-config` | A new certificate and CA. Sign-ins work once kube-apiserver has the new configuration. |
+| Lost internal certificate | Delete `zeabur-identity-internal-tls` | cert-manager issues it again from the same CA. Sign-ins keep working, and the authentication file stays the same. |
+| Replaced internal CA | Follow [Internal certificate](#internal-certificate) | A new CA. Sign-ins work once kube-apiserver has the new configuration. |
 | Failed upgrade | Deploy an image that doesn't exist, then go back | Users, passkeys and sessions are unchanged. |
 
 Things a disposable cluster can't tell you, so try them on your own setup:

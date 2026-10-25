@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 
+pub mod certificate;
 pub mod logging;
 
 use passkey::authenticator::{Authenticator, UiHint, UserCheck, UserValidationMethod};

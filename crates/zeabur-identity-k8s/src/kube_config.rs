@@ -1,9 +1,11 @@
 //! `zeabur-identityctl kube-config`: the kube-apiserver side of the integration.
 //!
-//! Run by the cluster admin with their own kubeconfig. It finds Zeabur Identity's Service, makes
-//! sure the internal listener has a certificate for the Service's ClusterIP (issuing one if needed,
-//! [`crate::internal_tls`]), and prints the `AuthenticationConfiguration` for the chosen
-//! distribution together with how to install it there.
+//! Run by the cluster admin with their own kubeconfig. It finds Zeabur Identity's Service, has
+//! cert-manager issue a certificate for the Service's ClusterIP ([`crate::internal_tls`]), and
+//! prints the `AuthenticationConfiguration` for the chosen distribution together with how to
+//! install it there. The configuration names the root CA, which stays the same when cert-manager
+//! renews the serving certificate. The output therefore changes only if the ClusterIP or the root
+//! CA changes.
 //!
 //! The file is a structured `AuthenticationConfiguration` (`apiserver.config.k8s.io/v1`, GA in
 //! Kubernetes 1.34, [KEP-3331]). kube-apiserver re-reads it about once a minute, so only the
@@ -87,10 +89,13 @@ use std::time::Duration;
 
 use clap::ValueEnum;
 use k8s_openapi::api::core::v1::{Secret, Service};
-use kube::api::{Api, PostParams};
+use kube::api::{
+    Api, ApiResource, DeleteParams, DynamicObject, GroupVersionKind, Patch, PatchParams,
+    Preconditions,
+};
 use kube::{Client, ResourceExt as _};
+use serde_json::Value;
 use thiserror::Error;
-use zeabur_identity_core::clock::UnixTime;
 use zeabur_identity_core::config::{BaseUrl, ConfigError};
 use zeabur_identity_core::protocol::{ELEVATED_GROUP_PREFIX, OPENID_CONFIGURATION_PATH};
 
@@ -103,8 +108,12 @@ pub const EXTRA_PREFIX: &str = "identity.zeabur.com/";
 /// Most seconds between sign-in and an elevated token's issue: the code lifetime with slack.
 const ELEVATED_FRESHNESS: u64 = 120;
 
-/// Renew a reused certificate that expires sooner than this.
-const RENEW_BEFORE: Duration = Duration::from_hours(30 * 24);
+/// Field manager of the cert-manager objects.
+const FIELD_MANAGER: &str = "zeabur-identityctl";
+/// Annotation cert-manager puts on every Secret it issues.
+const CERT_MANAGER_ANNOTATION: &str = "cert-manager.io/certificate-name";
+/// How long to wait for cert-manager to issue the certificates.
+const ISSUE_TIMEOUT: Duration = Duration::from_mins(2);
 
 /// Where kube-apiserver runs; decides the `anonymous` section and the install instructions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -170,14 +179,24 @@ pub enum KubeConfigError {
     /// The ClusterIP is not an IP address.
     #[error("Service ClusterIP {0:?} is not an IP address")]
     BadClusterIp(String),
-    /// Issuing or reading the certificate failed.
+    /// Reading the certificate failed.
     #[error("internal certificate: {0}")]
     Tls(#[from] TlsError),
-    /// The existing Secret carries no CA certificate to give kube-apiserver.
+    /// cert-manager's resources do not exist in the cluster.
     #[error(
-        "Secret {0} has no ca.crt; re-run with --renew-certificate, or add the CA that issued it"
+        "cert-manager is not installed: internal discovery needs it to issue Zeabur Identity's certificate; install cert-manager, or use --discovery public"
     )]
-    NoCa(&'static str),
+    NoCertManager,
+    /// cert-manager did not issue a certificate in time.
+    #[error(
+        "cert-manager did not issue Certificate {namespace}/{name} within 2 minutes; see `kubectl -n {namespace} describe certificate {name}`"
+    )]
+    NotIssued {
+        /// Namespace of the Certificate.
+        namespace: String,
+        /// Name of the Certificate.
+        name: &'static str,
+    },
     /// An option is invalid.
     #[error(transparent)]
     Config(#[from] ConfigError),
@@ -188,7 +207,7 @@ pub enum KubeConfigError {
 
 /// A YAML double-quoted scalar (JSON string syntax is valid YAML).
 fn quoted(value: &str) -> String {
-    serde_json::Value::String(value.to_owned()).to_string()
+    Value::String(value.to_owned()).to_string()
 }
 
 /// The first line of the generated file.
@@ -357,59 +376,37 @@ pub struct Request {
     pub max_token_lifetime: Duration,
     /// Longest accepted lifetime of an elevated token.
     pub max_elevated_token_lifetime: Duration,
-    /// Issue a new certificate even if a usable one exists.
-    pub renew: bool,
-    /// Lifetime of a newly issued certificate.
-    pub certificate_validity: Duration,
-    /// The current time.
-    pub now: UnixTime,
 }
 
-/// What [`prepare`] produced.
-#[derive(Debug, Clone)]
-pub struct Prepared {
-    /// The `AuthenticationConfiguration` (YAML).
-    pub configuration: String,
-    /// When a newly issued certificate expires, if one was issued.
-    pub issued_until: Option<UnixTime>,
-}
-
-/// Prepares the cluster for internal discovery (if chosen) and renders the configuration.
+/// Prepares the cluster for internal discovery (if chosen) and renders the
+/// `AuthenticationConfiguration` (YAML).
 ///
 /// # Errors
 ///
-/// Returns [`KubeConfigError`] if Zeabur Identity's Service is missing, an audience is invalid,
-/// or the API refuses a request.
-pub async fn prepare(client: Client, request: &Request) -> Result<Prepared, KubeConfigError> {
-    let (internal, issued_until) = match request.discovery {
-        DiscoveryMode::Public => (None, None),
-        DiscoveryMode::Internal => {
-            let (internal, issued) = ensure_certificate(client, request).await?;
-            (Some(internal), issued)
-        }
+/// Returns [`KubeConfigError`] if Zeabur Identity's Service is missing, cert-manager is missing
+/// or does not issue the certificates, an audience is invalid, or the API refuses a request.
+pub async fn prepare(client: Client, request: &Request) -> Result<String, KubeConfigError> {
+    let internal = match request.discovery {
+        DiscoveryMode::Public => None,
+        DiscoveryMode::Internal => Some(ensure_certificate(client, &request.namespace).await?),
     };
-    let configuration = authentication_configuration(&ApiserverOptions {
+    authentication_configuration(&ApiserverOptions {
         distro: request.distro,
         issuer: request.issuer.clone(),
         internal,
         audiences: request.audiences.clone(),
         max_token_lifetime: request.max_token_lifetime,
         max_elevated_token_lifetime: request.max_elevated_token_lifetime,
-    })?;
-    Ok(Prepared {
-        configuration,
-        issued_until,
     })
 }
 
 async fn ensure_certificate(
     client: Client,
-    request: &Request,
-) -> Result<(InternalDiscovery, Option<UnixTime>), KubeConfigError> {
-    let namespace = &request.namespace;
+    namespace: &str,
+) -> Result<InternalDiscovery, KubeConfigError> {
     let services: Api<Service> = Api::namespaced(client.clone(), namespace);
     let no_service = || KubeConfigError::NoService {
-        namespace: namespace.clone(),
+        namespace: namespace.to_owned(),
         name: NAME,
     };
     let cluster_ip = services
@@ -424,54 +421,108 @@ async fn ensure_certificate(
         .map_err(|_parse| KubeConfigError::BadClusterIp(cluster_ip.clone()))?;
     let url = internal_tls::internal_url(ip)?;
 
-    let secrets: Api<Secret> = Api::namespaced(client, namespace);
-    let existing = secrets.get_opt(internal_tls::SECRET).await?;
-    if let Some(secret) = &existing
-        && !request.renew
-        && let Ok(material) = internal_tls::parse(secret)
-        && material.url.as_ref() == Some(&url)
-        && material
-            .not_after
-            .is_none_or(|t| t > request.now.saturating_add(RENEW_BEFORE))
-    {
-        let ca_pem = material
-            .ca_pem
-            .ok_or(KubeConfigError::NoCa(internal_tls::SECRET))?;
-        return Ok((InternalDiscovery { url, ca_pem }, None));
-    }
-
+    let secrets: Api<Secret> = Api::namespaced(client.clone(), namespace);
+    remove_unmanaged_secret(&secrets).await?;
     let dns_names = [
         format!("{NAME}.{namespace}.svc"),
         format!("{NAME}.{namespace}.svc.cluster.local"),
     ];
-    let issued = zeabur_identity_tls::certificate::issue(
-        ip,
-        &dns_names,
-        request.now,
-        request.certificate_validity,
-    )
-    .map_err(TlsError::from)?;
-    let mut secret = internal_tls::secret(namespace, &issued, &url);
-    let params = PostParams::default();
-    match existing {
-        // Replace with the version read above: a concurrent change makes this fail, not race.
-        Some(current) => {
-            secret.metadata.resource_version = current.resource_version();
-            secrets
-                .replace(internal_tls::SECRET, &params, &secret)
-                .await?;
-        }
-        None => {
-            secrets.create(&params, &secret).await?;
+    let params = PatchParams::apply(FIELD_MANAGER).force();
+    for object in internal_tls::objects(namespace, ip, &dns_names) {
+        let text = |pointer: &str| object.pointer(pointer).and_then(Value::as_str);
+        let (Some(kind), Some(name)) = (text("/kind"), text("/metadata/name")) else {
+            continue;
+        };
+        let resource = ApiResource::from_gvk_with_plural(
+            &GroupVersionKind::gvk("cert-manager.io", "v1", kind),
+            &format!("{}s", kind.to_ascii_lowercase()),
+        );
+        let api: Api<DynamicObject> = Api::namespaced_with(client.clone(), namespace, &resource);
+        match api.patch(name, &params, &Patch::Apply(&object)).await {
+            Ok(_) => {}
+            Err(kube::Error::Api(status)) if status.code == 404 => {
+                return Err(KubeConfigError::NoCertManager);
+            }
+            Err(error) => return Err(error.into()),
         }
     }
-    Ok((
-        InternalDiscovery {
-            url,
-            ca_pem: issued.ca_pem,
-        },
-        Some(issued.not_after),
-    ))
+
+    let certificates: Api<DynamicObject> = Api::namespaced_with(
+        client,
+        namespace,
+        &ApiResource::from_gvk_with_plural(
+            &GroupVersionKind::gvk("cert-manager.io", "v1", "Certificate"),
+            "certificates",
+        ),
+    );
+    for name in [internal_tls::CA_SECRET, internal_tls::SECRET] {
+        wait_until_ready(&certificates, namespace, name).await?;
+    }
+    let ca = secrets.get(internal_tls::CA_SECRET).await?;
+    let ca_pem = String::from_utf8(internal_tls::field(&ca, "tls.crt")?.to_vec())
+        .map_err(|_utf8| TlsError::Missing("tls.crt"))?;
+    Ok(InternalDiscovery { url, ca_pem })
+}
+
+/// Deletes a serving-certificate Secret that cert-manager did not issue. Earlier releases of
+/// `kube-config` wrote one with a CA whose key is gone. cert-manager then issues the Secret again.
+async fn remove_unmanaged_secret(secrets: &Api<Secret>) -> Result<(), KubeConfigError> {
+    let Some(secret) = secrets.get_opt(internal_tls::SECRET).await? else {
+        return Ok(());
+    };
+    if secret.annotations().contains_key(CERT_MANAGER_ANNOTATION) {
+        return Ok(());
+    }
+    let params = DeleteParams {
+        preconditions: Some(Preconditions {
+            uid: secret.uid(),
+            resource_version: secret.resource_version(),
+        }),
+        ..DeleteParams::default()
+    };
+    secrets.delete(internal_tls::SECRET, &params).await?;
+    Ok(())
+}
+
+/// Whether cert-manager reports the Certificate `Ready` for its current spec.
+fn ready(certificate: &DynamicObject) -> bool {
+    let generation = certificate.metadata.generation;
+    certificate
+        .data
+        .pointer("/status/conditions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|condition| {
+            condition.get("type").and_then(Value::as_str) == Some("Ready")
+                && condition.get("status").and_then(Value::as_str) == Some("True")
+                && condition.get("observedGeneration").and_then(Value::as_i64) == generation
+        })
+}
+
+async fn wait_until_ready(
+    certificates: &Api<DynamicObject>,
+    namespace: &str,
+    name: &'static str,
+) -> Result<(), KubeConfigError> {
+    let deadline = tokio::time::Instant::now() + ISSUE_TIMEOUT;
+    loop {
+        if certificates
+            .get_opt(name)
+            .await?
+            .as_ref()
+            .is_some_and(ready)
+        {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(KubeConfigError::NotIssued {
+                namespace: namespace.to_owned(),
+                name,
+            });
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
 }
 
 #[cfg(test)]

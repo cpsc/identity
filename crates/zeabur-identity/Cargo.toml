@@ -34,3 +34,4 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 tokio-rustls.workspace = true
+zeabur-identity-test-support.workspace = true

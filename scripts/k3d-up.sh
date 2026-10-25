@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Creates a disposable k3d cluster for the cluster and end-to-end tests. kube-apiserver reads its
+# Creates a disposable k3d cluster with cert-manager for the cluster and end-to-end tests.
+# kube-apiserver reads its
 # AuthenticationConfiguration from <dir>/authn/authn.yaml, which starts with no issuer; the
 # end-to-end test replaces it (ZEABUR_IDENTITY_E2E_AUTHN_DIR=<dir>/authn). The kubeconfig goes to
 # <dir>/kubeconfig, never into the default one. Run inside `nix develop` on Linux with Docker.
@@ -41,3 +42,14 @@ k3d cluster create "$cluster" --image "${K3S_IMAGE:-rancher/k3s:v1.36.5-k3s1}" -
   --k3s-arg "--kube-apiserver-arg=authentication-config=/etc/rancher/k3s/zeabur-identity/authn.yaml@server:0" \
   "$@"
 k3d kubeconfig get "$cluster" > "$dir/kubeconfig"
+
+# cert-manager issues the internal listener's certificate. The version follows the Zeabur
+# Catalog's cert-manager component.
+cert_manager_version=v1.21.3
+cert_manager_sha256=c04a51295adda2b1a775146751f973e787190778c7f35180861d9678876e5c74
+curl -fsSL -o "$dir/cert-manager.yaml" \
+  "https://github.com/cert-manager/cert-manager/releases/download/$cert_manager_version/cert-manager.yaml"
+echo "$cert_manager_sha256  $dir/cert-manager.yaml" | sha256sum -c --quiet
+KUBECONFIG="$dir/kubeconfig" kubectl apply --server-side -f "$dir/cert-manager.yaml" >/dev/null
+KUBECONFIG="$dir/kubeconfig" kubectl -n cert-manager wait deployment --all \
+  --for=condition=Available --timeout=300s

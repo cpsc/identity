@@ -3,7 +3,8 @@
 The Zeabur Identity admin CLI. It runs on an administrator's machine with the administrator's own
 kubeconfig, never inside the cluster, and is not part of the server image. Work that needs more
 rights than Zeabur Identity's service account has (installing RBAC, creating users and the setup
-Secret, issuing the internal certificate) therefore happens here, with a human's credentials.
+Secret, having cert-manager issue the internal certificate) therefore happens here, with a
+human's credentials.
 
 ## Commands
 
@@ -57,7 +58,7 @@ Kubernetes as `zeabur:<group>`; elevated groups appear as `zeabur:elevated:<grou
 after a passkey sign-in requesting the `elevate` scope. `--valid-for` controls how long the
 link can be redeemed (default `7d`). Send the printed link privately.
 
-### Configure token limits and certificates
+### Configure token limits and the internal certificate
 
 `kube-config` generates a maximum accepted token lifetime of `1h` and an elevated-token
 maximum of `5m`. If the server's `--elevated-token-lifetime` is raised above its `5m` default,
@@ -69,18 +70,18 @@ elevated tokens:
 zeabur-identityctl kube-config --distro k3s --max-elevated-token-lifetime 10m
 ```
 
-For the default internal discovery mode, newly issued certificates are valid for `365d`.
-Use `--certificate-validity` to change that lifetime. A usable existing certificate is
-reused; changing the lifetime alone does not replace it. To force a new certificate:
+The default internal discovery mode needs [cert-manager](https://cert-manager.io/docs/).
+`kube-config` applies a root CA (10 years), a `CA` Issuer and a serving certificate in Zeabur
+Identity's namespace, waits until cert-manager issues them, and prints the root CA in the
+configuration. cert-manager renews the serving certificate with its defaults (90 days, renewed
+30 days before expiry). The configuration does not change when it does. Without cert-manager,
+`kube-config` stops with an error; use `--discovery public` instead.
 
-```sh
-zeabur-identityctl kube-config --distro k3s --renew-certificate --certificate-validity 365d
-```
-
-Renewal creates a new CA as well as a serving certificate. Install the newly printed
-`AuthenticationConfiguration` on kube-apiserver so it trusts the new CA. Certificate flags
-do not issue a certificate when using `--discovery public`. See the
-[deployment guide](../../docs/get-started.md) for installation steps.
+Check the certificates with `kubectl -n zeabur-identity get certificate`. To change the serving
+certificate's duration, set `spec.duration` and `spec.renewBefore` on Certificate
+`zeabur-identity-internal-tls` with `kubectl`; `kube-config` does not reset them. See the
+[deployment guide](../../docs/get-started.md) for installation steps and
+[operations](../../docs/operations.md#internal-certificate) to replace the root CA.
 
 ## Place in the workspace
 

@@ -1,9 +1,12 @@
 //! End to end on a real cluster: Zeabur Identity runs as a pod from its image, `kube-config`
 //! prepares kube-apiserver, an admin enrols a passkey from a setup link and signs in, and
-//! kube-apiserver accepts the resulting access token (`kubectl auth whoami`).
+//! kube-apiserver accepts the resulting access token (`kubectl auth whoami`). Then cert-manager
+//! renews the internal certificate and Zeabur Identity gets a new signing key: kube-apiserver
+//! accepts a new token with the configuration it already has.
 //!
-//! Needs a k3s cluster whose kube-apiserver reads its `AuthenticationConfiguration` from a
-//! directory on this machine, and the image loaded into the cluster. CI sets this up (see the
+//! Needs a k3s cluster with cert-manager whose kube-apiserver reads its
+//! `AuthenticationConfiguration` from a directory on this machine, and the image loaded into the
+//! cluster. CI sets this up (see the
 //! `kubernetes` job in `.github/workflows/ci.yml`):
 //!
 //! - `KUBECONFIG`: the cluster admin;
@@ -15,8 +18,11 @@
 
 #[cfg(test)]
 mod tests {
+    use std::io::BufRead as _;
+    use std::net::IpAddr;
     use std::path::{Path, PathBuf};
-    use std::process::Command;
+    use std::process::{Command, Stdio};
+    use std::sync::Arc;
     use std::time::{Duration, Instant};
 
     use axum::body::Bytes;
@@ -24,7 +30,7 @@ mod tests {
     use http_body_util::{BodyExt as _, Full};
     use hyper_util::rt::TokioIo;
     use k8s_openapi::api::apps::v1::Deployment;
-    use k8s_openapi::api::core::v1::{Namespace, Node, Service, ServicePort, ServiceSpec};
+    use k8s_openapi::api::core::v1::{Namespace, Node, Secret, Service, ServicePort, ServiceSpec};
     use kube::api::{
         Api, DeleteParams, DynamicObject, ListParams, ObjectMeta, Patch, PatchParams, PostParams,
     };
@@ -34,8 +40,11 @@ mod tests {
     use kube::{Client, ResourceExt as _};
     use passkey::client::DefaultClientData;
     use passkey::types::webauthn::{CredentialCreationOptions, CredentialRequestOptions};
+    use rustls::pki_types::pem::PemObject as _;
+    use rustls::pki_types::{CertificateDer, ServerName};
     use serde_json::{Value, json};
     use tokio::net::TcpStream;
+    use tokio_rustls::TlsConnector;
     use url::Url;
     use zeabur_identity_core::clock::{Clock as _, SystemClock};
     use zeabur_identity_core::config::BaseUrl;
@@ -45,7 +54,7 @@ mod tests {
     use zeabur_identity_k8s::crd::{USER_LABEL, definitions};
     use zeabur_identity_k8s::kube_config::{self, DiscoveryMode, Distro};
     use zeabur_identity_k8s::setup::issue_setup_link;
-    use zeabur_identity_k8s::{deployment, rbac};
+    use zeabur_identity_k8s::{deployment, internal_tls, rbac};
     use zeabur_identity_oauth::endpoints::FLOW_COOKIE;
     use zeabur_identity_signin::CEREMONY_COOKIE;
     use zeabur_identity_test_support::{Device, device};
@@ -243,6 +252,111 @@ mod tests {
         String::from_utf8_lossy(&output.stdout).trim().to_owned()
     }
 
+    /// `secret`'s `tls.crt`, as PEM.
+    fn leaf_pem(secret: &Secret) -> Vec<u8> {
+        secret.data.as_ref().unwrap()["tls.crt"].0.clone()
+    }
+
+    /// The first certificate of the PEM chain in `secret`'s `tls.crt`, as DER.
+    fn leaf(secret: &Secret) -> Vec<u8> {
+        CertificateDer::pem_slice_iter(&leaf_pem(secret))
+            .next()
+            .unwrap()
+            .unwrap()
+            .to_vec()
+    }
+
+    /// The certificate the internal listener presents, reached with `kubectl port-forward` and
+    /// verified against `ca_pem` for the name `ip`, as kube-apiserver does.
+    async fn served_certificate(
+        namespace: &str,
+        ip: IpAddr,
+        ca_pem: &str,
+    ) -> Result<Vec<u8>, String> {
+        let mut forward = Command::new("kubectl")
+            .args([
+                "-n",
+                namespace,
+                "port-forward",
+                &format!("deployment/{}", rbac::NAME),
+                &format!(":{}", deployment::INTERNAL_PORT),
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        // kubectl prints `Forwarding from 127.0.0.1:<port> -> 8443` when it listens. Keep the
+        // pipe open: kubectl writes a line for each connection and fails if the pipe is closed.
+        let mut output = std::io::BufReader::new(forward.stdout.take().unwrap());
+        let mut line = String::new();
+        output.read_line(&mut line).unwrap();
+        let served = async {
+            let port = line
+                .split_once("127.0.0.1:")
+                .and_then(|(_, rest)| rest.split_whitespace().next())
+                .ok_or_else(|| format!("port-forward printed {line:?}"))?;
+            let tcp = TcpStream::connect(format!("127.0.0.1:{port}"))
+                .await
+                .map_err(|error| format!("connect: {error}"))?;
+            let mut roots = rustls::RootCertStore::empty();
+            for cert in CertificateDer::pem_slice_iter(ca_pem.as_bytes()) {
+                let cert = cert.map_err(|error| format!("CA PEM: {error}"))?;
+                roots.add(cert).map_err(|error| format!("CA: {error}"))?;
+            }
+            let config = rustls::ClientConfig::builder_with_provider(Arc::new(
+                rustls::crypto::aws_lc_rs::default_provider(),
+            ))
+            .with_safe_default_protocol_versions()
+            .map_err(|error| format!("TLS config: {error}"))?
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+            let tls = TlsConnector::from(Arc::new(config))
+                .connect(ServerName::IpAddress(ip.into()), tcp)
+                .await
+                .map_err(|error| format!("handshake: {error}"))?;
+            tls.get_ref()
+                .1
+                .peer_certificates()
+                .and_then(|chain| chain.first())
+                .map(|cert| cert.to_vec())
+                .ok_or_else(|| "no peer certificate".to_owned())
+        }
+        .await;
+        drop(forward.kill());
+        drop(forward.wait());
+        drop(output);
+        served
+    }
+
+    /// Asks cert-manager to issue the Certificate again now, as `cmctl renew` does.
+    async fn renew(client: &Client, namespace: &str, name: &str) {
+        let gvk = GroupVersionKind::gvk("cert-manager.io", "v1", "Certificate");
+        let (resource, _) = pinned_kind(client, &gvk).await.unwrap();
+        let certificates: Api<DynamicObject> =
+            Api::namespaced_with(client.clone(), namespace, &resource);
+        let current = certificates.get(name).await.unwrap();
+        let mut conditions = current
+            .data
+            .pointer("/status/conditions")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        conditions.push(json!({
+            "type": "Issuing",
+            "status": "True",
+            "reason": "ManuallyTriggered",
+            "message": "Certificate re-issuance manually triggered",
+        }));
+        certificates
+            .patch_status(
+                name,
+                &PatchParams::default(),
+                &Patch::Merge(json!({"status": {"conditions": conditions}})),
+            )
+            .await
+            .unwrap();
+    }
+
     /// Signs in with `device` through Zeabur Identity's public listener, as kubectl's OIDC plugin
     /// would (authorization request, passkey, code, token), and returns the token response.
     async fn sign_in(address: &str, device: &mut Device, scope: &str) -> Value {
@@ -425,25 +539,17 @@ mod tests {
         .await;
 
         // kube-apiserver side, exactly as `zeabur-identityctl kube-config --distro k3s` does it.
-        let prepared = kube_config::prepare(
-            admin.clone(),
-            &kube_config::Request {
-                namespace: namespace.clone(),
-                distro: Distro::K3s,
-                issuer: issuer.clone(),
-                discovery: DiscoveryMode::Internal,
-                audiences: vec!["kubernetes".into()],
-                max_token_lifetime: Duration::from_hours(1),
-                max_elevated_token_lifetime: Duration::from_mins(5),
-                renew: false,
-                certificate_validity: Duration::from_hours(24),
-                now: SystemClock.now(),
-            },
-        )
-        .await
-        .unwrap();
-        assert!(prepared.issued_until.is_some());
-        write_authn(&authn_dir, &prepared.configuration);
+        let request = kube_config::Request {
+            namespace: namespace.clone(),
+            distro: Distro::K3s,
+            issuer: issuer.clone(),
+            discovery: DiscoveryMode::Internal,
+            audiences: vec!["kubernetes".into()],
+            max_token_lifetime: Duration::from_hours(1),
+            max_elevated_token_lifetime: Duration::from_mins(5),
+        };
+        let configuration = kube_config::prepare(admin.clone(), &request).await.unwrap();
+        write_authn(&authn_dir, &configuration);
 
         // The kubectl client, and a setup link for the first admin.
         let clients: Api<OAuthClient> = Api::namespaced(admin.clone(), &namespace);
@@ -704,6 +810,113 @@ mod tests {
             "working set {working_set} bytes exceeds 30 MiB"
         );
 
+        // cert-manager renews the serving certificate. Zeabur Identity serves it without a
+        // restart, and kube-apiserver's configuration stays the same.
+        let secrets: Api<Secret> = Api::namespaced(admin.clone(), &namespace);
+        let cluster_ip: IpAddr = services
+            .get(rbac::NAME)
+            .await
+            .unwrap()
+            .spec
+            .unwrap()
+            .cluster_ip
+            .unwrap()
+            .parse()
+            .unwrap();
+        let ca_secret = secrets.get(internal_tls::CA_SECRET).await.unwrap();
+        let ca_pem = String::from_utf8(leaf_pem(&ca_secret)).unwrap();
+        let first_leaf = leaf(&secrets.get(internal_tls::SECRET).await.unwrap());
+        assert_eq!(
+            served_certificate(&namespace, cluster_ip, &ca_pem).await,
+            Ok(first_leaf.clone())
+        );
+        renew(&admin, &namespace, internal_tls::SECRET).await;
+        wait_for(
+            "cert-manager to renew the serving certificate",
+            Duration::from_secs(120),
+            || {
+                let (secrets, first_leaf) = (secrets.clone(), first_leaf.clone());
+                async move { leaf(&secrets.get(internal_tls::SECRET).await.unwrap()) != first_leaf }
+            },
+        )
+        .await;
+        let renewed_leaf = leaf(&secrets.get(internal_tls::SECRET).await.unwrap());
+        wait_for(
+            "Zeabur Identity to serve the renewed certificate",
+            Duration::from_secs(120),
+            || {
+                let (namespace, ca_pem, renewed_leaf) =
+                    (namespace.clone(), ca_pem.clone(), renewed_leaf.clone());
+                async move {
+                    served_certificate(&namespace, cluster_ip, &ca_pem).await == Ok(renewed_leaf)
+                }
+            },
+        )
+        .await;
+        assert_eq!(
+            kube_config::prepare(admin.clone(), &request).await.unwrap(),
+            configuration
+        );
+
+        // Replace the CA by hand, as docs/operations.md says: delete the CA Secret, then the
+        // leaf Secret, then install the new configuration. kube-apiserver then trusts only the
+        // new CA and accepts tokens again.
+        for name in [internal_tls::CA_SECRET, internal_tls::SECRET] {
+            let old = leaf(&secrets.get(name).await.unwrap());
+            secrets
+                .delete(name, &DeleteParams::default())
+                .await
+                .unwrap();
+            wait_for(
+                &format!("cert-manager to issue {name} again"),
+                Duration::from_secs(120),
+                || {
+                    let (secrets, old) = (secrets.clone(), old.clone());
+                    async move {
+                        secrets.get_opt(name).await.unwrap().is_some_and(|secret| {
+                            !leaf_pem(&secret).is_empty() && leaf(&secret) != old
+                        })
+                    }
+                },
+            )
+            .await;
+        }
+        let rotated_configuration = kube_config::prepare(admin.clone(), &request).await.unwrap();
+        assert_ne!(rotated_configuration, configuration);
+        write_authn(&authn_dir, &rotated_configuration);
+        let rotated_ca = String::from_utf8(leaf_pem(
+            &secrets.get(internal_tls::CA_SECRET).await.unwrap(),
+        ))
+        .unwrap();
+        let rotated_leaf = leaf(&secrets.get(internal_tls::SECRET).await.unwrap());
+        wait_for(
+            "Zeabur Identity to serve the leaf from the new CA",
+            Duration::from_secs(120),
+            || {
+                let (namespace, ca, rotated_leaf) =
+                    (namespace.clone(), rotated_ca.clone(), rotated_leaf.clone());
+                async move {
+                    served_certificate(&namespace, cluster_ip, &ca).await == Ok(rotated_leaf)
+                }
+            },
+        )
+        .await;
+        let rotated = sign_in(&address, &mut device, "openid").await;
+        let as_rotated = token_kubeconfig(
+            &scratch,
+            "rotated",
+            rotated["access_token"].as_str().unwrap(),
+        );
+        wait_for(
+            "kube-apiserver to trust the new CA",
+            APISERVER_PICKUP,
+            || {
+                let result = kubectl(&as_rotated, &["auth", "whoami"]);
+                async move { result.is_ok() }
+            },
+        )
+        .await;
+
         // A partial reset can remove credentials while leaving a usable refresh-token family.
         // Prove the family's current token works, then retry reset with no credentials left.
         let refreshed = refresh(&address, &latest_refresh).await;
@@ -734,7 +947,7 @@ mod tests {
 
         // Clean up: forget the issuer, remove the namespace.
         write_authn(&authn_dir, EMPTY_AUTHN);
-        for file in [as_user, as_admin, as_id_token] {
+        for file in [as_user, as_admin, as_id_token, as_rotated] {
             drop(std::fs::remove_file(file));
         }
         Api::<Namespace>::all(admin)

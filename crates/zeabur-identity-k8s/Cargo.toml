@@ -37,7 +37,7 @@ form_urlencoded.workspace = true
 http-body-util.workspace = true
 tower = { workspace = true, features = ["util"] }
 zeabur-identity-oauth.workspace = true
-zeabur-identity-tls.workspace = true
+zeabur-identity-test-support.workspace = true
 tokio-rustls.workspace = true
 rustls.workspace = true
 time.workspace = true

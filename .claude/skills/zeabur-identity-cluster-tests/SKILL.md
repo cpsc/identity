@@ -11,8 +11,8 @@ about; sync the working tree there with `rsync -a --delete --exclude target ./ h
 run the commands below inside `nix develop` on that machine.
 
 ## Cluster with a writable authentication config
-`scripts/k3d-up.sh` creates it, as CI does. kube-apiserver re-reads `<dir>/authn/authn.yaml` about
-once a minute; the file starts with no issuer:
+`scripts/k3d-up.sh` creates it with cert-manager, as CI does. kube-apiserver re-reads
+`<dir>/authn/authn.yaml` about once a minute; the file starts with no issuer:
 
 ```sh
 ./scripts/k3d-up.sh ~/zeabur-identity-k3d && export KUBECONFIG=~/zeabur-identity-k3d/kubeconfig
@@ -34,6 +34,9 @@ The e2e test takes 1–3 minutes, mostly waiting for kube-apiserver to reload th
   validation errors (for example CEL type errors; JSON claims are untyped, use `dyn(...)` for
   comprehensions) make the reload skip the file permanently until it changes. A healthy reload
   logs `reloaded authentication config`.
+- **`kube-config` waits, then fails on the internal certificate**: read
+  `kubectl -n <namespace> describe certificate zeabur-identity-internal-ca zeabur-identity-internal-tls`.
+  A cert-manager webhook error right after `k3d-up.sh` passes on retry.
 - **Probe CEL quickly**: write a candidate config with a dummy issuer into the mounted
   directory, wait ~70 s, and read the log; a health error about the dummy issuer means the
   config itself validated. Restore the empty config afterwards.

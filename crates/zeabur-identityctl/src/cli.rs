@@ -186,12 +186,6 @@ pub(crate) struct KubeConfigArgs {
     /// Longest lifetime kube-apiserver accepts for a token carrying `elevated:` groups.
     #[arg(long, default_value = "5m", value_parser = parse_duration)]
     pub max_elevated_token_lifetime: Duration,
-    /// Issue a new internal certificate even if the current one is still good.
-    #[arg(long)]
-    pub renew_certificate: bool,
-    /// Lifetime of a newly issued internal certificate.
-    #[arg(long, default_value = "365d", value_parser = parse_duration)]
-    pub certificate_validity: Duration,
 }
 
 /// Arguments of `zeabur-identityctl setup-link`.

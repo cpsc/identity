@@ -19,7 +19,7 @@ whose kube-apiserver accepts its tokens. This crate is the `zeabur-identity` bin
 
 `zeabur-identity` is only the in-cluster server; the container image holds nothing else. Everything an
 administrator does (printing the install manifests, issuing setup links and invitations,
-issuing the internal certificate and printing the kube-apiserver configuration) lives in
+having cert-manager issue the internal certificate and printing the kube-apiserver configuration) lives in
 `zeabur-identityctl`, which runs with the administrator's own kubeconfig. The server's service account
 could not do those things anyway: it cannot create Secrets, users or RBAC bindings.
 

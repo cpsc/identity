@@ -270,7 +270,6 @@ async fn run<S: KeyStore, D: Directory, G: GrantStore, K: CredentialStore, T: Se
             internal,
             secrets,
             manager.subscribe(),
-            SystemClock,
             shutdown_tx.subscribe(),
         )));
     }

@@ -73,7 +73,7 @@ its container image.
 | Disc. 3 | Defaults that would over-claim set explicitly | — | `discovery.rs` | `zeabur-identity-oauth: discovery::tests::does_not_inherit_misleading_defaults` | Met |
 | Disc. 4, 4.3 | Document at `/.well-known/openid-configuration`; `issuer` identical | MUST | `zeabur-identity-oauth/src/metadata.rs` | `zeabur-identity-oauth: metadata::tests::both_metadata_locations_serve_the_same_document` | Met |
 | 8414 §3, §3.3 | Well-known location; identical `issuer`; RFC 9068 §4 consistency | MUST | one document at both paths | same | Met |
-| Disc. 7.1 | TLS for discovery | MUST | TLS at the ingress; the internal listener for kube-apiserver uses Zeabur Identity's own CA | `zeabur-identity: internal::tests::serves_metadata_with_the_issued_certificate_and_renews_in_place` | Met |
+| Disc. 7.1 | TLS for discovery | MUST | TLS at the ingress; the internal listener for kube-apiserver uses a private CA that cert-manager keeps | `zeabur-identity: internal::tests::serves_metadata_with_the_issued_certificate_and_renews_in_place` | Met |
 
 ## JOSE: RFC 7515, 7517, 7518, 7638, 8725
 

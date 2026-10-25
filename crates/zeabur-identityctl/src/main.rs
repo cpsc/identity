@@ -146,9 +146,6 @@ fn kube_config(args: &KubeConfigArgs) -> ExitCode {
         audiences: args.audiences.clone(),
         max_token_lifetime: args.max_token_lifetime,
         max_elevated_token_lifetime: args.max_elevated_token_lifetime,
-        renew: args.renew_certificate,
-        certificate_validity: args.certificate_validity,
-        now: zeabur_identity_core::clock::SystemClock.now(),
     };
     let result = runtime.block_on(async {
         let client = kube::Client::try_default().await?;
@@ -157,15 +154,8 @@ fn kube_config(args: &KubeConfigArgs) -> ExitCode {
             .map_err(|error| -> Box<dyn std::error::Error> { Box::new(error) })
     });
     match result {
-        Ok(prepared) => {
-            output::stdout(prepared.configuration.trim_end());
-            if let Some(until) = prepared.issued_until {
-                output::stderr(&format!(
-                    "Issued a new internal certificate, valid for {} (until Unix time {}). Run this command again before then.",
-                    span(args.certificate_validity),
-                    until.as_secs()
-                ));
-            }
+        Ok(configuration) => {
+            output::stdout(configuration.trim_end());
             output::stderr(
                 zeabur_identity_k8s::kube_config::instructions(args.distro, args.discovery)
                     .trim_end(),

@@ -89,7 +89,7 @@ jobs:
           key: kubernetes
       # kube-apiserver reads its AuthenticationConfiguration from a host directory, so the
       # end-to-end test can install Zeabur Identity's (and remove it afterwards).
-      - name: Start k3s
+      - name: Start k3s with cert-manager
         run: |
           K3S_IMAGE="rancher/k3s:${{ matrix.k3s }}" nix develop --command ./scripts/k3d-up.sh "$RUNNER_TEMP"
           echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"

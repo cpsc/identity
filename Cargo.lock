@@ -4463,6 +4463,7 @@ dependencies = [
  "zeabur-identity-oauth",
  "zeabur-identity-signin",
  "zeabur-identity-store",
+ "zeabur-identity-test-support",
  "zeabur-identity-tls",
  "zeabur-identity-ui",
 ]
@@ -4491,8 +4492,10 @@ dependencies = [
  "k8s-openapi",
  "kube",
  "passkey",
+ "rustls",
  "serde_json",
  "tokio",
+ "tokio-rustls",
  "url",
  "zeabur-identity-core",
  "zeabur-identity-k8s",
@@ -4530,6 +4533,7 @@ dependencies = [
  "zeabur-identity-keys",
  "zeabur-identity-oauth",
  "zeabur-identity-store",
+ "zeabur-identity-test-support",
  "zeabur-identity-tls",
 ]
 
@@ -4626,6 +4630,7 @@ dependencies = [
  "async-trait",
  "passkey",
  "public-suffix",
+ "rcgen",
  "serde_json",
  "tracing",
  "tracing-subscriber",
@@ -4636,15 +4641,13 @@ name = "zeabur-identity-tls"
 version = "0.0.1"
 dependencies = [
  "axum",
- "rcgen",
  "rustls",
  "rustls-native-certs",
  "thiserror 2.0.21",
- "time",
  "tokio",
  "tokio-rustls",
  "tracing",
- "zeabur-identity-core",
+ "zeabur-identity-test-support",
 ]
 
 [[package]]

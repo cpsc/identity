@@ -2,59 +2,78 @@
 //!
 //! kube-apiserver fetches discovery and keys over `https` only, and does not resolve cluster DNS
 //! names, so it reaches Zeabur Identity at its Service's ClusterIP with a certificate for that IP.
-//! `zeabur-identityctl kube-config`, run with the cluster admin's credentials, creates a
-//! private CA and a serving certificate, stores the serving pair in the `kubernetes.io/tls`
-//! Secret [`SECRET`], prints the CA for `issuer.certificateAuthority`, and **discards the CA
-//! key**: nothing can issue another certificate under that CA. Zeabur Identity's service account
-//! can only `get` the Secret. Any other issuer of a `kubernetes.io/tls` Secret (for example
-//! cert-manager) works too.
+//! cert-manager issues and renews that certificate ([cert-manager Certificate]).
+//! `zeabur-identityctl kube-config`, run with the cluster admin's credentials, applies
+//! [`objects`] in Zeabur Identity's namespace:
+//!
+//! 1. A `SelfSigned` Issuer issues a root CA, valid for [`CA_DURATION`], into the Secret
+//!    [`CA_SECRET`] ([cert-manager SelfSigned]).
+//! 2. A `CA` Issuer signs with that root ([cert-manager CA]).
+//! 3. A Certificate for the ClusterIP and the Service's DNS names goes into the `kubernetes.io/tls`
+//!    Secret [`SECRET`], with cert-manager's default duration and renewal.
+//!
+//! kube-apiserver trusts the root CA (`issuer.certificateAuthority`), not the serving
+//! certificate. A renewed serving certificate therefore needs no change to kube-apiserver's
+//! configuration. The running server reads [`SECRET`] again within a minute. The root CA keeps
+//! its key when cert-manager renews it (`rotationPolicy: Never`), so the CA certificate that
+//! kube-apiserver holds stays valid until it expires.
 //!
 //! Pinning kube-apiserver to this CA, rather than the system roots or plain `http`, is what
 //! keeps someone who can answer at the ClusterIP from handing kube-apiserver their own keys. The
 //! chain ends in a certificate with `CA:TRUE` because Go's TLS stack, which kube-apiserver uses,
-//! requires that even for a self-signed setup ([Authenticating]). The certificate also names the
-//! Service's DNS names, for clients that can resolve them. A renewed certificate is picked up by
-//! the running server within a minute; because a new CA comes with it, the configuration printed
-//! by `kube-config` must be installed again.
+//! requires that even for a self-signed setup ([Authenticating]).
+//!
+//! The CA's private key is in [`CA_SECRET`]. Anyone who can read that Secret can issue a
+//! certificate for the internal address. To impersonate Zeabur Identity, they must also answer
+//! at the ClusterIP. Zeabur Identity's service account can only `get` [`SECRET`], not the CA.
 //!
 //! # References
 //!
 //! - [Authenticating] The Kubernetes Authors, "Authenticating: Using authentication configuration,"
 //!   Kubernetes documentation.
+//! - [cert-manager Certificate] The cert-manager Authors, "Certificate resource," cert-manager
+//!   documentation.
+//! - [cert-manager SelfSigned] The cert-manager Authors, "`SelfSigned`: Bootstrapping CA Issuers,"
+//!   cert-manager documentation.
+//! - [cert-manager CA] The cert-manager Authors, "CA," cert-manager documentation.
 //!
 //! [Authenticating]: https://kubernetes.io/docs/reference/access-authn-authz/authentication/
+//! [cert-manager Certificate]: https://cert-manager.io/docs/usage/certificate/
+//! [cert-manager SelfSigned]: https://cert-manager.io/docs/configuration/selfsigned/#bootstrapping-ca-issuers
+//! [cert-manager CA]: https://cert-manager.io/docs/configuration/ca/
 
-use std::collections::BTreeMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 
-use k8s_openapi::ByteString;
 use k8s_openapi::api::core::v1::Secret;
-use kube::api::ObjectMeta;
 use rustls::sign::CertifiedKey;
+use serde_json::{Value, json};
 use thiserror::Error;
-use zeabur_identity_core::clock::UnixTime;
 use zeabur_identity_core::config::{BaseUrl, ConfigError};
-use zeabur_identity_tls::certificate::{CertificateError, Issued, certified_key};
+use zeabur_identity_tls::certificate::{CertificateError, certified_key};
 
 use super::MANAGED_BY;
 
-/// Name of the Secret holding the serving certificate.
+/// Name of the Certificate and the Secret holding the serving certificate.
 pub const SECRET: &str = "zeabur-identity-internal-tls";
+/// Name of the Certificate and the Secret holding the root CA and its private key.
+pub const CA_SECRET: &str = "zeabur-identity-internal-ca";
+/// Name of the `SelfSigned` Issuer that issues the root CA.
+pub const ROOT_ISSUER: &str = "zeabur-identity-internal-root";
+/// Name of the `CA` Issuer that signs the serving certificate.
+pub const CA_ISSUER: &str = "zeabur-identity-internal-ca";
+/// Validity of the root CA (10 years).
+pub const CA_DURATION: &str = "87600h";
 /// Annotation: the `https` base URL kube-apiserver uses to reach the internal listener.
 pub const URL_ANNOTATION: &str = "identity.zeabur.com/internal-url";
-/// Annotation: when the serving certificate expires (Unix seconds).
-pub const NOT_AFTER_ANNOTATION: &str = "identity.zeabur.com/not-after";
 
-const TLS_TYPE: &str = "kubernetes.io/tls";
 const CERT_KEY: &str = "tls.crt";
 const KEY_KEY: &str = "tls.key";
-const CA_KEY: &str = "ca.crt";
 
 /// Why the certificate Secret could not be used.
 #[derive(Debug, Error)]
 pub enum TlsError {
-    /// Issuing or loading the certificate failed.
+    /// Loading the certificate failed.
     #[error(transparent)]
     Certificate(#[from] CertificateError),
     /// A required field is missing from the Secret.
@@ -65,35 +84,59 @@ pub enum TlsError {
     Url(#[from] ConfigError),
 }
 
-/// The Secret holding `issued`, for kube-apiserver to reach Zeabur Identity at `url`.
+/// The cert-manager objects that issue the root CA and the serving certificate for `ip` and
+/// `dns_names`, in the order to apply them.
 #[must_use]
-pub fn secret(namespace: &str, issued: &Issued, url: &BaseUrl) -> Secret {
-    let bytes = |s: &str| ByteString(s.as_bytes().to_vec());
-    Secret {
-        metadata: ObjectMeta {
-            name: Some(SECRET.to_owned()),
-            namespace: Some(namespace.to_owned()),
-            labels: Some(BTreeMap::from([(
-                MANAGED_BY.0.to_owned(),
-                MANAGED_BY.1.to_owned(),
-            )])),
-            annotations: Some(BTreeMap::from([
-                (URL_ANNOTATION.to_owned(), url.as_str().to_owned()),
-                (
-                    NOT_AFTER_ANNOTATION.to_owned(),
-                    issued.not_after.as_secs().to_string(),
-                ),
-            ])),
-            ..ObjectMeta::default()
-        },
-        type_: Some(TLS_TYPE.to_owned()),
-        data: Some(BTreeMap::from([
-            (CERT_KEY.to_owned(), bytes(&issued.cert_pem)),
-            (KEY_KEY.to_owned(), bytes(&issued.key_pem)),
-            (CA_KEY.to_owned(), bytes(&issued.ca_pem)),
-        ])),
-        ..Secret::default()
-    }
+pub fn objects(namespace: &str, ip: IpAddr, dns_names: &[String]) -> Vec<Value> {
+    let url = internal_url(ip).map(|url| url.as_str().to_owned()).ok();
+    let labels = json!({ (MANAGED_BY.0): MANAGED_BY.1 });
+    let metadata = |name: &str| json!({"name": name, "namespace": namespace, "labels": labels});
+    let issuer_ref =
+        |name: &str| json!({"name": name, "kind": "Issuer", "group": "cert-manager.io"});
+    vec![
+        json!({
+            "apiVersion": "cert-manager.io/v1",
+            "kind": "Issuer",
+            "metadata": metadata(ROOT_ISSUER),
+            "spec": {"selfSigned": {}},
+        }),
+        json!({
+            "apiVersion": "cert-manager.io/v1",
+            "kind": "Certificate",
+            "metadata": metadata(CA_SECRET),
+            "spec": {
+                "isCA": true,
+                "commonName": "Zeabur Identity internal CA",
+                "secretName": CA_SECRET,
+                "duration": CA_DURATION,
+                "privateKey": {"algorithm": "ECDSA", "size": 256, "rotationPolicy": "Never"},
+                "issuerRef": issuer_ref(ROOT_ISSUER),
+            },
+        }),
+        json!({
+            "apiVersion": "cert-manager.io/v1",
+            "kind": "Issuer",
+            "metadata": metadata(CA_ISSUER),
+            "spec": {"ca": {"secretName": CA_SECRET}},
+        }),
+        json!({
+            "apiVersion": "cert-manager.io/v1",
+            "kind": "Certificate",
+            "metadata": metadata(SECRET),
+            "spec": {
+                "secretName": SECRET,
+                "secretTemplate": {
+                    "labels": labels,
+                    "annotations": {URL_ANNOTATION: url},
+                },
+                "ipAddresses": [ip.to_string()],
+                "dnsNames": dns_names,
+                "usages": ["server auth", "digital signature"],
+                "privateKey": {"algorithm": "ECDSA", "size": 256},
+                "issuerRef": issuer_ref(CA_ISSUER),
+            },
+        }),
+    ]
 }
 
 /// The `https` base URL for an address inside the cluster.
@@ -115,13 +158,14 @@ pub struct Material {
     pub key: Arc<CertifiedKey>,
     /// Where kube-apiserver reaches the listener (the annotation), if recorded.
     pub url: Option<BaseUrl>,
-    /// When the certificate expires (the annotation), if recorded.
-    pub not_after: Option<UnixTime>,
-    /// The CA certificate, if the Secret carries it.
-    pub ca_pem: Option<String>,
 }
 
-fn field<'a>(secret: &'a Secret, key: &'static str) -> Result<&'a [u8], TlsError> {
+/// The value of `key` in `secret`, or [`TlsError::Missing`].
+///
+/// # Errors
+///
+/// Returns [`TlsError::Missing`] if the Secret has no such key.
+pub fn field<'a>(secret: &'a Secret, key: &'static str) -> Result<&'a [u8], TlsError> {
     secret
         .data
         .as_ref()
@@ -138,67 +182,102 @@ fn field<'a>(secret: &'a Secret, key: &'static str) -> Result<&'a [u8], TlsError
 /// is not an `https` base URL.
 pub fn parse(secret: &Secret) -> Result<Material, TlsError> {
     let key = certified_key(field(secret, CERT_KEY)?, field(secret, KEY_KEY)?)?;
-    let annotation = |key: &str| {
-        secret
-            .metadata
-            .annotations
-            .as_ref()
-            .and_then(|a| a.get(key))
-    };
-    let url = annotation(URL_ANNOTATION)
+    let url = secret
+        .metadata
+        .annotations
+        .as_ref()
+        .and_then(|a| a.get(URL_ANNOTATION))
         .map(|url| BaseUrl::parse("internal URL", url))
         .transpose()?;
-    let not_after = annotation(NOT_AFTER_ANNOTATION)
-        .and_then(|secs| secs.parse().ok())
-        .map(UnixTime::from_secs);
-    let ca_pem = field(secret, CA_KEY)
-        .ok()
-        .and_then(|ca| String::from_utf8(ca.to_vec()).ok());
-    Ok(Material {
-        key,
-        url,
-        not_after,
-        ca_pem,
-    })
+    Ok(Material { key, url })
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::net::Ipv4Addr;
-    use std::time::Duration;
 
-    use zeabur_identity_tls::certificate::issue;
+    use k8s_openapi::ByteString;
+    use kube::api::ObjectMeta;
+    use zeabur_identity_test_support::certificate::Ca;
 
     use super::*;
 
-    const NOW: UnixTime = UnixTime::from_secs(1_800_000_000);
+    /// A Secret as cert-manager writes it for `certificate`: the issued pair, plus the labels and
+    /// annotations of `secretTemplate`.
+    fn issued_secret(certificate: &Value, cert_pem: &str, key_pem: &str) -> Secret {
+        let template = &certificate["spec"]["secretTemplate"];
+        let strings = |value: &Value| serde_json::from_value(value.clone()).unwrap();
+        Secret {
+            metadata: ObjectMeta {
+                name: certificate["spec"]["secretName"]
+                    .as_str()
+                    .map(str::to_owned),
+                labels: Some(strings(&template["labels"])),
+                annotations: Some(strings(&template["annotations"])),
+                ..ObjectMeta::default()
+            },
+            type_: Some("kubernetes.io/tls".to_owned()),
+            data: Some(BTreeMap::from([
+                (
+                    "tls.crt".to_owned(),
+                    ByteString(cert_pem.as_bytes().to_vec()),
+                ),
+                (
+                    "tls.key".to_owned(),
+                    ByteString(key_pem.as_bytes().to_vec()),
+                ),
+            ])),
+            ..Secret::default()
+        }
+    }
 
     #[test]
-    fn issued_certificate_round_trips_through_the_secret() {
+    fn issued_secret_tells_the_listener_where_kube_apiserver_reaches_it() {
         let ip = IpAddr::V4(Ipv4Addr::new(10, 43, 0, 53));
-        let issued = issue(
+        let objects = objects(
+            "zeabur-identity",
             ip,
             &["zeabur-identity.zeabur-identity.svc".to_owned()],
-            NOW,
-            Duration::from_hours(24),
-        )
-        .unwrap();
-        assert!(issued.ca_pem.starts_with("-----BEGIN CERTIFICATE-----"));
-        assert_eq!(
-            issued.not_after,
-            NOW.saturating_add(Duration::from_hours(24))
         );
-        let url = internal_url(ip).unwrap();
-        assert_eq!(url.as_str(), "https://10.43.0.53");
+        let serving = objects
+            .iter()
+            .find(|o| o["kind"] == "Certificate" && o["spec"]["secretName"] == SECRET)
+            .unwrap();
+        assert_eq!(serving["spec"]["ipAddresses"], json!(["10.43.0.53"]));
+        let issued = Ca::new().unwrap().issue(&["10.43.0.53"]).unwrap();
 
-        let material = parse(&secret("zeabur-identity", &issued, &url)).unwrap();
-        assert_eq!(material.url, Some(url));
-        assert_eq!(material.not_after, Some(issued.not_after));
-        assert_eq!(material.ca_pem.as_deref(), Some(issued.ca_pem.as_str()));
-        assert!(
-            format!("{issued:?}").contains("not_after")
-                && !format!("{issued:?}").contains("PRIVATE")
+        let material = parse(&issued_secret(serving, &issued.cert_pem, &issued.key_pem)).unwrap();
+        assert_eq!(material.url, Some(internal_url(ip).unwrap()));
+    }
+
+    #[test]
+    fn serving_certificate_chains_to_the_root_that_kube_apiserver_trusts() {
+        let objects = objects("ns", IpAddr::V4(Ipv4Addr::LOCALHOST), &[]);
+        let by_name = |kind: &str, name: &str| {
+            objects
+                .iter()
+                .find(|o| o["kind"] == kind && o["metadata"]["name"] == name)
+                .unwrap()
+        };
+        let serving = by_name("Certificate", SECRET);
+        let ca_issuer = by_name(
+            "Issuer",
+            serving["spec"]["issuerRef"]["name"].as_str().unwrap(),
         );
+        let root = by_name("Certificate", CA_SECRET);
+        assert_eq!(
+            ca_issuer["spec"]["ca"]["secretName"],
+            root["spec"]["secretName"]
+        );
+        assert_eq!(root["spec"]["isCA"], true);
+        // A new root key would invalidate the CA in kube-apiserver's configuration.
+        assert_eq!(root["spec"]["privateKey"]["rotationPolicy"], "Never");
+        let root_issuer = by_name(
+            "Issuer",
+            root["spec"]["issuerRef"]["name"].as_str().unwrap(),
+        );
+        assert!(root_issuer["spec"]["selfSigned"].is_object());
     }
 
     #[test]

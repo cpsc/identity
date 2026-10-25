@@ -172,6 +172,14 @@ kubectl -n kube-system wait --for=create deployment/traefik --timeout=180s
 kubectl -n kube-system rollout status deployment/traefik --timeout=180s
 ```
 
+Install [cert-manager](https://cert-manager.io/docs/installation/kubectl/). In step 5 it issues
+and renews the certificate kube-apiserver uses to reach Zeabur Identity:
+
+```sh
+kubectl apply --server-side -f https://github.com/cert-manager/cert-manager/releases/download/v1.21.3/cert-manager.yaml
+kubectl -n cert-manager wait deployment --all --for=condition=Available --timeout=300s
+```
+
 ## 3. Install Zeabur Identity
 
 Run this in the same server shell:
@@ -369,8 +377,8 @@ sudo k3s kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get --raw=/readyz
 If either fails, stop here and fix it. Save an encrypted copy offline if you haven't yet.
 
 kube-apiserver checks Zeabur Identity's tokens itself. To do that, it fetches Zeabur Identity's signing keys over
-an internal HTTPS connection. `zeabur-identityctl kube-config` creates the certificate for that
-connection and prints the configuration kube-apiserver needs. It also prints k3s setup
+an internal HTTPS connection. `zeabur-identityctl kube-config` has cert-manager issue the
+certificate for that connection and prints the configuration kube-apiserver needs. It also prints k3s setup
 instructions, including a one-time restart; step 2 already did that, so you can skip them.
 
 kube-apiserver checks the file about once a minute. To know when it has picked up your change,
@@ -406,8 +414,8 @@ zeabur-identityctl kube-config --distro k3s > ~/authn.yaml &&
   wait_for_reload "$before"
 ```
 
-The internal certificate is valid for a year. [Renew it](#once-a-year-renew-the-internal-certificate)
-before then.
+cert-manager renews the internal certificate by itself. See
+[Check the internal certificate](#check-the-internal-certificate).
 
 ## 6. Register kubectl and create the first passkey
 
@@ -548,40 +556,19 @@ What just happened:
 - [Register more clients](clients.md), such as Grafana or Argo CD, so they sign people in
   through Zeabur Identity too.
 
-## Once a year: renew the internal certificate
+## Check the internal certificate
 
-The certificate from step 5 is valid for 365 days. If it expires, kube-apiserver can no longer
-fetch Zeabur Identity's keys, and every sign-in to the cluster fails. Running `zeabur-identityctl kube-config`
-again replaces the certificate automatically when it has less than 30 days left;
-`--renew-certificate` replaces it now.
-
-On the server, restore the environment from step 3 and define the `reloads` and
-`wait_for_reload` helpers from step 5:
+cert-manager renews the certificate from step 5 30 days before it expires, every 90 days by
+default. The configuration in `authn.yaml` names the root CA, which lasts 10 years, so it does not
+change when the certificate is renewed. Check both certificates on the server:
 
 ```sh
-before=$(reloads)
-authn=$(mktemp) &&
-  zeabur-identityctl kube-config --distro k3s --renew-certificate > "$authn" &&
-  sudo install -m 600 "$authn" /etc/rancher/k3s/zeabur-identity/.authn.yaml.tmp &&
-  sudo mv /etc/rancher/k3s/zeabur-identity/.authn.yaml.tmp /etc/rancher/k3s/zeabur-identity/authn.yaml &&
-  rm "$authn" &&
-  wait_for_reload "$before"
+kubectl -n zeabur-identity get certificate
 ```
 
-Renewal creates a new CA as well, so kube-apiserver needs the configuration this command
-prints, not the one from step 5. Sign-ins can fail briefly while Zeabur Identity and kube-apiserver both
-pick up the change (each within about a minute). Then run `kubectl auth whoami` on your
-computer.
-
-> [!WARNING]
-> `zeabur-identityctl` switches Zeabur Identity to the new certificate as soon as it runs. If a later command in
-> the chain fails, kube-apiserver still trusts the old CA, and sign-ins fail until you install
-> a matching configuration. To recover, run the same commands again **without**
-> `--renew-certificate`: `zeabur-identityctl` reuses the certificate it just created and prints the
-> configuration that matches it.
-
-To change the validity, use `--certificate-validity`; see the
-[zeabur-identityctl README](../crates/zeabur-identityctl/README.md#configure-token-limits-and-certificates).
+Both lines must show `READY` `True`. If one does not, read the reason with
+`kubectl -n zeabur-identity describe certificate <name>`. To replace the root CA, see
+[Internal certificate](operations.md#internal-certificate).
 
 ## Troubleshooting
 

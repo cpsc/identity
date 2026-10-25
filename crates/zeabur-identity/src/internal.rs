@@ -1,7 +1,7 @@
 //! The in-cluster listener kube-apiserver fetches discovery and keys from.
 //!
 //! It serves only the internal metadata document (whose `jwks_uri` points back here) and the JWK
-//! set, over TLS with the certificate from the Secret `zeabur-identityctl kube-config` writes
+//! set, over TLS with the certificate from the Secret that cert-manager issues
 //! ([`zeabur_identity_k8s::internal_tls`]). Startup binds the socket before spawning this task, as
 //! [Dex] does for its listeners: a bind error stops the process, not just internal discovery.
 //! The empty resolver rejects TLS handshakes until a usable certificate is loaded; polling
@@ -23,9 +23,8 @@ use k8s_openapi::api::core::v1::Secret;
 use kube::Api;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
-use zeabur_identity_core::clock::{Clock, UnixTime};
 use zeabur_identity_core::config::BaseUrl;
-use zeabur_identity_k8s::internal_tls::{self, Material};
+use zeabur_identity_k8s::internal_tls;
 use zeabur_identity_keys::manager::PublishedKeys;
 use zeabur_identity_oauth::discovery::ProviderMetadata;
 use zeabur_identity_oauth::metadata::{AppState, router};
@@ -33,8 +32,6 @@ use zeabur_identity_tls::listener::{Resolver, TlsListener};
 
 /// How often the certificate Secret is re-read.
 const RELOAD_INTERVAL: Duration = Duration::from_mins(1);
-/// Warn this long before the certificate expires.
-const EXPIRY_WARNING: Duration = Duration::from_hours(30 * 24);
 
 /// Settings of the internal listener.
 #[derive(Debug, Clone)]
@@ -48,13 +45,12 @@ pub struct InternalConfig {
 }
 
 /// Serves an already-bound socket until `shutdown`, polling for initial and renewed TLS material.
-pub async fn run<C: Clock>(
+pub async fn run(
     listener: TlsListener,
     resolver: Arc<Resolver>,
     config: InternalConfig,
     secrets: Api<Secret>,
     keys: PublishedKeys,
-    clock: C,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let (metadata_tx, metadata_rx) = watch::channel(Bytes::new());
@@ -104,7 +100,6 @@ pub async fn run<C: Clock>(
             );
             continue;
         };
-        warn_if_expiring(&material, clock.now());
         let document = ProviderMetadata::new(&config.issuer, &url).to_bytes();
         // Publish metadata before enabling the first successful TLS handshake.
         metadata_tx.send_if_modified(|current| {
@@ -118,17 +113,6 @@ pub async fn run<C: Clock>(
     }
     if let Err(error) = server.await {
         tracing::error!(%error, reason = "internal_task_failed", "internal listener failed");
-    }
-}
-
-fn warn_if_expiring(material: &Material, now: UnixTime) {
-    if let Some(not_after) = material.not_after
-        && now.saturating_add(EXPIRY_WARNING) > not_after
-    {
-        tracing::warn!(
-            expires_in_hours = not_after.as_secs().saturating_sub(now.as_secs()) / 3600,
-            "internal listener certificate expires soon; re-run `zeabur-identityctl kube-config --renew-certificate`"
-        );
     }
 }
 
@@ -164,8 +148,9 @@ mod tests {
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tokio::net::{TcpListener, TcpStream};
     use tokio_rustls::TlsConnector;
-    use zeabur_identity_k8s::internal_tls::{internal_url, parse, secret};
-    use zeabur_identity_tls::certificate::issue;
+    use zeabur_identity_k8s::internal_tls::internal_url;
+    use zeabur_identity_test_support::certificate::{Ca, Issued};
+    use zeabur_identity_tls::certificate::certified_key;
     use zeabur_identity_tls::listener::server_config;
 
     use super::*;
@@ -185,18 +170,18 @@ mod tests {
         TlsConnector::from(Arc::new(config))
     }
 
-    /// Before a certificate is loaded, TLS is refused; loading and renewing one enables
-    /// discovery on the same pre-bound listener without a restart.
+    fn load(issued: &Issued) -> Arc<rustls::sign::CertifiedKey> {
+        certified_key(issued.cert_pem.as_bytes(), issued.key_pem.as_bytes()).unwrap()
+    }
+
+    /// Before a certificate is loaded, TLS is refused. Loading one enables discovery on the same
+    /// pre-bound listener. A renewed certificate from the same CA replaces it without a restart,
+    /// and a client that trusts only that CA keeps working.
     #[tokio::test]
     async fn serves_metadata_with_the_issued_certificate_and_renews_in_place() {
         let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
-        let now = UnixTime::from_secs(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-        );
-        let first = issue(ip, &[], now, Duration::from_hours(1)).unwrap();
+        let ca = Ca::new().unwrap();
+        let first = ca.issue(&["127.0.0.1"]).unwrap();
         let url = internal_url(ip).unwrap();
         let resolver = Arc::new(Resolver::default());
 
@@ -229,19 +214,28 @@ mod tests {
             std::io::Result::Ok(response)
         };
 
-        assert!(fetch(first.ca_pem.clone()).await.is_err());
-        resolver.set(parse(&secret("ns", &first, &url)).unwrap().key);
-        let response = fetch(first.ca_pem.clone()).await.unwrap();
+        assert!(fetch(ca.pem().to_owned()).await.is_err());
+        resolver.set(load(&first));
+        let response = fetch(ca.pem().to_owned()).await.unwrap();
         assert!(response.starts_with("HTTP/1.1 200"), "{response}");
         assert!(response.contains(r#""issuer":"https://login.example.com""#));
         assert!(response.contains(r#""jwks_uri":"https://127.0.0.1/jwks""#));
 
-        // A certificate from another CA is refused by a client trusting the first.
-        let second = issue(ip, &[], now, Duration::from_hours(1)).unwrap();
-        resolver.set(parse(&secret("ns", &second, &url)).unwrap().key);
-        assert!(fetch(first.ca_pem).await.is_err());
+        // cert-manager renews the certificate with a new key under the same CA.
+        resolver.set(load(&ca.issue(&["127.0.0.1"]).unwrap()));
         assert!(
-            fetch(second.ca_pem)
+            fetch(ca.pem().to_owned())
+                .await
+                .unwrap()
+                .starts_with("HTTP/1.1 200")
+        );
+
+        // A certificate from another CA is refused by a client trusting the first.
+        let other = Ca::new().unwrap();
+        resolver.set(load(&other.issue(&["127.0.0.1"]).unwrap()));
+        assert!(fetch(ca.pem().to_owned()).await.is_err());
+        assert!(
+            fetch(other.pem().to_owned())
                 .await
                 .unwrap()
                 .starts_with("HTTP/1.1 200")

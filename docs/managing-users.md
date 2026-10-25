@@ -63,13 +63,13 @@ Things to know:
   EOF
   ```
 
-Kubernetes sees Alice as the user `zeabur:alice` in the group `zeabur-identity:dev`. Give permissions to
+Kubernetes sees Alice as the user `zeabur:alice` in the group `zeabur:dev`. Give permissions to
 the group, not to the person. For example, to let the `dev` group edit everything in a `dev`
 namespace:
 
 ```sh
 kubectl create namespace dev            # if it does not exist yet
-kubectl create rolebinding dev-edit --clusterrole=edit --group=zeabur-identity:dev -n dev
+kubectl create rolebinding dev-edit --clusterrole=edit --group=zeabur:dev -n dev
 ```
 
 ### If the link does not work

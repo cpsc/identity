@@ -78,8 +78,6 @@ pub struct NewClient {
     pub audiences: Vec<String>,
     /// ID token signing algorithm, if not the default.
     pub id_token_signing_alg: Option<Algorithm>,
-    /// Whether the client may request the `elevate` scope.
-    pub allow_elevation: bool,
     /// Where people open the application; the sign-in page links to it.
     pub home_url: Option<String>,
 }
@@ -124,7 +122,6 @@ pub fn register(new: NewClient, namespace: &str) -> Result<Registration, ClientE
                 .as_deref()
                 .map(|secret| hash_secret(secret.as_bytes())),
             id_token_signing_alg: new.id_token_signing_alg,
-            allow_elevation: new.allow_elevation,
             home_url: new.home_url,
         },
     };
@@ -243,7 +240,6 @@ mod tests {
             redirect_uris: vec!["https://dash.example.com/callback".into()],
             audiences: vec!["kubernetes".into()],
             id_token_signing_alg: None,
-            allow_elevation: false,
             home_url: None,
         }
     }

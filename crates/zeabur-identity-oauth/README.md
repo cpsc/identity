@@ -38,15 +38,21 @@ page). Used by `zeabur-identity` (the server), `zeabur-identity-signin` (which c
   the user and checks the UID and disabled state. Stale index entries and recreated objects
   cannot substitute another identity. Access-token claims are unchanged; existing tokens
   remain usable without refresh.
-- Elevated groups exist only in short, non-refreshable tokens issued right after a passkey
-  sign-in, and only to clients registered with `allowElevation`; others get `invalid_scope`.
+- Token and session lifetimes follow the account type and the install-wide settings
+  (`Lifetimes::for_account`). Regular: access token 10 min, refresh idle 1 h. Admin: access
+  token 5 min, refresh idle 1 h, or 15 min with several teams or AAL3. Every refresh family ends
+  12 h after the sign-in. Only admin accounts' tokens carry the `admins` group. The account type
+  and settings are read again at every refresh.
+- `auth_time` is the passkey or upstream sign-in and survives refresh. There is no single
+  sign-on session, so every authorization request is a fresh sign-in and `max_age` is always
+  met. The token response adds `refresh_expires_in`: the seconds until the refresh token goes
+  idle.
 - Every redirect is `303 See Other` and carries `iss` (RFC 9207).
 
 ## Event logs
 
 Token and revocation outcomes use the `zeabur_identity::audit` tracing target. `oauth.code_exchange`
-and `oauth.refresh` succeed only after all requested tokens have been signed; an elevated code
-exchange also carries `elevated=true`. These operations are not fresh sign-ins. Failures are
+and `oauth.refresh` succeed only after all requested tokens have been signed. These operations are not fresh sign-ins. Failures are
 emitted at the handler's final result boundary with a fixed OAuth reason, or `not_form`.
 Only an authenticated client is recorded; issuance success uses the already-verified local
 user name and subject.

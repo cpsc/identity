@@ -21,24 +21,19 @@ First decide which kind of client the application is:
 This is the `kubectl` client from [Get started](get-started.md):
 
 ```sh
-zeabur-identityctl client create kubectl --type public --allow-elevation \
+zeabur-identityctl client create kubectl --type public \
   --redirect-uri http://127.0.0.1:8000/ --audience kubernetes | kubectl apply -f -
 ```
 
 Running `client create` for a name that already exists replaces that client, so always pass all
-of its options. Leaving out `--allow-elevation` here, for example, turns admin sign-in off for
-`kubectl`.
+of its options. Leaving out `--audience kubernetes` here, for example, stops `kubectl` from
+getting tokens that kube-apiserver accepts.
 
 The options:
 
 - **`--redirect-uri`** is where the browser goes back to after sign-in. Repeat it for several.
 - **`--audience kubernetes`** lets the client get tokens that kube-apiserver accepts. Add it
   only when the application calls the Kubernetes API as the signed-in person.
-- **`--allow-elevation`** lets the client ask for admin rights (the user's elevated groups, after
-  a fresh passkey sign-in). Leave it off unless the client is for administering the cluster,
-  like `kubectl`. The client's ID tokens then carry `can_elevate: true` for users who have
-  elevated groups, so it can offer admin rights only to them. See
-  [Admin rights](managing-users.md#admin-rights).
 - **`--home-url`** is where people open the application, such as
   `https://zeabur.example.com/`. With it, the sign-in page offers "Open *display name*" when
   someone reaches it with nothing to sign in to, and after they set up a passkey. Anyone who

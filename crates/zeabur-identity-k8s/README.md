@@ -61,10 +61,11 @@ server, the `zeabur-identityctl` admin CLI and the `zeabur-identity-e2e` tests.
   limited to a name ([RBAC]). It has nothing outside its namespace, no RBAC objects and no
   `impersonate`. A compromised Zeabur Identity can change Zeabur Identity's own state (it holds
   the signing key anyway) but cannot reach other workloads or grant itself cluster rights.
-- **Least privilege for admins.** Installation binds `zeabur:admins` to the built-in `view` role
-  and only `zeabur:elevated:admins` to `cluster-admin`. Elevated groups appear only in
-  short tokens issued right after a passkey sign-in, and the generated kube-apiserver
-  configuration ([KEP-3331]) rejects any other token that carries them.
+- **Admin rights come from the account type.** Installation binds `zeabur:admins` to
+  `cluster-admin` (`ClusterRoleBinding` `zeabur-identity-cluster-admins`) and binds nothing for
+  other groups. Only `User`s with `accountType: Admin` get the `admins` group; the CRD refuses
+  `admins` in `spec.groups`. Install-wide settings (`teams`, `admin-aal3`) live in the `ConfigMap`
+  `zeabur-identity-settings`, which Zeabur Identity reads by name and admins write.
 - **Hashes only.** Grants, invitations, the setup token and client secrets are stored as
   SHA-256 hashes of high-entropy values; credentials hold public keys. Client secrets are
   generated, never chosen, because an unsalted hash of a password could be reversed offline.

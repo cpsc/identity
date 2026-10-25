@@ -23,6 +23,7 @@ use webauthn_rs::prelude::{
     DiscoverableAuthentication, Passkey, PasskeyRegistration, PublicKeyCredential,
     RegisterPublicKeyCredential, Uuid,
 };
+use zeabur_identity_core::account::{Method, Refusal, allows};
 use zeabur_identity_core::clock::{Clock, UnixTime};
 use zeabur_identity_core::crypto::{ct_eq, hash_secret, hex, random};
 use zeabur_identity_oauth::authorize::Authentication;
@@ -32,7 +33,7 @@ use zeabur_identity_store::{
     Consume, CreateCredential, CredentialStore, Directory, GrantStore, NewPasskey, SetupStore, User,
 };
 
-use crate::passkeys::{Passkeys, authenticator, credential_name};
+use crate::passkeys::{Passkeys, authenticator, backup_flags, credential_name};
 use crate::problem::Problem;
 
 /// Cookie holding the sealed WebAuthn ceremony state (`SameSite=Strict`).
@@ -118,6 +119,16 @@ pub(crate) const PASSKEY_FAILED: Problem = Problem::new(
     StatusCode::UNAUTHORIZED,
     "passkey-failed",
     "Unable to verify the passkey.",
+);
+pub(crate) const ADMIN_NEEDS_PASSKEY: Problem = Problem::new(
+    StatusCode::FORBIDDEN,
+    "admin-needs-passkey",
+    "Admin accounts sign in with a passkey only.",
+);
+pub(crate) const DEVICE_PASSKEY_NEEDED: Problem = Problem::new(
+    StatusCode::FORBIDDEN,
+    "device-passkey-needed",
+    "Admin accounts need a security key or a passkey that stays on one device.",
 );
 pub(crate) const NO_REQUEST: Problem = Problem::new(
     StatusCode::BAD_REQUEST,
@@ -283,12 +294,31 @@ pub(crate) fn new_passkey(
     })
 }
 
+/// Refuses `user` if their account type does not allow `method` under the current settings (see
+/// [`allows`]).
+pub(crate) async fn check_account<D: Directory>(
+    directory: &D,
+    user: &User,
+    method: Method,
+) -> Result<(), Problem> {
+    let settings = directory.settings().await.map_err(internal)?;
+    allows(user.account_type, settings, method).map_err(|refusal| {
+        tracing::warn!(reason = ?refusal, user = %user.name, "the account type does not allow this sign-in method");
+        match refusal {
+            Refusal::AdminNeedsPasskey => ADMIN_NEEDS_PASSKEY,
+            Refusal::AdminNeedsDeviceBoundPasskey => DEVICE_PASSKEY_NEEDED,
+        }
+    })
+}
+
 /// A verified assertion.
 pub(crate) struct Verified {
     pub(crate) user: User,
     /// `Credential` object name.
     pub(crate) credential: String,
     pub(crate) last_used_at: Option<UnixTime>,
+    /// The authenticator reported BE unset at registration.
+    pub(crate) device_bound: bool,
 }
 
 /// A refused assertion, with the credential ID when it is not registered here.
@@ -356,10 +386,21 @@ where
             tracing::warn!(reason = PASSKEY_FAILED.kind, %error, "passkey sign-in verification failed");
             PASSKEY_FAILED
         })?;
+    // Checked after the assertion verifies, so the answer says nothing about unproven keys.
+    // A credential can become eligible for backup after enrolment, so both must say no.
+    let device_bound =
+        !backup_flags(&stored.record).0 && !passkeys::assertion_backup_eligible(response);
+    check_account(
+        &service.oauth.directory,
+        &user,
+        Method::Passkey { device_bound },
+    )
+    .await?;
     Ok(Verified {
         user,
         credential,
         last_used_at: stored.last_used_at,
+        device_bound,
     })
 }
 
@@ -577,7 +618,7 @@ where
         let now = service.oauth.now();
         let ceremony: Ceremony<PasskeyRegistration> =
             open(&service.oauth, &headers, REGISTRATION_PURPOSE, now)?;
-        let (token, _) = valid_setup_token(
+        let (token, owner) = valid_setup_token(
             &service.setup,
             &service.oauth.directory,
             &request.token,
@@ -596,6 +637,9 @@ where
                 tracing::warn!(reason = PASSKEY_FAILED.kind, %error, "passkey registration verification failed");
                 PASSKEY_FAILED
             })?;
+        // Refused before the token is used, so the person can try again with another passkey.
+        let device_bound = !authenticator(&request.credential).backup_eligible;
+        check_account(&service.oauth.directory, &owner, Method::Passkey { device_bound }).await?;
         if service
             .used_ceremonies
             .first_use(&ceremony.id, ceremony.expires_at, "", now)
@@ -744,6 +788,7 @@ where
             amr: PASSKEY_AMR.iter().map(|m| (*m).to_owned()).collect(),
             credential: Some(verified.credential.clone()),
             user_verified: true,
+            device_bound: verified.device_bound,
         };
         let location =
             complete_authorization(&service.oauth, &flow, authentication).map_err(|error| {

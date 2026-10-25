@@ -5,7 +5,6 @@
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-    use std::time::Duration;
 
     use axum::Router;
     use axum::body::Body;
@@ -19,9 +18,11 @@ mod tests {
     use tokio::sync::Barrier;
     use tower::ServiceExt as _;
     use tracing::instrument::WithSubscriber as _;
+    use zeabur_identity_core::account::{AccountType, Settings, Teams};
     use zeabur_identity_core::clock::{Clock, UnixTime};
     use zeabur_identity_core::config::BaseUrl;
     use zeabur_identity_core::crypto::{Sealer, hash_secret};
+    use zeabur_identity_core::protocol::ADMIN_GROUP;
     use zeabur_identity_keys::Algorithm;
     use zeabur_identity_keys::manager::{KeyManager, Published};
     use zeabur_identity_keys::rotation::RotationPolicy;
@@ -30,8 +31,8 @@ mod tests {
     use zeabur_identity_oauth::endpoints::{FLOW_COOKIE, complete_authorization, router};
     use zeabur_identity_oauth::{AuthorizationServer, Lifetimes, OneTimeIds};
     use zeabur_identity_store::{
-        Client, ClientType, CreateGrant, Grant, GrantStore, MemoryDirectory, MemoryGrantStore,
-        NewGrant, Rotation, StoreError, User, Verification,
+        Client, ClientType, CreateGrant, Directory as _, Grant, GrantStore, MemoryDirectory,
+        MemoryGrantStore, NewGrant, Rotation, StoreError, User, Verification,
     };
     use zeabur_identity_test_support::logging::Capture;
 
@@ -148,7 +149,6 @@ mod tests {
             audiences: vec!["kubernetes".into()],
             secret_hash: None,
             id_token_alg: Algorithm::Es256,
-            allow_elevation: true,
             home_url: None,
         });
         directory.put_client(Client {
@@ -159,18 +159,21 @@ mod tests {
             audiences: vec![],
             secret_hash: Some(hash_secret(WEB_SECRET.as_bytes())),
             id_token_alg: Algorithm::Rs256,
-            allow_elevation: false,
             home_url: None,
         });
-        for (name, disabled) in [("alice", false), ("bob", true)] {
+        for (name, disabled, account_type) in [
+            ("alice", false, AccountType::Regular),
+            ("bob", true, AccountType::Regular),
+            ("carol", false, AccountType::Admin),
+        ] {
             directory.put_user(User {
                 name: name.into(),
                 subject: format!("uid-{name}"),
                 username: name.into(),
                 display_name: Some(format!("{name} example")),
-                groups: vec!["admins".into()],
+                groups: vec!["developers".into()],
                 disabled,
-                elevated_groups: vec!["cluster-admins".into()],
+                account_type,
             });
         }
         let server = Arc::new(AuthorizationServer {
@@ -305,6 +308,17 @@ mod tests {
 
     /// [`sign_in`] with the given authentication methods.
     async fn sign_in_with(h: &Harness, user: &str, authorize_uri: &str, amr: &[&str]) -> String {
+        sign_in_as(h, user, authorize_uri, amr, false).await
+    }
+
+    /// [`sign_in_with`], with a device-bound passkey if `device_bound`.
+    async fn sign_in_as(
+        h: &Harness,
+        user: &str,
+        authorize_uri: &str,
+        amr: &[&str],
+        device_bound: bool,
+    ) -> String {
         let reply = get(&h.app, authorize_uri).await;
         assert_eq!(
             reply.status,
@@ -319,6 +333,7 @@ mod tests {
             amr: amr.iter().map(|m| (*m).to_owned()).collect(),
             credential: None,
             user_verified: false,
+            device_bound,
         };
         let location = complete_authorization(&h.server, &flow_cookie(&reply), auth).unwrap();
         param(&location, "code").unwrap()
@@ -416,7 +431,6 @@ mod tests {
             WEB_SECRET,
             "state-1",
             "nonce-1",
-            "cluster-admins",
             "oauth-storage-secret-sentinel",
         ]) {
             assert!(
@@ -445,6 +459,7 @@ mod tests {
             amr: vec!["hwk".into(), "user".into()],
             credential: None,
             user_verified: false,
+            device_bound: false,
         };
         let location = complete_authorization(&h.server, &flow_cookie(&reply), auth).unwrap();
         assert!(location.starts_with(KUBECTL_REDIRECT));
@@ -467,7 +482,7 @@ mod tests {
         assert_eq!(at["client_id"], "kubectl");
         assert_eq!(at["sub"], "uid-alice");
         assert_eq!(at["preferred_username"], "alice");
-        assert_eq!(at["groups"], serde_json::json!(["admins"]));
+        assert_eq!(at["groups"], serde_json::json!(["developers"]));
         assert_eq!(
             at["exp"].as_u64().unwrap() - at["iat"].as_u64().unwrap(),
             600
@@ -484,8 +499,7 @@ mod tests {
             id.get("client_id").is_none(),
             "ID tokens never look like access tokens"
         );
-        let events = audit_outcomes(&h, "oauth.code_exchange", &["success"]);
-        assert_eq!(events[0]["fields"]["elevated"], false);
+        audit_outcomes(&h, "oauth.code_exchange", &["success"]);
         assert_no_secrets(
             &h,
             &[
@@ -938,7 +952,7 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned();
-        h.clock.advance(4 * 3600);
+        h.clock.advance(3600);
         assert_eq!(
             refresh(&h, &token).await.error(),
             "invalid_grant",
@@ -952,13 +966,13 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned();
-        for _ in 0..3 {
-            h.clock.advance(3 * 3600);
+        for _ in 0..14 {
+            h.clock.advance(50 * 60);
             let reply = refresh(&h, &token).await;
             assert_eq!(reply.status, StatusCode::OK);
             token = reply.json()["refresh_token"].as_str().unwrap().to_owned();
         }
-        h.clock.advance(3 * 3600);
+        h.clock.advance(50 * 60);
         assert_eq!(
             refresh(&h, &token).await.error(),
             "invalid_grant",
@@ -1026,6 +1040,7 @@ mod tests {
             amr: vec![],
             credential: None,
             user_verified: false,
+            device_bound: false,
         };
         assert!(complete_authorization(&h.server, "forged", auth.clone()).is_err());
         let reply = get(&h.app, &kubectl_authorize(&[])).await;
@@ -1089,6 +1104,7 @@ mod tests {
             amr: vec![],
             credential: None,
             user_verified: false,
+            device_bound: false,
         };
         let location = complete_authorization(&h.server, &flow_cookie(&reply), auth).unwrap();
         assert_eq!(param(&location, "state").as_deref(), Some("pushed"));
@@ -1320,264 +1336,192 @@ mod tests {
 
     const PASSKEY: &[&str] = &["swk", "mfa"];
 
-    fn elevating() -> Lifetimes {
-        Lifetimes {
-            elevated_token: Some(Duration::from_mins(5)),
-            ..Lifetimes::DEFAULT
-        }
+    fn tokens_of(reply: &Reply) -> Value {
+        assert_eq!(reply.status, StatusCode::OK, "{}", reply.json());
+        reply.json()
     }
 
-    fn elevate_uri() -> String {
-        kubectl_authorize(&[]).replace("scope=openid+profile+groups", "scope=openid+groups+elevate")
+    fn lifetime(h: &Harness, token: &str, audience: &str) -> u64 {
+        let (_, claims) = verify(h, token, audience);
+        claims["exp"].as_u64().unwrap() - claims["iat"].as_u64().unwrap()
+    }
+
+    async fn stored_user(h: &Harness, name: &str) -> User {
+        h.server.directory.user(name).await.unwrap().unwrap()
+    }
+
+    async fn set_account_type(h: &Harness, name: &str, account_type: AccountType) {
+        let mut user = stored_user(h, name).await;
+        user.account_type = account_type;
+        h.server.directory.put_user(user);
+    }
+
+    async fn sign_in_tokens(h: &Harness, user: &str, amr: &[&str], device_bound: bool) -> Value {
+        let code = sign_in_as(h, user, &kubectl_authorize(&[]), amr, device_bound).await;
+        tokens_of(&exchange(h, &code).await)
+    }
+
+    fn refresh_token(tokens: &Value) -> &str {
+        tokens["refresh_token"].as_str().unwrap()
     }
 
     #[tokio::test]
     async fn a_code_for_a_removed_user_is_not_redeemed_for_a_new_user_of_that_name() {
-        for (case, uri, amr) in [
-            ("plain", kubectl_authorize(&[]), PASSKEY),
-            ("elevated", elevate_uri(), PASSKEY),
+        let h = harness().await;
+        let code = sign_in_with(&h, "alice", &kubectl_authorize(&[]), PASSKEY).await;
+        // Remove alice after sign-in, then give the name to a new person.
+        h.server.directory.remove_user("alice");
+        let newcomer = User {
+            name: "alice".into(),
+            subject: "uid-recreated".into(),
+            username: "alice".into(),
+            account_type: AccountType::Admin,
+            ..User::default()
+        };
+        h.server.directory.put_user(newcomer.clone());
+        assert_eq!(exchange(&h, &code).await.error(), "invalid_grant");
+        assert_eq!(h.server.grants.list(&newcomer).await.unwrap(), []);
+    }
+
+    #[tokio::test]
+    async fn only_admin_accounts_carry_the_admin_group_and_their_tokens_are_shorter() {
+        let h = harness().await;
+        // A regular account never carries the admin group, even if its groups list it.
+        let mut alice = stored_user(&h, "alice").await;
+        alice.groups.push(ADMIN_GROUP.into());
+        h.server.directory.put_user(alice);
+        let regular = sign_in_tokens(&h, "alice", PASSKEY, false).await;
+        let admin = sign_in_tokens(&h, "carol", PASSKEY, false).await;
+        for (name, tokens, groups, seconds) in [
+            ("regular", &regular, serde_json::json!(["developers"]), 600),
+            (
+                "admin",
+                &admin,
+                serde_json::json!(["developers", ADMIN_GROUP]),
+                300,
+            ),
         ] {
-            let h = harness_with(elevating()).await;
-            let code = sign_in_with(&h, "alice", &uri, amr).await;
-            // Remove alice after sign-in, then give the name to a new person.
-            h.server.directory.remove_user("alice");
-            let newcomer = User {
-                name: "alice".into(),
-                subject: "uid-recreated".into(),
-                username: "alice".into(),
-                groups: vec!["admins".into()],
-                elevated_groups: vec!["cluster-admins".into()],
-                ..User::default()
-            };
-            h.server.directory.put_user(newcomer.clone());
-            assert_eq!(exchange(&h, &code).await.error(), "invalid_grant", "{case}");
-            assert!(
-                h.server.grants.list(&newcomer).await.unwrap().is_empty(),
-                "{case}"
+            let access = tokens["access_token"].as_str().unwrap();
+            let (_, claims) = verify(&h, access, "kubernetes");
+            assert_eq!(claims["groups"], groups, "{name}");
+            assert_eq!(tokens["expires_in"], seconds, "{name}");
+            assert_eq!(lifetime(&h, access, "kubernetes"), seconds, "{name}");
+            let id = tokens["id_token"].as_str().unwrap();
+            assert_eq!(lifetime(&h, id, "kubectl"), seconds, "{name}: ID token");
+            let info = userinfo(&h, Some(access)).await.json();
+            assert_eq!(info["groups"], groups, "{name}: UserInfo");
+        }
+
+        // A refresh uses the account type as it is now.
+        set_account_type(&h, "carol", AccountType::Regular).await;
+        let refreshed = tokens_of(&refresh(&h, refresh_token(&admin)).await);
+        let (_, claims) = verify(
+            &h,
+            refreshed["access_token"].as_str().unwrap(),
+            "kubernetes",
+        );
+        assert_eq!(claims["groups"], serde_json::json!(["developers"]));
+        assert_eq!(refreshed["expires_in"], 600);
+    }
+
+    #[tokio::test]
+    async fn admin_accounts_need_a_passkey_and_with_aal3_a_device_bound_one() {
+        let h = harness().await;
+        // A regular account may use GitHub or Google; an admin account may not.
+        let upstream = sign_in_tokens(&h, "alice", &[], false).await;
+        let code = sign_in_with(&h, "carol", &kubectl_authorize(&[]), &[]).await;
+        assert_eq!(exchange(&h, &code).await.error(), "invalid_grant");
+        let events = audit_outcomes(&h, "oauth.account_policy", &["failure"]);
+        assert_eq!(events[0]["fields"]["reason"], "AdminNeedsPasskey");
+
+        // An upstream session ends when its account becomes an admin account.
+        set_account_type(&h, "alice", AccountType::Admin).await;
+        assert_eq!(
+            refresh(&h, refresh_token(&upstream)).await.error(),
+            "invalid_grant"
+        );
+        set_account_type(&h, "alice", AccountType::Regular).await;
+        assert_eq!(
+            refresh(&h, refresh_token(&upstream)).await.error(),
+            "invalid_grant",
+            "the family was revoked"
+        );
+
+        // A synced passkey is enough until AAL3 is on. Then only a device-bound one is.
+        let synced = sign_in_tokens(&h, "carol", PASSKEY, false).await;
+        let bound = sign_in_tokens(&h, "carol", PASSKEY, true).await;
+        h.server.directory.put_settings(Settings {
+            admin_aal3: true,
+            ..Settings::default()
+        });
+        let code = sign_in_with(&h, "carol", &kubectl_authorize(&[]), PASSKEY).await;
+        assert_eq!(exchange(&h, &code).await.error(), "invalid_grant");
+        assert_eq!(
+            refresh(&h, refresh_token(&synced)).await.error(),
+            "invalid_grant"
+        );
+        tokens_of(&refresh(&h, refresh_token(&bound)).await);
+        sign_in_tokens(&h, "carol", PASSKEY, true).await;
+        // AAL3 does not change regular accounts.
+        sign_in_tokens(&h, "alice", PASSKEY, false).await;
+    }
+
+    #[tokio::test]
+    async fn refresh_idle_follows_the_account_type_and_the_settings() {
+        let multiple = Settings {
+            teams: Teams::Multiple,
+            admin_aal3: false,
+        };
+        let aal3 = Settings {
+            teams: Teams::Single,
+            admin_aal3: true,
+        };
+        for (name, user, settings, idle) in [
+            ("regular", "alice", Settings::default(), 3600),
+            ("regular, several teams", "alice", multiple, 3600),
+            ("admin, one team", "carol", Settings::default(), 3600),
+            ("admin, several teams", "carol", multiple, 900),
+            ("admin, AAL3", "carol", aal3, 900),
+        ] {
+            let h = harness().await;
+            h.server.directory.put_settings(settings);
+            let tokens = sign_in_tokens(&h, user, PASSKEY, true).await;
+            assert_eq!(tokens["refresh_expires_in"], idle, "{name}");
+            // Used just before the idle limit, the family lives on.
+            h.clock.advance(idle - 1);
+            let tokens = tokens_of(&refresh(&h, refresh_token(&tokens)).await);
+            assert_eq!(tokens["refresh_expires_in"], idle, "{name}");
+            h.clock.advance(idle);
+            assert_eq!(
+                refresh(&h, refresh_token(&tokens)).await.error(),
+                "invalid_grant",
+                "{name}"
             );
         }
     }
 
     #[tokio::test]
-    async fn elevation_issues_short_lived_tokens_without_refresh() {
-        let h = harness_with(elevating()).await;
-        let code = sign_in_with(&h, "alice", &elevate_uri(), PASSKEY).await;
-        let reply = exchange(&h, &code).await;
-        assert_eq!(reply.status, StatusCode::OK, "{}", reply.json());
-        let tokens = reply.json();
-        assert!(tokens.get("refresh_token").is_none(), "{tokens}");
-        assert_eq!(tokens["expires_in"], 300);
-        let (_, claims) = verify(&h, tokens["access_token"].as_str().unwrap(), "kubernetes");
-        assert_eq!(
-            claims["groups"],
-            serde_json::json!(["admins", "elevated:cluster-admins"])
-        );
-        assert_eq!(
-            claims["exp"].as_u64().unwrap() - claims["iat"].as_u64().unwrap(),
-            300
-        );
-        assert!(claims["scope"].as_str().unwrap().contains("elevate"));
-        // The ID token never outlives the elevated access token.
-        let (_, id) = verify(&h, tokens["id_token"].as_str().unwrap(), "kubectl");
-        assert!(id["exp"].as_u64().unwrap() - id["iat"].as_u64().unwrap() <= 300);
-        // UserInfo reports base groups only.
-        let info = userinfo(&h, tokens["access_token"].as_str()).await.json();
-        assert_eq!(info["groups"], serde_json::json!(["admins"]));
-        let events = audit_outcomes(&h, "oauth.code_exchange", &["success"]);
-        assert_eq!(events[0]["fields"]["elevated"], true);
-        assert_eq!(events[0]["fields"]["lifetime_seconds"], 300);
-        assert!(events[0]["fields"].get("groups").is_none());
-        assert_no_secrets(
+    async fn auth_time_is_the_sign_in_and_survives_refresh() {
+        let h = harness().await;
+        let tokens = sign_in_tokens(&h, "alice", PASSKEY, false).await;
+        h.clock.advance(30 * 60);
+        let refreshed = tokens_of(&refresh(&h, refresh_token(&tokens)).await);
+        let (_, id) = verify(&h, refreshed["id_token"].as_str().unwrap(), "kubectl");
+        let (_, access) = verify(
             &h,
-            &[
-                &code,
-                tokens["access_token"].as_str().unwrap(),
-                tokens["id_token"].as_str().unwrap(),
-            ],
+            refreshed["access_token"].as_str().unwrap(),
+            "kubernetes",
         );
-    }
+        assert_eq!(id["auth_time"], START);
+        assert_eq!(access["auth_time"], START);
 
-    #[tokio::test]
-    async fn elevation_needs_the_feature_a_passkey_and_eligible_groups() {
-        // Disabled: the scope is ignored like any unknown scope.
-        let h = harness_with(Lifetimes {
-            elevated_token: None,
-            ..Lifetimes::DEFAULT
-        })
-        .await;
-        let code = sign_in_with(&h, "alice", &elevate_uri(), PASSKEY).await;
-        let tokens = exchange(&h, &code).await.json();
-        assert!(tokens["refresh_token"].is_string());
-        assert!(!tokens["scope"].as_str().unwrap().contains("elevate"));
-        let (_, claims) = verify(&h, tokens["access_token"].as_str().unwrap(), "kubernetes");
-        assert_eq!(claims["groups"], serde_json::json!(["admins"]));
-
-        // Enabled, but signed in without a passkey (an upstream provider): refused.
-        let h = harness_with(elevating()).await;
-        let reply = get(&h.app, &elevate_uri()).await;
-        let auth = Authentication {
-            user: "alice".into(),
-            subject: "uid-alice".into(),
-            auth_time: h.clock.now(),
-            amr: vec![],
-            credential: None,
-            user_verified: false,
-        };
-        let error = complete_authorization(&h.server, &flow_cookie(&reply), auth).unwrap_err();
-        assert_eq!(error.error.as_str(), "access_denied");
-
-        // A user with no elevated groups gets invalid_scope.
-        h.server.directory.put_user(User {
-            name: "carol".into(),
-            subject: "uid-carol".into(),
-            username: "carol".into(),
-            groups: vec!["dev".into()],
-            ..User::default()
-        });
-        let code = sign_in_with(&h, "carol", &elevate_uri(), PASSKEY).await;
-        assert_eq!(exchange(&h, &code).await.error(), "invalid_scope");
-
-        // Refresh can never widen a normal grant to elevation.
-        let code = sign_in_with(&h, "alice", &kubectl_authorize(&[]), PASSKEY).await;
-        let tokens = exchange(&h, &code).await.json();
-        let reply = post(
-            &h.app,
-            "/token",
-            &[
-                ("grant_type", "refresh_token"),
-                ("refresh_token", tokens["refresh_token"].as_str().unwrap()),
-                ("client_id", "kubectl"),
-                ("scope", "openid elevate"),
-            ],
-            None,
-        )
-        .await;
-        assert_eq!(reply.error(), "invalid_scope");
-    }
-
-    fn kubectl_client(allow_elevation: bool) -> Client {
-        Client {
-            id: "kubectl".into(),
-            display_name: None,
-            kind: ClientType::Public,
-            redirect_uris: vec![KUBECTL_REDIRECT.into()],
-            audiences: vec!["kubernetes".into()],
-            secret_hash: None,
-            id_token_alg: Algorithm::Es256,
-            allow_elevation,
-            home_url: None,
-        }
-    }
-
-    #[tokio::test]
-    async fn elevation_needs_the_client_to_allow_it() {
-        let h = harness_with(elevating()).await;
-        h.server.directory.put_client(kubectl_client(false));
-
-        // `/authorize`: invalid_scope, redirected with state.
-        let reply = get(&h.app, &elevate_uri()).await;
-        assert_eq!(reply.status, StatusCode::SEE_OTHER);
-        let location = reply.location();
-        assert_eq!(param(&location, "error").as_deref(), Some("invalid_scope"));
-        assert_eq!(param(&location, "state").as_deref(), Some("state-1"));
-        // The same client still signs users in normally.
-        let code = sign_in_with(&h, "alice", &kubectl_authorize(&[]), PASSKEY).await;
-        assert_eq!(exchange(&h, &code).await.status, StatusCode::OK);
-
-        // `/par`: invalid_scope.
-        let pushed = [
-            ("client_id", "kubectl"),
-            ("redirect_uri", KUBECTL_REDIRECT),
-            ("response_type", "code"),
-            ("scope", "openid elevate"),
-            ("code_challenge", CHALLENGE),
-            ("code_challenge_method", "S256"),
-        ];
-        let reply = post(&h.app, "/par", &pushed, None).await;
-        assert_eq!(reply.status, StatusCode::BAD_REQUEST);
-        assert_eq!(reply.error(), "invalid_scope");
-        h.server.directory.put_client(kubectl_client(true));
-        assert_eq!(
-            post(&h.app, "/par", &pushed, None).await.status,
-            StatusCode::CREATED
-        );
-
-        // Allowed at `/authorize`, taken away before `/token`: the code is refused.
-        let code = sign_in_with(&h, "alice", &elevate_uri(), PASSKEY).await;
-        h.server.directory.put_client(kubectl_client(false));
-        assert_eq!(exchange(&h, &code).await.error(), "invalid_grant");
-    }
-
-    fn can_elevate(h: &Harness, tokens: &Value) -> Value {
-        let (_, access) = verify(h, tokens["access_token"].as_str().unwrap(), "kubernetes");
-        assert!(access.get("can_elevate").is_none(), "{access}");
-        let (_, id) = verify(h, tokens["id_token"].as_str().unwrap(), "kubectl");
-        id["can_elevate"].clone()
-    }
-
-    #[tokio::test]
-    async fn the_id_token_says_whether_elevation_can_succeed() {
-        let h = harness_with(elevating()).await;
-        let code = sign_in_with(&h, "alice", &kubectl_authorize(&[]), PASSKEY).await;
-        let tokens = exchange(&h, &code).await.json();
-        assert_eq!(can_elevate(&h, &tokens), Value::Bool(true));
-
-        // Refresh reads the user as it is now.
-        h.server.directory.put_user(User {
-            name: "alice".into(),
-            subject: "uid-alice".into(),
-            username: "alice".into(),
-            groups: vec!["admins".into()],
-            ..User::default()
-        });
-        let refreshed = refresh(&h, tokens["refresh_token"].as_str().unwrap())
-            .await
-            .json();
-        assert_eq!(can_elevate(&h, &refreshed), Value::Null);
-        let code = sign_in_with(&h, "alice", &elevate_uri(), PASSKEY).await;
-        assert_eq!(exchange(&h, &code).await.error(), "invalid_scope");
-
-        let h = harness_with(elevating()).await;
-        h.server.directory.put_client(kubectl_client(false));
-        let code = sign_in_with(&h, "alice", &kubectl_authorize(&[]), PASSKEY).await;
-        assert_eq!(
-            can_elevate(&h, &exchange(&h, &code).await.json()),
-            Value::Null
-        );
-
-        let h = harness_with(Lifetimes {
-            elevated_token: None,
-            ..Lifetimes::DEFAULT
-        })
-        .await;
-        let code = sign_in_with(&h, "alice", &kubectl_authorize(&[]), PASSKEY).await;
-        assert_eq!(
-            can_elevate(&h, &exchange(&h, &code).await.json()),
-            Value::Null
-        );
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
-    async fn an_elevated_code_is_redeemed_at_most_once_under_concurrency() {
-        let h = Arc::new(harness_with(elevating()).await);
-        let code = sign_in_with(&h, "alice", &elevate_uri(), PASSKEY).await;
-        let barrier = Arc::new(Barrier::new(64));
-        let tasks: Vec<_> = (0..64)
-            .map(|_| {
-                let (h, code, barrier) = (Arc::clone(&h), code.clone(), Arc::clone(&barrier));
-                tokio::spawn(async move {
-                    barrier.wait().await;
-                    exchange(&h, &code).await.status
-                })
-            })
-            .collect();
-        let mut ok = 0;
-        for task in tasks {
-            if task.await.unwrap() == StatusCode::OK {
-                ok += 1;
-            }
-        }
-        assert_eq!(ok, 1);
+        // There is no single sign-on session. A request with max_age always goes to the sign-in
+        // page, so its tokens carry the new auth_time.
+        let uri = kubectl_authorize(&[("max_age", "600")]);
+        assert_eq!(get(&h.app, &uri).await.location(), "/login");
+        let fresh = tokens_of(&exchange(&h, &sign_in(&h, "alice", &uri).await).await);
+        let (_, id) = verify(&h, fresh["id_token"].as_str().unwrap(), "kubectl");
+        assert_eq!(id["auth_time"], START + 30 * 60);
     }
 
     async fn userinfo(h: &Harness, token: Option<&str>) -> Reply {
@@ -1602,7 +1546,7 @@ mod tests {
         assert_eq!(claims["sub"], "uid-alice");
         assert_eq!(claims["preferred_username"], "alice");
         assert_eq!(claims["name"], "alice example");
-        assert_eq!(claims["groups"], serde_json::json!(["admins"]));
+        assert_eq!(claims["groups"], serde_json::json!(["developers"]));
 
         // RFC 6750 §3: no token → a bare challenge; a bad one → invalid_token.
         let reply = userinfo(&h, None).await;
@@ -1742,21 +1686,15 @@ mod tests {
     #[tokio::test]
     async fn signing_failures_never_report_issuance_success() {
         // Both missing key publication and a clock before signer activation fail code issuance.
-        // Elevated issuance has no stored grant but must obey exactly the same final boundary.
-        for elevated in [false, true] {
+        for user in ["alice", "carol"] {
             for missing in [false, true] {
-                let h = harness_with(elevating()).await;
+                let h = harness().await;
                 if missing {
                     h.keys_sender.send(None).unwrap();
                 } else {
                     h.clock.0.store(START - 1, Ordering::SeqCst);
                 }
-                let uri = if elevated {
-                    elevate_uri()
-                } else {
-                    kubectl_authorize(&[])
-                };
-                let code = sign_in_with(&h, "alice", &uri, PASSKEY).await;
+                let code = sign_in_with(&h, user, &kubectl_authorize(&[]), PASSKEY).await;
                 let reply = exchange(&h, &code).await;
                 let reason = if missing {
                     "temporarily_unavailable"

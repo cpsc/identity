@@ -21,6 +21,7 @@ mod tests {
     use tower::ServiceExt as _;
     use tracing::instrument::WithSubscriber as _;
     use url::Url;
+    use zeabur_identity_core::account::{AccountType, Settings};
     use zeabur_identity_core::clock::{Clock, UnixTime};
     use zeabur_identity_core::config::BaseUrl;
     use zeabur_identity_core::crypto::{Sealer, hash_secret};
@@ -118,7 +119,6 @@ mod tests {
             audiences: vec!["kubernetes".into()],
             secret_hash: None,
             id_token_alg: Algorithm::Es256,
-            allow_elevation: true,
             home_url: None,
         });
         directory.put_user(User {
@@ -126,8 +126,8 @@ mod tests {
             subject: ADMIN_UID.into(),
             username: "admin".into(),
             display_name: Some("Cluster admin".into()),
-            groups: vec!["admins".into()],
             disabled: false,
+            account_type: AccountType::Admin,
             ..User::default()
         });
         directory.put_user(User {
@@ -996,37 +996,71 @@ mod tests {
         assert!(tokens["id_token"].is_string());
     }
 
+    /// `credential` (a registration response) with the backup flags (BE, BS) clear, as a
+    /// device-bound passkey reports them. The test authenticator sets both, like a synced
+    /// passkey. Attestation is `none`, so nothing signs these flags.
+    fn as_device_bound(mut credential: Value) -> Value {
+        let field = &mut credential["response"]["attestationObject"];
+        let mut object = URL_SAFE_NO_PAD.decode(field.as_str().unwrap()).unwrap();
+        let key = b"hauthData";
+        let at = object.windows(key.len()).position(|w| w == key).unwrap() + key.len();
+        // A CBOR byte string head: 0x58 with a one-byte length, or 0x59 with two.
+        let data = at + if object[at] == 0x58 { 2 } else { 3 };
+        assert_eq!(object[data + 32] & 0x18, 0x18, "BE and BS set");
+        object[data + 32] &= !0x18;
+        *field = json!(URL_SAFE_NO_PAD.encode(object));
+        credential
+    }
+
+    fn turn_on_aal3(h: &Harness) {
+        h.service.oauth.directory.put_settings(Settings {
+            admin_aal3: true,
+            ..Settings::default()
+        });
+    }
+
     #[tokio::test]
-    async fn elevation_without_user_verification_is_refused() {
+    async fn with_aal3_an_admin_cannot_sign_in_with_a_synced_passkey() {
         let h = harness().await;
-        let mut admin = h
-            .service
-            .oauth
-            .directory
-            .user("admin")
-            .await
-            .unwrap()
-            .unwrap();
-        admin.elevated_groups = vec!["cluster-admins".into()];
-        h.service.oauth.directory.put_user(admin);
-        let authorize = format!(
-            "/authorize?client_id=kubectl&redirect_uri=http%3A%2F%2F127.0.0.1%3A8000%2F&response_type=code&scope=openid+groups+elevate&code_challenge={CHALLENGE}&code_challenge_method=S256"
-        );
-        let tokens = refuse_unverified_then_sign_in(&h, &authorize).await;
-        assert!(tokens.get("refresh_token").is_none(), "{tokens}");
-        assert!(tokens["scope"].as_str().unwrap().contains("elevate"));
-        let payload = tokens["access_token"]
-            .as_str()
-            .unwrap()
-            .split('.')
-            .nth(1)
-            .unwrap();
-        let claims: Value =
-            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(payload).unwrap()).unwrap();
+        let mut device = device();
+        enrol(&h, &mut device).await;
+        turn_on_aal3(&h);
+        let reply = sign_in(&h, &mut device).await;
+        assert_eq!(reply.status, StatusCode::FORBIDDEN, "{}", reply.body);
         assert_eq!(
-            claims["groups"],
-            json!(["admins", "elevated:cluster-admins"])
+            reply.kind(),
+            "urn:zeabur-identity:problem:device-passkey-needed"
         );
+        assert!(reply.body.get("redirect_to").is_none());
+    }
+
+    #[tokio::test]
+    async fn with_aal3_an_admin_enrols_only_a_device_bound_passkey() {
+        let h = harness().await;
+        turn_on_aal3(&h);
+        let mut device = device();
+        let (credential, ceremony) = start_enrolment(&h, &mut device, SETUP_TOKEN).await;
+        let refused = post(
+            &h.app,
+            "/setup",
+            json!({ "token": SETUP_TOKEN, "credential": credential.clone() }),
+            &[(CEREMONY_COOKIE, &ceremony)],
+        )
+        .await;
+        assert_eq!(refused.status, StatusCode::FORBIDDEN, "{}", refused.body);
+        assert_eq!(
+            refused.kind(),
+            "urn:zeabur-identity:problem:device-passkey-needed"
+        );
+        // The refusal leaves the link usable.
+        let reply = post(
+            &h.app,
+            "/setup",
+            json!({ "token": SETUP_TOKEN, "credential": as_device_bound(credential) }),
+            &[(CEREMONY_COOKIE, &ceremony)],
+        )
+        .await;
+        assert_eq!(reply.status, StatusCode::CREATED, "{}", reply.body);
     }
 
     #[tokio::test]

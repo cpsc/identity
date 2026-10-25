@@ -90,6 +90,7 @@ fn to_object(grant: &NewGrant, idle_expires_at: UnixTime) -> GrantObject {
             subject: grant.subject.clone(),
             credential: grant.credential.clone(),
             user_verified: grant.user_verified,
+            device_bound: grant.device_bound,
         },
         status: None,
     }
@@ -124,6 +125,7 @@ fn from_object(object: &GrantObject) -> Grant {
         subject: spec.subject.clone(),
         credential: spec.credential.clone(),
         user_verified: spec.user_verified,
+        device_bound: spec.device_bound,
     };
     match &object.status {
         None => Grant {

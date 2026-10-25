@@ -14,7 +14,7 @@ use zeabur_identity_core::crypto::{hash_secret, hex, random};
 
 use super::MANAGED_BY;
 use crate::crd::invitation::{Invitation, InvitationSpec};
-use crate::crd::user::{User, UserSpec};
+use crate::crd::user::{AccountType, User, UserSpec};
 use crate::crd::{EXPIRES_AT_ANNOTATION, EXPIRY_BUCKET_LABEL, USER_LABEL};
 
 /// Path of the enrolment page; the token goes in the fragment.
@@ -40,8 +40,8 @@ pub struct Invitee {
     pub display_name: Option<String>,
     /// Groups, for a new user.
     pub groups: Vec<String>,
-    /// Elevated groups, for a new user.
-    pub elevated_groups: Vec<String>,
+    /// Account type, for a new user.
+    pub account_type: AccountType,
 }
 
 /// What was created.
@@ -97,7 +97,7 @@ pub async fn invite(
                 username: invitee.username.clone(),
                 display_name: invitee.display_name.clone(),
                 groups: invitee.groups.clone(),
-                elevated_groups: invitee.elevated_groups.clone(),
+                account_type: invitee.account_type,
                 ..UserSpec::default()
             },
         );

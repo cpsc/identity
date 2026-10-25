@@ -63,10 +63,12 @@ tests; `zeabur-identity-test-support` provides the software authenticator for th
   verifier ([RFC 7636][rfc7636]) travel in a sealed `__Host-` cookie with `SameSite=Lax`, the
   strictest setting that survives the provider's redirect back. Google ID tokens are validated
   as [OpenID Connect Core 1.0 §3.1.3.7][oidc] requires.
-- **Elevation is passkey-only.** Upstream sign-ins carry no `amr` value and give no evidence of
-  user verification, so a request for elevated access offers no providers and refuses to start
-  one (`needs-passkey`). The page also tells the user that the application is asking for
-  elevated access, and for how long, so approving it does not look like a routine sign-in.
+- **Admin accounts are passkey-only.** Upstream sign-ins carry no `amr` value and give no
+  evidence of user verification, so an admin account can neither sign in with GitHub or Google
+  nor link either; the page says "Use a passkey for this account". With the install-wide
+  `admin-aal3` setting, an admin account also needs a device-bound passkey (WebAuthn BE flag
+  unset) at sign-in and at enrolment. The authenticator reports BE itself; attestation is
+  `none`, so nothing verifies it.
 
 ## References
 

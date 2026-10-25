@@ -106,16 +106,8 @@ impl ProviderMetadata {
                 "preferred_username",
                 "name",
                 "groups",
-                "can_elevate",
             ],
         }
-    }
-
-    /// Advertises the `elevate` scope.
-    #[must_use]
-    pub fn with_elevation(mut self) -> Self {
-        self.scopes_supported.push(crate::authorize::ELEVATE_SCOPE);
-        self
     }
 
     /// Serializes the document.

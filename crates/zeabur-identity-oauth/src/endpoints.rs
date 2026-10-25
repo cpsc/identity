@@ -7,32 +7,22 @@
 //! token, PAR, revocation and error response carries `Cache-Control: no-store`
 //! (RFC 6749 §5.1), and error descriptions are fixed strings that never echo input.
 //!
-//! # Elevation
+//! # Account types
 //!
-//! Privileged Kubernetes access is not part of normal tokens. A client registered with
-//! `allowElevation` asks for the `elevate` scope (other clients get `invalid_scope`, and a code
-//! whose client lost the flag before redemption is `invalid_grant`); the sign-in page tells the
-//! user that the application is asking for elevated access; after a passkey sign-in, the token
-//! endpoint returns an access token whose groups add `elevated:<group>` for each of the user's
-//! elevated groups, valid for [`crate::Lifetimes::elevated_token`] (5 minutes by default), with no
-//! refresh token and no stored grant. Privilege therefore ends when the token does, and only
-//! another passkey sign-in renews it. kube-apiserver understands groups natively, so RBAC binds
-//! powerful roles only to the `elevated:` names; the installed bindings give the first admin's base
-//! group the read-only `view` role and `cluster-admin` only to its elevated group. The generated
-//! `AuthenticationConfiguration` also rejects a token with an `elevated:` group unless it is
-//! short-lived and was issued right after sign-in (`exp - iat` and `iat - auth_time` are
-//! bounded), so an issuer bug cannot hand out lasting privilege.
+//! Each `User` is an admin or a regular account ([`account::AccountType`]). Only admin accounts
+//! carry [`ADMIN_GROUP`](zeabur_identity_core::protocol::ADMIN_GROUP), which RBAC binds to
+//! `cluster-admin`. The token endpoint applies the account policy ([`account::allows`]) at code
+//! redemption and again at each refresh, so changing a user to admin ends their GitHub or Google
+//! sessions, and turning on AAL3 ends admin sessions that started with a synced passkey. The
+//! sign-in methods refuse earlier with a message for the person; this check is the backstop.
 //!
-//! RFC 9470 step-up does not fit Kubernetes: kube-apiserver never sends its
-//! `insufficient_user_authentication` challenge and RBAC cannot see `acr` or `auth_time`. A
-//! short, separately requested privileged identity is the shape Teleport's per-session MFA
-//! takes, whose check "remains valid for up to 5 minutes" ([Teleport]).
+//! Token and refresh lifetimes come from [`Lifetimes::for_account`](crate::Lifetimes::for_account)
+//! with the user's current type and the current settings. A family always ends
+//! [`Lifetimes::refresh_absolute`](crate::Lifetimes::refresh_absolute) after `auth_time`.
 //!
-//! Refresh never yields elevated groups: elevated tokens come without a refresh token,
-//! refreshed tokens carry the user's current base groups, and the `elevate` scope is dropped on
-//! refresh as a second guard.
-//!
-//! [Teleport]: https://goteleport.com/docs/zero-trust-access/authentication/per-session-mfa/
+//! The token response adds `refresh_expires_in`: the seconds until the refresh token dies if it is
+//! not used. Keycloak returns the same field. Zeabur uses it to end an idle browser session at the
+//! same limit.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -44,6 +34,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
+use zeabur_identity_core::account::{self, Method, Settings};
 use zeabur_identity_core::clock::{Clock, UnixTime};
 use zeabur_identity_store::{
     Client, CreateGrant, Directory, Grant, GrantStore, NewGrant, Rotation, User,
@@ -60,10 +51,6 @@ use super::refresh::RefreshToken;
 use super::tokens::{self, Subject};
 use super::{AuthorizationServer, Use};
 use crate::discovery::{AUTHORIZATION_PATH, PAR_PATH, REVOCATION_PATH, TOKEN_PATH, USERINFO_PATH};
-
-/// Prefix of the group names elevation adds; regular group names cannot contain `:`, so no
-/// ordinary group can spell an elevated name.
-pub const ELEVATED_GROUP_PREFIX: &str = "elevated:";
 
 /// Cookie holding the sealed pending sign-in. `__Host-` pins it to this origin, path `/`, Secure.
 /// It is `SameSite=Lax` because the client sends the browser here with a cross-site top-level
@@ -190,8 +177,7 @@ async fn authorize<D: Directory, G: GrantStore, C: Clock>(
             }
         },
     };
-    let elevation = server.lifetimes.elevated_token.is_some();
-    let request = match authorize::validate(&params, client.as_ref(), elevation) {
+    let request = match authorize::validate(&params, client.as_ref()) {
         Ok(request) => request,
         Err(Rejection::Local(error)) => {
             let reason = if client.is_some() {
@@ -310,14 +296,6 @@ pub fn complete_authorization<D: Directory, G: GrantStore, C: Clock>(
             "The sign-in request expired. Start again from the app.",
         ));
     }
-    // Elevated groups need proof of key possession from a passkey (`amr` contains `swk`, set
-    // only by the passkey sign-in), never an upstream account.
-    if flow.request.is_elevated() && !authentication.amr.iter().any(|m| m == "swk") {
-        return Err(OAuthError::new(
-            ErrorCode::AccessDenied,
-            "Elevated access needs a passkey sign-in.",
-        ));
-    }
     let (redirect_uri, state) = (
         flow.request.redirect_uri.clone(),
         flow.request.state.clone(),
@@ -345,6 +323,8 @@ struct TokenResponse {
     expires_in: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     refresh_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    refresh_expires_in: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     id_token: Option<String>,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -503,12 +483,12 @@ async fn exchange_code<D: Directory, G: GrantStore, C: Clock>(
         .await?
         .filter(|user| user.subject == claims.subject)
         .ok_or(INVALID_GRANT)?;
-    if claims.request.is_elevated() {
-        return elevated_tokens(server, client, &user, &claims, now);
-    }
+    let settings = server.directory.settings().await.map_err(store_error)?;
+    check_policy(settings, &user, &claims.amr, claims.device_bound)?;
+    let lifetimes = server.lifetimes.for_account(user.account_type, settings);
     let refresh_token =
         RefreshToken::generate(&grant_name).map_err(|_crypto| OAuthError::server())?;
-    let absolute = now.saturating_add(server.lifetimes.refresh_absolute);
+    let absolute = claims.auth_time.saturating_add(lifetimes.refresh_absolute);
     let grant = NewGrant {
         name: grant_name,
         user: user.name.clone(),
@@ -522,10 +502,9 @@ async fn exchange_code<D: Directory, G: GrantStore, C: Clock>(
         subject: Some(user.subject.clone()),
         credential: claims.credential.clone(),
         user_verified: claims.user_verified,
+        device_bound: claims.device_bound,
     };
-    let idle = now
-        .saturating_add(server.lifetimes.refresh_idle)
-        .min(absolute);
+    let idle = now.saturating_add(lifetimes.refresh_idle).min(absolute);
     match server
         .grants
         .create(&grant, idle)
@@ -557,8 +536,8 @@ async fn exchange_code<D: Directory, G: GrantStore, C: Clock>(
         &user,
         &grant,
         claims.request.nonce.as_deref(),
-        Some(&refresh_token),
-        server.lifetimes.access_token,
+        Some((&refresh_token, idle)),
+        lifetimes.access_token,
         now,
     )?;
     tracing::info!(
@@ -568,78 +547,35 @@ async fn exchange_code<D: Directory, G: GrantStore, C: Clock>(
         user = %user.name,
         subject = %user.subject,
         client = %client.id,
-        elevated = false,
         "authorization code exchanged"
     );
     Ok(tokens)
 }
 
-/// Tokens for an `elevate` request: the user's groups plus `elevated:<group>` for each elevated
-/// group, valid for the elevated lifetime only, and no refresh token, so the privilege ends when
-/// the token does and only another passkey sign-in renews it. Nothing is stored, so there is no
-/// family to refresh. Each issuance is logged.
-fn elevated_tokens<D: Directory, G: GrantStore, C: Clock>(
-    server: &AuthorizationServer<D, G, C>,
-    client: &Client,
+/// Refuses a user whose account type no longer allows how they signed in (see
+/// [`account::allows`]). `amr` contains `swk` only after a passkey sign-in.
+fn check_policy(
+    settings: Settings,
     user: &User,
-    claims: &CodeClaims,
-    now: UnixTime,
-) -> Result<TokenResponse, OAuthError> {
-    // Elevation was switched off, or taken from the client, after this code was issued. The
-    // client was just read from the directory, so removing `allowElevation` takes effect for
-    // codes still in flight.
-    let lifetime = server.lifetimes.elevated_token.ok_or(INVALID_GRANT)?;
-    if !client.allow_elevation {
-        return Err(INVALID_GRANT);
-    }
-    if user.elevated_groups.is_empty() {
-        return Err(OAuthError::new(
-            ErrorCode::InvalidScope,
-            "The user has no elevated groups, so elevated access cannot be granted.",
-        ));
-    }
-    let mut elevated = user.clone();
-    elevated.groups.extend(
-        user.elevated_groups
-            .iter()
-            .map(|group| format!("{ELEVATED_GROUP_PREFIX}{group}")),
-    );
-    let grant = NewGrant {
-        name: String::new(),
-        user: user.name.clone(),
-        client: client.id.clone(),
-        audience: claims.request.audience.clone(),
-        scopes: claims.request.scopes.clone(),
-        auth_time: claims.auth_time,
-        amr: claims.amr.clone(),
-        expires_at: now.saturating_add(lifetime),
-        initial_hash: String::new(),
-        subject: Some(user.subject.clone()),
-        credential: claims.credential.clone(),
-        user_verified: claims.user_verified,
+    amr: &[String],
+    device_bound: bool,
+) -> Result<(), OAuthError> {
+    let method = if amr.iter().any(|m| m == "swk") {
+        Method::Passkey { device_bound }
+    } else {
+        Method::Upstream
     };
-    let tokens = issue_tokens(
-        server,
-        client,
-        &elevated,
-        &grant,
-        claims.request.nonce.as_deref(),
-        None,
-        lifetime,
-        now,
-    )?;
-    tracing::info!(
-        target: "zeabur_identity::audit",
-        event = "oauth.code_exchange",
-        outcome = "success",
-        user = %user.name,
-        subject = %user.subject,
-        client = %client.id,
-        elevated = true,
-        lifetime_seconds = lifetime.as_secs(),
-        "elevated token issued"
-    );
-    Ok(tokens)
+    account::allows(user.account_type, settings, method).map_err(|refusal| {
+        tracing::warn!(
+            target: "zeabur_identity::audit",
+            event = "oauth.account_policy",
+            outcome = "failure",
+            reason = ?refusal,
+            user = %user.name,
+            "the account type does not allow this sign-in method"
+        );
+        INVALID_GRANT
+    })
 }
 
 async fn active_user<D: Directory, G: GrantStore, C: Clock>(
@@ -660,7 +596,7 @@ fn issue_tokens<D: Directory, G: GrantStore, C: Clock>(
     user: &User,
     grant: &NewGrant,
     nonce: Option<&str>,
-    refresh_token: Option<&RefreshToken>,
+    refresh_token: Option<(&RefreshToken, UnixTime)>,
     lifetime: Duration,
     now: UnixTime,
 ) -> Result<TokenResponse, OAuthError> {
@@ -682,13 +618,10 @@ fn issue_tokens<D: Directory, G: GrantStore, C: Clock>(
         scopes: &grant.scopes,
         auth_time: grant.auth_time,
         amr: &grant.amr,
-        can_elevate: server.lifetimes.elevated_token.is_some()
-            && client.allow_elevation
-            && !user.elevated_groups.is_empty(),
     };
     let access_token = tokens::access_token(&keys, &subject, now, now.saturating_add(lifetime))?;
     let id_token = if grant.scopes.iter().any(|s| s == "openid") {
-        let expires = now.saturating_add(server.lifetimes.id_token.min(lifetime));
+        let expires = now.saturating_add(lifetime);
         Some(tokens::id_token(&keys, &subject, nonce, now, expires)?)
     } else {
         None
@@ -697,7 +630,9 @@ fn issue_tokens<D: Directory, G: GrantStore, C: Clock>(
         access_token,
         token_type: "Bearer",
         expires_in: lifetime.as_secs(),
-        refresh_token: refresh_token.map(RefreshToken::encode),
+        refresh_token: refresh_token.map(|(token, _)| token.encode()),
+        refresh_expires_in: refresh_token
+            .map(|(_, idle)| idle.as_secs().saturating_sub(now.as_secs())),
         id_token,
         scope: grant.scopes.join(" "),
     })
@@ -771,10 +706,39 @@ async fn refresh<D: Directory, G: GrantStore, C: Clock>(
         }
     };
 
+    // Re-check the user before rotation: disabled or deleted users get nothing more, and the
+    // account type and groups come from the user as it is now. A new user with the name of a
+    // deleted one has a new UID and does not get the deleted user's sessions. Only a holder of
+    // the current or previous token may end the family here.
+    let settings = server.directory.settings().await.map_err(store_error)?;
+    let user = active_user(server, &stored.spec.user)
+        .await?
+        .filter(|user| stored.belongs_to(user))
+        .ok_or(INVALID_GRANT);
+    let user = match user.and_then(|user| {
+        check_policy(settings, &user, &stored.spec.amr, stored.spec.device_bound).map(|()| user)
+    }) {
+        Ok(user) => user,
+        Err(error) => {
+            if presented.proves_possession(&stored) {
+                server
+                    .grants
+                    .revoke(presented.grant())
+                    .await
+                    .map_err(store_error)?;
+            }
+            return Err(error);
+        }
+    };
+    let lifetimes = server.lifetimes.for_account(user.account_type, settings);
+    let absolute = stored.spec.expires_at.min(
+        stored
+            .spec
+            .auth_time
+            .saturating_add(lifetimes.refresh_absolute),
+    );
     let next = RefreshToken::generate(presented.grant()).map_err(|_crypto| OAuthError::server())?;
-    let idle = now
-        .saturating_add(server.lifetimes.refresh_idle)
-        .min(stored.spec.expires_at);
+    let idle = now.saturating_add(lifetimes.refresh_idle).min(absolute);
     let rotated = server
         .grants
         .rotate(
@@ -819,22 +783,8 @@ async fn refresh<D: Directory, G: GrantStore, C: Clock>(
         // other users' sessions.
         Rotation::Invalid | Rotation::NotFound => return Err(INVALID_GRANT),
     };
-    // Re-check the user on every refresh: disabled or deleted users get nothing more, and groups
-    // come from the user as it is now, not as it was at sign-in. A new user with the name of a
-    // deleted one has a new UID and does not get the deleted user's sessions.
-    let Some(user) = active_user(server, &grant.spec.user)
-        .await?
-        .filter(|user| grant.belongs_to(user))
-    else {
-        server
-            .grants
-            .revoke(presented.grant())
-            .await
-            .map_err(store_error)?;
-        return Err(INVALID_GRANT);
-    };
     let narrowed = NewGrant {
-        scopes: without_elevation(scopes),
+        scopes,
         ..grant.spec
     };
     let tokens = issue_tokens(
@@ -843,8 +793,8 @@ async fn refresh<D: Directory, G: GrantStore, C: Clock>(
         &user,
         &narrowed,
         None,
-        Some(&next),
-        server.lifetimes.access_token,
+        Some((&next, idle)),
+        lifetimes.access_token,
         now,
     )?;
     tracing::info!(
@@ -857,15 +807,6 @@ async fn refresh<D: Directory, G: GrantStore, C: Clock>(
         "refresh token exchanged"
     );
     Ok(tokens)
-}
-
-/// Refresh never yields elevated groups. Elevated grants are never stored, so this only guards
-/// against a mistake elsewhere (RFC 6749 §6 already forbids widening scope on refresh).
-fn without_elevation(scopes: Vec<String>) -> Vec<String> {
-    scopes
-        .into_iter()
-        .filter(|s| s != authorize::ELEVATE_SCOPE)
-        .collect()
 }
 
 /// RFC 9126 §2.2 response. The `request_uri` is the sealed request itself, so pushing writes
@@ -902,8 +843,7 @@ async fn par<D: Directory, G: GrantStore, C: Clock>(
         )
         .into_response();
     }
-    let elevation = server.lifetimes.elevated_token.is_some();
-    if let Err(rejection) = authorize::validate(&params, Some(&client), elevation) {
+    if let Err(rejection) = authorize::validate(&params, Some(&client)) {
         let error = match rejection {
             Rejection::Local(error) | Rejection::Redirect { error, .. } => error,
         };

@@ -69,13 +69,13 @@ pub struct ServeArgs {
     #[arg(long, env = "ZEABUR_IDENTITY_NAMESPACE")]
     pub namespace: Option<String>,
 
-    /// Lifetime of access and ID tokens. kube-apiserver cannot revoke them, so this is also how
-    /// long a revoked session can still call the cluster.
+    /// Lifetime of a regular account's access and ID tokens. kube-apiserver cannot revoke them,
+    /// so this is also how long a revoked session can still call the cluster.
     #[arg(long, env = "ZEABUR_IDENTITY_TOKEN_LIFETIME", default_value = "10m", value_parser = parse_duration)]
     pub token_lifetime: Duration,
 
     /// A refresh-token family ends if unused this long.
-    #[arg(long, env = "ZEABUR_IDENTITY_REFRESH_IDLE", default_value = "4h", value_parser = parse_duration)]
+    #[arg(long, env = "ZEABUR_IDENTITY_REFRESH_IDLE", default_value = "1h", value_parser = parse_duration)]
     pub refresh_idle: Duration,
 
     /// A refresh-token family ends this long after sign-in.
@@ -128,11 +128,14 @@ pub struct ServeArgs {
     #[arg(long, env = "ZEABUR_IDENTITY_UPSTREAM_CA_FILE")]
     pub upstream_ca_file: Option<PathBuf>,
 
-    /// Lifetime of elevated tokens (1m to 15m). The `elevate` scope yields such a token, without
-    /// refresh, adding `elevated:<group>` for each of the user's elevated groups, after a passkey
-    /// sign-in only. kube-apiserver cannot revoke it.
-    #[arg(long, env = "ZEABUR_IDENTITY_ELEVATED_TOKEN_LIFETIME", default_value = "5m", value_parser = parse_duration)]
-    pub elevated_token_lifetime: Duration,
+    /// Lifetime of an admin account's access and ID tokens. They carry `cluster-admin`.
+    #[arg(long, env = "ZEABUR_IDENTITY_ADMIN_TOKEN_LIFETIME", default_value = "5m", value_parser = parse_duration)]
+    pub admin_token_lifetime: Duration,
+
+    /// An admin account's refresh-token family ends if unused this long, when several teams share
+    /// the cluster or AAL3 is on. Otherwise `--refresh-idle` applies.
+    #[arg(long, env = "ZEABUR_IDENTITY_ADMIN_REFRESH_IDLE", default_value = "15m", value_parser = parse_duration)]
+    pub admin_refresh_idle: Duration,
 
     /// Address of the internal TLS listener kube-apiserver fetches discovery and keys from.
     /// Binds at startup; TLS handshakes fail until `zeabur-identityctl kube-config` issues its
@@ -217,10 +220,10 @@ impl ServeArgs {
             },
             lifetimes: zeabur_identity_oauth::Lifetimes {
                 access_token: self.token_lifetime,
-                id_token: self.token_lifetime,
                 refresh_idle: self.refresh_idle,
                 refresh_absolute: self.refresh_absolute,
-                elevated_token: Some(self.elevated_token_lifetime),
+                admin_access_token: self.admin_token_lifetime,
+                admin_refresh_idle: self.admin_refresh_idle,
                 ..zeabur_identity_oauth::Lifetimes::DEFAULT
             },
         };

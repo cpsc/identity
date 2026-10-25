@@ -20,6 +20,9 @@
 //! Name-based user lookups always GET directly after initial synchronization, including absent
 //! names. Setup, sign-in and refresh therefore do not wait for individual user watch events.
 //!
+//! The account settings are a `ConfigMap` read directly on every call, in the namespace of the
+//! `User`s. A missing `ConfigMap` gives the defaults.
+//!
 //! [UID]: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
 
 use std::borrow::Cow;
@@ -28,6 +31,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::StreamExt as _;
+use k8s_openapi::api::core::v1::ConfigMap;
 use kube::api::Api;
 use kube::core::{NamespaceResourceScope, PartialObjectMeta};
 use kube::runtime::reflector::store::Writer;
@@ -36,6 +40,7 @@ use kube::runtime::{WatchStreamExt as _, watcher};
 use kube::{Resource, ResourceExt as _};
 use serde::de::DeserializeOwned;
 use tokio::task::JoinHandle;
+use zeabur_identity_core::account::{SETTINGS_CONFIG_MAP, Settings};
 use zeabur_identity_keys::Algorithm;
 use zeabur_identity_store::{App, Client, Directory, StoreError, User};
 
@@ -74,6 +79,14 @@ impl Drop for WatchTask {
 }
 
 impl KubeDirectory {
+    fn config_maps(&self) -> Api<ConfigMap> {
+        let client = self.users.clone().into_client();
+        match self.users.namespace() {
+            Some(namespace) => Api::namespaced(client, namespace),
+            None => Api::default_namespaced(client),
+        }
+    }
+
     /// Returns a directory only after both metadata snapshots initialize.
     ///
     /// Watches use the supplied API namespaces and stop when the last directory clone drops.
@@ -216,6 +229,25 @@ fn backend(error: &kube::Error) -> StoreError {
 }
 
 impl Directory for KubeDirectory {
+    async fn settings(&self) -> Result<Settings, StoreError> {
+        let object = self
+            .config_maps()
+            .get_opt(SETTINGS_CONFIG_MAP)
+            .await
+            .map_err(|e| backend(&e))?;
+        let data = object.and_then(|object| object.data).unwrap_or_default();
+        let (settings, bad) = Settings::from_data(&data);
+        if !bad.is_empty() {
+            tracing::warn!(
+                event = "account_settings",
+                reason = "invalid_value",
+                keys = ?bad,
+                "a value in the account settings is not understood; the stricter setting applies"
+            );
+        }
+        Ok(settings)
+    }
+
     async fn client(&self, id: &str) -> Result<Option<Client>, StoreError> {
         let Some(indexed) = self.indexed_client(id) else {
             return Ok(None);
@@ -278,7 +310,6 @@ fn client(object: OAuthClient) -> Client {
         audiences: spec.audiences,
         secret_hash: spec.secret_hash,
         id_token_alg: spec.id_token_signing_alg.unwrap_or(Algorithm::Es256),
-        allow_elevation: spec.allow_elevation,
         home_url: spec.home_url,
     }
 }
@@ -293,7 +324,7 @@ fn convert(object: UserObject) -> Option<User> {
         display_name: object.spec.display_name,
         groups: object.spec.groups,
         disabled: object.spec.disabled,
-        elevated_groups: object.spec.elevated_groups,
+        account_type: object.spec.account_type.into(),
     })
 }
 

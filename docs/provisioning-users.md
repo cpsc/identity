@@ -29,8 +29,8 @@ It does **not**:
 - **Create `Invitation`s.** An invitation link enrols a passkey on an existing user, so whoever
   can create invitations can take over any account. Keep that power with admins
   (`zeabur-identityctl invite --username <name>`), or give it to a separate, admin-equivalent job.
-- **Assign elevated groups.** Admin rights stay a decision made by hand: an admin may add
-  elevated groups to a managed user, and the tool's later updates keep them as they are.
+- **Make admin accounts.** Admin rights stay a decision made by hand: an admin may make a
+  managed user an admin account, and the tool's later updates keep its account type.
 - **Delete users.** Removing a user safely means deleting its credentials and sessions first
   (see [managing-users.md](managing-users.md#suspend-or-remove-someone)); disabling is enough
   to stop sign-ins, and is reversible.
@@ -85,7 +85,7 @@ the `user-sync` account, and if the policy cannot be evaluated, the write is ref
 It enforces that the sync program:
 
 - only changes users it created (label `identity.zeabur.com/source=directory`);
-- never assigns or changes elevated groups;
+- never makes or unmakes an admin account;
 - only assigns groups from an allowlist. Edit `['dev', 'ops']` below to yours;
 - names each object after its username (see [why](#why-the-name-must-equal-the-username)).
 
@@ -118,12 +118,12 @@ spec:
       request.operation == 'CREATE' || (has(oldObject.metadata.labels) &&
       'identity.zeabur.com/source' in oldObject.metadata.labels &&
       oldObject.metadata.labels['identity.zeabur.com/source'] == 'directory')
-  - name: elevated
-    expression: "has(object.spec.elevatedGroups) ? object.spec.elevatedGroups : []"
-  - name: wasElevated
+  - name: admin
+    expression: "has(object.spec.accountType) && object.spec.accountType == 'Admin'"
+  - name: wasAdmin
     expression: >-
-      request.operation == 'UPDATE' && has(oldObject.spec.elevatedGroups) ?
-      oldObject.spec.elevatedGroups : []
+      request.operation == 'UPDATE' && has(oldObject.spec.accountType) &&
+      oldObject.spec.accountType == 'Admin'
   validations:
   - expression: variables.wasManaged
     message: user-sync may only change users it created
@@ -133,8 +133,8 @@ spec:
     message: the object name must equal the username, so a username cannot be taken twice
   - expression: "!has(object.spec.groups) || object.spec.groups.all(g, g in ['dev', 'ops'])"
     message: user-sync may only assign allowlisted groups
-  - expression: variables.elevated == variables.wasElevated
-    message: user-sync never assigns or changes elevated groups
+  - expression: variables.admin == variables.wasAdmin
+    message: user-sync never makes or unmakes admin accounts
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
@@ -145,8 +145,9 @@ spec:
   validationActions: [Deny]
 ```
 
-An admin can still add elevated groups to a synced user by hand. The sync program's later
-updates leave them alone, because server-side apply keeps fields the program does not send.
+An admin can still make a synced user an admin account by hand. The sync program's later
+updates leave the account type alone, because server-side apply keeps fields the program does
+not send.
 
 ### Why the name must equal the username
 
@@ -180,7 +181,7 @@ fail:
 as=(--as=system:serviceaccount:zeabur-identity:user-sync)
 # Refused: touches a user the tool did not create.
 kubectl -n zeabur-identity patch zbuser admin "${as[@]}" --type=merge -p '{"spec":{"disabled":true}}'
-# Refused: elevated group.
+# Refused: admin account.
 kubectl -n zeabur-identity apply "${as[@]}" -f - <<'EOF'
 apiVersion: identity.zeabur.com/v1alpha1
 kind: User
@@ -188,7 +189,7 @@ metadata:
   name: mallory
   namespace: zeabur-identity
   labels: {identity.zeabur.com/source: directory}
-spec: {username: mallory, elevatedGroups: [admins]}
+spec: {username: mallory, accountType: Admin}
 EOF
 ```
 
@@ -253,7 +254,7 @@ Why it is written this way:
 
 The program owns `displayName`, `groups` and `disabled` on the users it manages. Change those in
 the directory, not with `kubectl`: a hand edit makes the next sync fail for that user with a
-field conflict. Elevated groups are the exception, since the program never writes them.
+field conflict. The account type is the exception, since the program never writes it.
 
 Before applying, a real tool should also:
 

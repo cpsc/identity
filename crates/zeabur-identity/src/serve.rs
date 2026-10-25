@@ -274,11 +274,7 @@ async fn run<S: KeyStore, D: Directory, G: GrantStore, K: CredentialStore, T: Se
         )));
     }
 
-    let mut metadata = ProviderMetadata::new(&config.issuer, &config.issuer);
-    if config.lifetimes.elevated_token.is_some() {
-        metadata = metadata.with_elevation();
-    }
-    let metadata = metadata.to_bytes();
+    let metadata = ProviderMetadata::new(&config.issuer, &config.issuer).to_bytes();
     let server = Arc::new(AuthorizationServer {
         issuer: config.issuer.clone(),
         lifetimes: config.lifetimes,

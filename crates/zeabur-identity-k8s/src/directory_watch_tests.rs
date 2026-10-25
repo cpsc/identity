@@ -123,7 +123,7 @@ fn client(name: &str) -> Value {
 fn user(name: &str, uid: &str) -> Value {
     json!({"apiVersion":"identity.zeabur.com/v1alpha1", "kind":"User",
         "metadata":{"name":name, "namespace":"test", "uid":uid, "resourceVersion":"101"},
-        "spec":{"username":name, "groups":["admins"], "elevatedGroups":[], "disabled":false}})
+        "spec":{"username":name, "accountType":"Admin", "disabled":false}})
 }
 
 fn with_unused_metadata(mut object: Value) -> Value {

@@ -134,9 +134,8 @@ pub struct Messages {
     pub noscript_body: &'static str,
     pub no_request_title: &'static str,
     pub no_request_body: &'static str,
-    pub elevated_title: &'static str,
-    /// `%app%` and `%minutes%` are replaced when the page is rendered.
-    pub elevated_body: &'static str,
+    pub admin_passkey_only: &'static str,
+    pub device_passkey_needed: &'static str,
     pub working: &'static str,
     pub generic_error: &'static str,
     pub setup_title: &'static str,
@@ -221,6 +220,7 @@ pub struct Messages {
     pub err_account_not_linked: ErrorText,
     pub err_account_already_linked: ErrorText,
     pub err_user_unavailable: ErrorText,
+    pub err_admin_passkey: ErrorText,
     pub err_setup_link: ErrorText,
     pub err_server: ErrorText,
 }
@@ -243,8 +243,8 @@ pub const EN: Messages = Messages {
     noscript_body: "Passkeys need JavaScript. Turn it on for this site and reload the page.",
     no_request_title: "Nothing to sign in to",
     no_request_body: "Start from the app or command you want to use, such as kubectl. It opens this page when you need to sign in.",
-    elevated_title: "Elevated access requested",
-    elevated_body: "%app% is requesting elevated access: your admin rights on the cluster, such as changing or deleting what runs on it. It ends by itself after %minutes%\u{a0}min. Continue only if you started this sign-in from %app%.",
+    admin_passkey_only: "Admin accounts sign in with a passkey only.",
+    device_passkey_needed: "This passkey syncs to other devices. Admin accounts here need a security key, or a passkey that stays on one device.",
     working: "Waiting for the passkey…",
     generic_error: "Unable to complete the request. Try again. If it keeps failing, contact your administrator.",
     setup_title: "Set up a passkey",
@@ -365,6 +365,11 @@ pub const EN: Messages = Messages {
         cause: "The user linked to this account is turned off or no longer exists.",
         next: "Ask an administrator to turn the user back on, or to invite you again.",
     },
+    err_admin_passkey: ErrorText {
+        title: "Use a passkey for this account",
+        cause: "This is an admin account. Admin accounts sign in with a passkey only, not with GitHub or Google.",
+        next: "Go back and sign in with your passkey.",
+    },
     err_setup_link: ErrorText {
         title: "This setup link no longer works",
         cause: "The link is invalid, already used, or expired.",
@@ -395,8 +400,8 @@ pub const ZH_TW: Messages = Messages {
     noscript_body: "通行密鑰需要 JavaScript。請為這個網站開啟 JavaScript，再重新載入頁面。",
     no_request_title: "目前沒有登入要求",
     no_request_body: "請從要使用的應用程式或指令（例如 kubectl）開始。需要登入時，它會開啟這個頁面。",
-    elevated_title: "要求暫時使用管理員權限",
-    elevated_body: "%app% 要求暫時使用你在叢集上的管理員權限，例如變更或刪除叢集上執行的內容。權限會在 %minutes%\u{a0}分鐘後自動失效。如果這次登入不是你自己從 %app% 發起的，請不要繼續。",
+    admin_passkey_only: "管理員帳號只能用通行密鑰登入。",
+    device_passkey_needed: "這個通行密鑰會同步到其他裝置。這裡的管理員帳號要用安全金鑰，或只存在一台裝置上的通行密鑰。",
     working: "正在等待通行密鑰…",
     generic_error: "無法完成操作。再試一次，如果仍然失敗，請聯絡管理員。",
     setup_title: "設定通行密鑰",
@@ -517,6 +522,11 @@ pub const ZH_TW: Messages = Messages {
         cause: "與這個帳號連結的使用者已停用或不存在。",
         next: "請管理員重新啟用這位使用者，或再次邀請你。",
     },
+    err_admin_passkey: ErrorText {
+        title: "這個帳號要用通行密鑰登入",
+        cause: "這是管理員帳號。管理員帳號只能用通行密鑰登入，不能用 GitHub 或 Google。",
+        next: "回上一頁，改用你的通行密鑰登入。",
+    },
     err_setup_link: ErrorText {
         title: "這個設定連結已無法使用",
         cause: "連結無效、已使用過或已過期。",
@@ -547,8 +557,8 @@ pub const ZH_CN: Messages = Messages {
     noscript_body: "通行密钥需要 JavaScript。请为此网站开启 JavaScript，然后重新加载页面。",
     no_request_title: "当前没有登录请求",
     no_request_body: "请从要使用的应用或命令（例如 kubectl）开始。需要登录时，它会打开此页面。",
-    elevated_title: "请求临时使用管理员权限",
-    elevated_body: "%app% 请求临时使用你在集群上的管理员权限，例如修改或删除集群上运行的内容。权限会在 %minutes%\u{a0}分钟后自动失效。如果这次登录不是你自己从 %app% 发起的，不要继续。",
+    admin_passkey_only: "管理员账号只能用通行密钥登录。",
+    device_passkey_needed: "这个通行密钥会同步到其他设备。这里的管理员账号要用安全密钥，或只保存在一台设备上的通行密钥。",
     working: "正在等待通行密钥…",
     generic_error: "无法完成操作。再试一次，如果仍然失败，请联系管理员。",
     setup_title: "设置通行密钥",
@@ -669,6 +679,11 @@ pub const ZH_CN: Messages = Messages {
         cause: "与此账号关联的用户已停用或不存在。",
         next: "请管理员重新启用此用户，或再次邀请你。",
     },
+    err_admin_passkey: ErrorText {
+        title: "这个账号要用通行密钥登录",
+        cause: "这是管理员账号。管理员账号只能用通行密钥登录，不能用 GitHub 或 Google。",
+        next: "返回上一页，改用你的通行密钥登录。",
+    },
     err_setup_link: ErrorText {
         title: "此设置链接已无法使用",
         cause: "链接无效、已使用过或已过期。",
@@ -738,10 +753,6 @@ mod tests {
             let m = lang.messages();
             assert!(
                 !m.login_title.is_empty() && !m.setup_done_body.is_empty(),
-                "{lang:?}"
-            );
-            assert!(
-                m.elevated_body.contains("%app%") && m.elevated_body.contains("%minutes%"),
                 "{lang:?}"
             );
             assert!(m.continue_with.contains("%provider%"), "{lang:?}");

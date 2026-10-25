@@ -24,7 +24,7 @@ mod tests {
     use zeabur_identity_core::clock::SystemClock;
     use zeabur_identity_k8s::crd::client::{ClientType, OAuthClient, OAuthClientSpec};
     use zeabur_identity_k8s::crd::grant::{Grant, GrantSpec, GrantStatus};
-    use zeabur_identity_k8s::crd::user::{User, UserSpec};
+    use zeabur_identity_k8s::crd::user::{AccountType, User, UserSpec};
     use zeabur_identity_k8s::crd::{EXPIRES_AT_ANNOTATION, EXPIRY_BUCKET_LABEL, definitions};
     use zeabur_identity_k8s::keys::SecretKeyStore;
     use zeabur_identity_k8s::objects::{
@@ -201,6 +201,7 @@ mod tests {
                 audience: "kubernetes".into(),
                 auth_time: 1_700_000_000,
                 amr: vec!["hwk".into()],
+                device_bound: false,
                 expires_at: 4_000_000_000,
                 scopes: vec!["openid".into()],
                 initial_idle_expires_at: 4_000_000_000,
@@ -329,7 +330,7 @@ mod tests {
             )
         };
         let created = users
-            .create(&pp, &user("alice", "alice", &["admins", "team/dev"]))
+            .create(&pp, &user("alice", "alice", &["ops", "team/dev"]))
             .await
             .unwrap();
 
@@ -337,7 +338,7 @@ mod tests {
             ("u1", "Alice", &[][..]),
             ("u2", "-alice", &[][..]),
             ("u3", "bob", &["system:masters"][..]),
-            ("u4", "bob", &["elevated:admins"][..]),
+            ("u4", "bob", &["admins"][..]),
         ] {
             let error = users
                 .create(&pp, &user(name, username, groups))
@@ -366,7 +367,6 @@ mod tests {
                     audiences: vec![],
                     secret_hash: secret.map(Into::into),
                     id_token_signing_alg: None,
-                    allow_elevation: false,
                     home_url: None,
                 },
             )
@@ -522,7 +522,6 @@ mod tests {
                     audiences: vec![],
                     secret_hash: None,
                     id_token_signing_alg: None,
-                    allow_elevation: false,
                     home_url: None,
                 },
             );
@@ -903,6 +902,7 @@ mod tests {
             scopes: vec!["openid".into()],
             auth_time: zeabur_identity_core::clock::UnixTime::from_secs(now),
             amr: vec!["hwk".into()],
+            device_bound: false,
             expires_at: zeabur_identity_core::clock::UnixTime::from_secs(now + 3600),
             initial_hash: zeabur_identity_core::crypto::hash_secret(b"token-0"),
             subject: None,
@@ -1036,7 +1036,7 @@ mod tests {
                     UserSpec {
                         username: "alice".into(),
                         display_name: None,
-                        groups: vec!["admins".into()],
+                        groups: vec!["ops".into()],
                         disabled: false,
                         ..UserSpec::default()
                     },
@@ -1058,7 +1058,6 @@ mod tests {
                         audiences: vec!["kubernetes".into()],
                         secret_hash: None,
                         id_token_signing_alg: None,
-                        allow_elevation: false,
                         home_url: None,
                     },
                 ),
@@ -1076,7 +1075,6 @@ mod tests {
                 redirect_uris: vec!["https://dash.example.com/callback".into()],
                 audiences: vec!["kubernetes".into()],
                 id_token_signing_alg: None,
-                allow_elevation: false,
                 home_url: None,
             },
             &env.namespace,
@@ -1153,6 +1151,7 @@ mod tests {
             amr: vec!["hwk".into()],
             credential: None,
             user_verified: false,
+            device_bound: false,
         };
         let location = complete_authorization(&server, flow, auth).unwrap();
         let code = form_urlencoded::parse(location.split_once('?').unwrap().1.as_bytes())
@@ -1281,7 +1280,7 @@ mod tests {
             username: "alice".into(),
             display_name: None,
             groups: vec![],
-            elevated_groups: vec![],
+            account_type: AccountType::Regular,
         };
 
         // Setup precedes credentials; only GC, never reset, removes these dependents.
@@ -1427,7 +1426,8 @@ mod tests {
                 .starts_with("https://login.example.com/setup#token=")
         );
         let user = env.admin_api::<User>().get("root").await.unwrap();
-        assert_eq!(user.spec.groups, ["admins"]);
+        assert_eq!(user.spec.groups, Vec::<String>::new());
+        assert_eq!(user.spec.account_type, AccountType::Admin);
 
         // Zeabur Identity reads the token; the Secret holds only its hash.
         let store = KubeSetupStore::new(env.zeabur_identity_api());
@@ -1533,7 +1533,7 @@ mod tests {
             username: username.into(),
             display_name: None,
             groups: vec![],
-            elevated_groups: vec![],
+            account_type: AccountType::Regular,
         };
         let mut tokens = Vec::new();
         for username in ["root", "eve"] {
@@ -1602,7 +1602,7 @@ mod tests {
             username: "eve".into(),
             display_name: Some("Eve".into()),
             groups: vec!["dev".into()],
-            elevated_groups: vec![],
+            account_type: AccountType::Regular,
         };
         let first = invite(
             env.admin.clone(),
@@ -1747,7 +1747,7 @@ mod tests {
         let keeps_label = rule("variables.managed");
         let name_is_username = rule("object.spec.username == object.metadata.name");
         let allowlisted = rule("\"!has(object.spec.groups)");
-        let elevated = rule("variables.elevated == variables.wasElevated");
+        let admin = rule("variables.admin == variables.wasAdmin");
 
         // A user created by an admin, outside the tool's reach.
         env.admin_api::<User>()
@@ -1757,7 +1757,7 @@ mod tests {
                     "root",
                     UserSpec {
                         username: "root".into(),
-                        groups: vec!["admins".into()],
+                        account_type: AccountType::Admin,
                         ..UserSpec::default()
                     },
                 ),
@@ -1795,7 +1795,7 @@ mod tests {
         };
 
         // The policy takes a moment to reach the admission plugin: wait until it refuses.
-        let mallory = user("mallory", "mallory", true, ", elevatedGroups: [admins]");
+        let mallory = user("mallory", "mallory", true, ", accountType: Admin");
         let mut refused = None;
         for _ in 0..60 {
             let (ok, stderr) = apply(&mallory);
@@ -1807,7 +1807,7 @@ mod tests {
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
         let refused = refused.expect("the policy never took effect");
-        assert!(refused.contains(&elevated), "{refused}");
+        assert!(refused.contains(&admin), "{refused}");
 
         // Server-side apply: create (CREATE) and change (UPDATE) a managed user.
         let (ok, stderr) = apply(&user("ana", "ana", true, ", groups: [dev]"));
@@ -1821,7 +1821,10 @@ mod tests {
         assert!(ok, "{stderr}");
 
         for (manifest, message) in [
-            (user("ana", "ana", true, ", groups: [admins]"), &allowlisted),
+            (
+                user("ana", "ana", true, ", groups: [finance]"),
+                &allowlisted,
+            ),
             (user("ana", "ana", false, ", groups: [dev]"), &keeps_label),
             (user("bob", "bob", false, ""), &keeps_label),
             (user("eve", "root", true, ""), &name_is_username),
@@ -1857,14 +1860,14 @@ mod tests {
                 &as_tool,
                 "--type=merge",
                 "-p",
-                r#"{"spec":{"elevatedGroups":["admins"]}}"#,
+                r#"{"spec":{"accountType":"Admin"}}"#,
             ],
             "",
         );
-        assert!(!ok && stderr.contains(&elevated), "{stderr}");
+        assert!(!ok && stderr.contains(&admin), "{stderr}");
 
-        // Elevated groups an admin adds to a managed user survive the tool's updates, which may
-        // neither drop nor change them.
+        // An admin may make a managed user an admin account. The tool's updates keep it and may
+        // not change it back.
         let (ok, stderr) = kubectl(
             &[
                 "-n",
@@ -1874,25 +1877,16 @@ mod tests {
                 "ana",
                 "--type=merge",
                 "-p",
-                r#"{"spec":{"elevatedGroups":["admins"]}}"#,
+                r#"{"spec":{"accountType":"Admin"}}"#,
             ],
             "",
         );
         assert!(ok, "{stderr}");
         let (ok, stderr) = apply(&user("ana", "ana", true, ", groups: [dev]"));
         assert!(ok, "{stderr}");
-        for manifest in [
-            user("ana", "ana", true, ", groups: [dev], elevatedGroups: []"),
-            user(
-                "ana",
-                "ana",
-                true,
-                ", groups: [dev], elevatedGroups: [admins, ops]",
-            ),
-        ] {
-            let (ok, stderr) = apply(&manifest);
-            assert!(!ok && stderr.contains(&elevated), "{manifest}\n{stderr}");
-        }
+        let manifest = user("ana", "ana", true, ", groups: [dev], accountType: Regular");
+        let (ok, stderr) = apply(&manifest);
+        assert!(!ok && stderr.contains(&admin), "{manifest}\n{stderr}");
 
         // RBAC: no delete, nothing but users.
         for args in [
@@ -1909,7 +1903,7 @@ mod tests {
         assert!(!root.spec.disabled);
         let ana = env.admin_api::<User>().get("ana").await.unwrap();
         assert_eq!(ana.spec.groups, ["dev"]);
-        assert_eq!(ana.spec.elevated_groups, ["admins"]);
+        assert_eq!(ana.spec.account_type, AccountType::Admin);
 
         for kind in [
             "validatingadmissionpolicybinding",

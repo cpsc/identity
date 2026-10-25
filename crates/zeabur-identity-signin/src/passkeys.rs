@@ -191,9 +191,12 @@ pub struct Authenticator {
 const FLAG_BE: u8 = 0x08;
 const FLAG_AT: u8 = 0x40;
 
-/// Reads the AAGUID and flags from the registration response's `authData`. webauthn-rs drops
-/// the AAGUID under attestation `none`, so this reads it directly; nothing here is trusted for
-/// security, only shown.
+/// Reads the AAGUID and flags from the registration response's `authData`.
+///
+/// webauthn-rs drops the AAGUID under attestation `none`, so this reads it directly. The AAGUID
+/// is only shown. BE
+/// decides whether an admin may register the passkey when AAL3 is on. The authenticator reports
+/// BE itself: attestation is `none`, so nothing verifies it.
 #[must_use]
 pub fn authenticator(response: &RegisterPublicKeyCredential) -> Authenticator {
     auth_data(&response.response.attestation_object).map_or_else(Authenticator::default, |data| {
@@ -209,6 +212,17 @@ pub fn authenticator(response: &RegisterPublicKeyCredential) -> Authenticator {
             backup_eligible: flags & FLAG_BE != 0,
         }
     })
+}
+
+/// Whether the authenticator reported the backup eligibility flag (BE) in a sign-in assertion.
+/// The flags follow the 32-byte RP ID hash in the signed authenticator data.
+#[must_use]
+pub fn assertion_backup_eligible(response: &PublicKeyCredential) -> bool {
+    response
+        .response
+        .authenticator_data
+        .get(32)
+        .is_some_and(|flags| flags & FLAG_BE != 0)
 }
 
 /// The BE and BS flags as recorded in a stored credential record.

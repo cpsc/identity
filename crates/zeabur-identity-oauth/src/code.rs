@@ -53,6 +53,9 @@ pub struct CodeClaims {
     /// Whether the authenticator verified the user.
     #[serde(default)]
     pub user_verified: bool,
+    /// Whether the passkey used is device-bound (BE unset).
+    #[serde(default)]
+    pub device_bound: bool,
     /// Expiry.
     pub expires_at: UnixTime,
 }
@@ -77,6 +80,7 @@ pub fn issue(
         amr: authentication.amr,
         credential: authentication.credential,
         user_verified: authentication.user_verified,
+        device_bound: authentication.device_bound,
         expires_at,
     };
     let json = serde_json::to_vec(&claims).map_err(|_serialize| CryptoError)?;
@@ -130,6 +134,7 @@ mod tests {
             amr: vec!["hwk".into()],
             credential: None,
             user_verified: true,
+            device_bound: false,
         };
         let a = issue(&sealer, request(), auth.clone(), UnixTime::from_secs(65)).unwrap();
         let b = issue(&sealer, request(), auth, UnixTime::from_secs(65)).unwrap();

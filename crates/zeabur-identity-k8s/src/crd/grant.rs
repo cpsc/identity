@@ -87,6 +87,9 @@ pub struct GrantSpec {
     /// Whether the authenticator verified the user at sign-in.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub user_verified: bool,
+    /// Whether the user signed in with a device-bound passkey (BE unset).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub device_bound: bool,
 }
 
 /// Rotation state, changed only through compare-and-swap.

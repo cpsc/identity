@@ -16,9 +16,9 @@ export ZEABUR_IDENTITY_ISSUER=https://identity.example.test
   organisations and teams play no part. Groups still come from the `User`.
 - **Zeabur Identity remembers GitHub's numeric account ID**, not the login name or email, because those
   can pass to someone else.
-- **Not for admin rights.** GitHub cannot tell Zeabur Identity whether the person proved their presence
-  with a fingerprint or PIN, so admin sign-ins (such as the `zeabur-identity-k3s-admin` context) always
-  need a passkey and do not offer GitHub.
+- **Not for admin accounts.** GitHub cannot tell Zeabur Identity whether the person proved their
+  presence with a fingerprint or PIN, so [admin accounts](managing-users.md#admin-accounts) sign
+  in with a passkey only. They can neither sign in with GitHub nor link a GitHub account.
 
 ## 1. Register a GitHub OAuth app
 
@@ -134,12 +134,9 @@ kubectl auth whoami          # choose "Continue with GitHub"; the user is zeabur
 ```
 
 You can tell the two apart in `kubectl auth whoami`: after a passkey sign-in,
-`identity.zeabur.com/amr` lists `swk` and `mfa`; after a GitHub sign-in, it is empty. The admin
-context still asks for a passkey:
-
-```sh
-kubectl --context zeabur-identity-k3s-admin auth whoami
-```
+`identity.zeabur.com/amr` lists `swk` and `mfa`; after a GitHub sign-in, it is empty. Link the
+GitHub account to a regular account: an admin account, such as `admin` from Get started, refuses
+GitHub.
 
 ## Removing access
 
@@ -163,7 +160,8 @@ sessions stay until you remove them as above.
 - **"This account is not linked to any user here":** the GitHub account has no `Credential`;
   link it with step 4. A credential created by hand with a wrong name or ID shows the same
   message.
-- **"This sign-in needs a passkey":** the request asked for elevation; use a passkey.
+- **"Use a passkey for this account":** the GitHub account is linked to an admin account, which
+  signs in with a passkey only.
 - **"This provider is not enabled":** the Deployment lacks `--github-client-id`; check
   `kubectl -n zeabur-identity get deploy zeabur-identity -o jsonpath='{.spec.template.spec.containers[0].args}'`.
 - **The pod cannot read `/etc/zeabur-identity/...`:** check that `--config-secret zeabur-identity-config`

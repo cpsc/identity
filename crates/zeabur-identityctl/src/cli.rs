@@ -42,6 +42,10 @@ pub(crate) enum Command {
     /// Invite a user: creates the `User` if it does not exist and prints a one-time enrollment
     /// link for you to send. Uses your own kubeconfig, which needs admin rights.
     Invite(InviteArgs),
+    /// Make a user an admin account or a regular account. Uses your own kubeconfig, which needs
+    /// admin rights. The same as `kubectl patch user <name> --type merge -p
+    /// '{"spec":{"accountType":"Admin"}}'`.
+    AccountType(AccountTypeArgs),
     /// Register OAuth clients.
     Client {
         /// The client command to run.
@@ -82,10 +86,6 @@ pub(crate) struct ClientCreateArgs {
     /// labelled with the display name, for anyone who reaches it with nothing to sign in to.
     #[arg(long)]
     pub home_url: Option<String>,
-    /// Let the client request the `elevate` scope (short tokens with the user's `elevated:`
-    /// groups). Only for clients meant for administration, such as an admin `kubectl` context.
-    #[arg(long)]
-    pub allow_elevation: bool,
     /// ID token signing algorithm, for a client that cannot verify `ES256`.
     #[arg(long, value_enum)]
     pub id_token_signing_alg: Option<SigningAlg>,
@@ -130,16 +130,38 @@ pub(crate) struct InviteArgs {
     /// Group of a new user (repeatable).
     #[arg(long = "group")]
     pub groups: Vec<String>,
-    /// Elevated group of a new user (repeatable): `zeabur:elevated:<group>` after a passkey
-    /// sign-in with the `elevate` scope.
-    #[arg(long = "elevated-group")]
-    pub elevated_groups: Vec<String>,
+    /// Make a new user an admin account: it signs in with a passkey only, and its tokens carry
+    /// the `admins` group.
+    #[arg(long)]
+    pub admin: bool,
     /// How long the link stays valid.
     #[arg(long, default_value = "7d", value_parser = parse_duration)]
     pub valid_for: Duration,
     /// Namespace Zeabur Identity runs in.
     #[arg(long, env = "ZEABUR_IDENTITY_NAMESPACE", default_value = zeabur_identity_k8s::rbac::DEFAULT_NAMESPACE)]
     pub namespace: String,
+}
+
+/// Arguments of `zeabur-identityctl account-type`.
+#[derive(Debug, Args)]
+pub(crate) struct AccountTypeArgs {
+    /// The `User` name.
+    pub username: String,
+    /// The new account type.
+    #[arg(value_enum)]
+    pub account_type: AccountTypeArg,
+    /// Namespace Zeabur Identity runs in.
+    #[arg(long, env = "ZEABUR_IDENTITY_NAMESPACE", default_value = zeabur_identity_k8s::rbac::DEFAULT_NAMESPACE)]
+    pub namespace: String,
+}
+
+/// Account type.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum AccountTypeArg {
+    /// Signs in with a passkey only; tokens carry the `admins` group.
+    Admin,
+    /// Signs in with every method the server offers.
+    Regular,
 }
 
 /// Arguments of `zeabur-identityctl manifests`.
@@ -183,9 +205,6 @@ pub(crate) struct KubeConfigArgs {
     /// Longest token lifetime kube-apiserver accepts.
     #[arg(long, default_value = "1h", value_parser = parse_duration)]
     pub max_token_lifetime: Duration,
-    /// Longest lifetime kube-apiserver accepts for a token carrying `elevated:` groups.
-    #[arg(long, default_value = "5m", value_parser = parse_duration)]
-    pub max_elevated_token_lifetime: Duration,
 }
 
 /// Arguments of `zeabur-identityctl setup-link`.
@@ -194,7 +213,7 @@ pub(crate) struct SetupLinkArgs {
     /// The issuer identifier (the same as `zeabur-identity --issuer`).
     #[arg(long, env = "ZEABUR_IDENTITY_ISSUER", value_parser = parse_issuer)]
     pub issuer: BaseUrl,
-    /// The `User` to enroll a passkey for; created in group `admins` if it does not exist.
+    /// The `User` to enroll a passkey for; created as an admin account if it does not exist.
     /// The username must be a lowercase DNS subdomain of at most 63 characters.
     #[arg(long, default_value = "admin")]
     pub username: String,

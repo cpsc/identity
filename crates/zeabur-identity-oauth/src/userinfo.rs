@@ -4,7 +4,7 @@
 //! `Authorization` header (RFC 6750 §2.1), verifies them offline against the published keys,
 //! and answers with the user's current claims, so a user disabled since the token was issued
 //! gets nothing. Claims follow the granted scopes: `sub` always, `preferred_username` and `name`
-//! with `profile`, `groups` with `groups` (never elevated groups).
+//! with `profile`, `groups` with `groups`.
 //!
 //! - `GET` and `POST` are both served, as §5.3 requires. The token is read only from the header;
 //!   form-body and query tokens are not accepted.
@@ -122,6 +122,7 @@ pub async fn userinfo<D: Directory, G: GrantStore, C: Clock>(
         }
     };
     let profile = scopes.contains(&"profile");
+    let groups = user.token_groups();
     let body = UserInfo {
         sub: &user.subject,
         preferred_username: profile.then_some(user.username.as_str()),
@@ -130,7 +131,7 @@ pub async fn userinfo<D: Directory, G: GrantStore, C: Clock>(
         } else {
             None
         },
-        groups: scopes.contains(&"groups").then_some(user.groups.as_slice()),
+        groups: scopes.contains(&"groups").then_some(groups.as_slice()),
     };
     let mut response = axum::Json(body).into_response();
     no_store(&mut response);

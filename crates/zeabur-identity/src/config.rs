@@ -72,24 +72,22 @@ impl ServeConfig {
                 "keys must stay published at least as long as the longest token lifetime",
             ));
         }
-        if self.lifetimes.access_token > Duration::from_hours(1)
-            || self.lifetimes.access_token < Duration::from_mins(1)
+        let token_lifetimes = [
+            self.lifetimes.access_token,
+            self.lifetimes.admin_access_token,
+        ];
+        if token_lifetimes
+            .iter()
+            .any(|t| *t > Duration::from_hours(1) || *t < Duration::from_mins(1))
         {
             // RFC 6750 §5.3: short-lived bearer tokens, one hour or less.
             return Err(ConfigError::BadRotationPolicy(
                 "access token lifetime must be between 1m and 1h",
             ));
         }
-        if self
-            .lifetimes
-            .elevated_token
-            .is_some_and(|t| t > Duration::from_mins(15) || t < Duration::from_mins(1))
+        if self.lifetimes.refresh_idle > self.lifetimes.refresh_absolute
+            || self.lifetimes.admin_refresh_idle > self.lifetimes.refresh_absolute
         {
-            return Err(ConfigError::BadRotationPolicy(
-                "elevated token lifetime must be between 1m and 15m",
-            ));
-        }
-        if self.lifetimes.refresh_idle > self.lifetimes.refresh_absolute {
             return Err(ConfigError::BadRotationPolicy(
                 "refresh idle lifetime cannot exceed the absolute lifetime",
             ));

@@ -172,7 +172,7 @@ ZEABUR_IDENTITY_E2E_MEASUREMENTS="$dir/measurements.json" \
 ```
 
 The scenario installs Zeabur Identity, enrols a software passkey, signs in, and checks
-`kubectl auth whoami`, elevation and the pod's memory. See the
+`kubectl auth whoami`, the admin account's rights across a refresh and the pod's memory. See the
 [zeabur-identity-e2e README](crates/zeabur-identity-e2e/README.md) for its assertions and reload timing.
 
 When finished:

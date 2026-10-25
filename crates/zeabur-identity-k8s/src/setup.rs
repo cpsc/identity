@@ -1,8 +1,8 @@
 //! The one-time setup token in a Secret, and the cluster admin's side of issuing it.
 //!
 //! The cluster admin runs `zeabur-identityctl setup-link` with their own kubeconfig. It creates the
-//! `User` (in group `admins`), optionally removes the user's pending invitations, old passkeys and
-//! sessions (`--reset`), and
+//! `User` as an admin account (`accountType: Admin`), optionally removes the user's pending
+//! invitations, old passkeys and sessions (`--reset`), and
 //! writes the Secret `zeabur-identity-setup` holding only the SHA-256 of a fresh 256-bit token.
 //! Zeabur Identity's service account can only `get` and `delete` that Secret, so it can redeem a
 //! token but never create one, and it never needs RBAC rights: the `zeabur:admins` binding is
@@ -54,7 +54,7 @@ use super::users::user_owner_uid;
 use crate::crd::credential::Credential;
 use crate::crd::grant::Grant;
 use crate::crd::invitation::Invitation;
-use crate::crd::user::{User, UserSpec};
+use crate::crd::user::{AccountType, User, UserSpec};
 use crate::crd::{EXPIRES_AT_ANNOTATION, USER_LABEL};
 
 /// Name of the setup Secret.
@@ -266,9 +266,9 @@ pub async fn issue_setup_link(
             UserSpec {
                 username: username.to_owned(),
                 display_name: None,
-                groups: vec![ADMIN_GROUP.to_owned()],
-                elevated_groups: vec![ADMIN_GROUP.to_owned()],
+                groups: Vec::new(),
                 disabled: false,
+                account_type: AccountType::Admin,
             },
         );
         users.create(&pp, &user).await?

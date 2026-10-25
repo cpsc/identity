@@ -47,7 +47,6 @@ mod tests {
             audiences: vec![],
             secret_hash: None,
             id_token_alg: Algorithm::Es256,
-            allow_elevation: true,
             home_url: Some(HOME.into()),
         });
         let server = Arc::new(AuthorizationServer {
@@ -454,7 +453,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn provider_buttons_appear_only_when_configured_and_not_for_elevation() {
+    async fn provider_buttons_appear_only_when_configured() {
         let plain = app().await;
         let page = get(&plain, "/setup", &[]).await;
         assert!(!page.body.contains("data-provider"));
@@ -465,70 +464,23 @@ mod tests {
         assert!(page.body.contains(r#"data-provider="github""#));
         assert!(page.body.contains("Continue with Google"));
 
-        let authorize = |scope: &str| {
-            format!(
+        let reply = get(
+            &app,
+            &format!(
                 "/authorize?response_type=code&client_id=dashboard&redirect_uri=https%3A%2F%2Fdashboard.example.com%2Fcb\
-                 &scope={scope}&code_challenge={CHALLENGE}&code_challenge_method=S256"
-            )
-        };
-        for (scope, offered) in [("openid", true), ("openid+elevate", false)] {
-            let reply = get(&app, &authorize(scope), &[]).await;
-            let cookie = reply.headers[header::SET_COOKIE]
-                .to_str()
-                .unwrap()
-                .split(';')
-                .next()
-                .unwrap()
-                .to_owned();
-            let page = get(&app, "/login", &[("cookie", &cookie)]).await;
-            assert_eq!(page.body.contains("data-provider"), offered, "{scope}");
-        }
-    }
-
-    #[tokio::test]
-    async fn login_says_when_elevated_access_is_requested() {
-        let app = app().await;
-        for (scope, lang, notice) in [
-            ("openid", "en", None),
-            (
-                "openid+elevate",
-                "en",
-                Some(
-                    "Cluster Dashboard is requesting elevated access: your admin rights on the cluster, such as changing or deleting what runs on it. It ends by itself after 5\u{a0}min.",
-                ),
+                 &scope=openid&code_challenge={CHALLENGE}&code_challenge_method=S256"
             ),
-            (
-                "openid+elevate",
-                "zh-TW",
-                Some("權限會在 5\u{a0}分鐘後自動失效。"),
-            ),
-        ] {
-            let reply = get(
-                &app,
-                &format!(
-                    "/authorize?response_type=code&client_id=dashboard&redirect_uri=https%3A%2F%2Fdashboard.example.com%2Fcb\
-                     &scope={scope}&code_challenge={CHALLENGE}&code_challenge_method=S256"
-                ),
-                &[],
-            )
-            .await;
-            let cookie = reply.headers[header::SET_COOKIE]
-                .to_str()
-                .unwrap()
-                .split(';')
-                .next()
-                .unwrap()
-                .to_owned();
-            let page = get(&app, &format!("/login?lang={lang}"), &[("cookie", &cookie)]).await;
-            assert_hardened(&page);
-            assert_eq!(
-                page.body.contains("id=\"elevation\""),
-                notice.is_some(),
-                "{scope} {lang}"
-            );
-            if let Some(text) = notice {
-                assert!(page.body.contains(text), "{scope} {lang}");
-            }
-        }
+            &[],
+        )
+        .await;
+        let cookie = reply.headers[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_owned();
+        let page = get(&app, "/login", &[("cookie", &cookie)]).await;
+        assert!(page.body.contains("data-provider"));
     }
 }

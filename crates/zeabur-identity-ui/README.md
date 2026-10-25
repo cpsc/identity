@@ -64,7 +64,7 @@ system's colours as they are:
 | Text on card | 21.00 | 17.68 | 4.5 |
 | Secondary text on card / on the page | 6.04 / 5.51 | 8.64 / 9.40 | 4.5 |
 | Error text on card (`fail-strong`) | 6.49 | 9.40 | 4.5 |
-| Elevation notice (warning alert) | 5.67 | 10.40 | 4.5 |
+| Warning alert (passkey backup notice) | 5.67 | 10.40 | 4.5 |
 | Primary button text (lightest gradient stop) | 5.07 | 5.07 | 4.5 |
 | Destructive button text (lightest gradient stop; the final confirm) | 4.61 | 4.61 | 4.5 |
 | Quiet destructive button text (`secondary-destructive`, lowest stop; each passkey row) | 5.32 | 7.40 | 4.5 |

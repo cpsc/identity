@@ -9,7 +9,8 @@
      data-msg-failed="{{ m.passkey_failed }}" data-msg-cancelled="{{ m.passkey_cancelled }}"
      data-msg-working="{{ m.working }}" data-msg-error="{{ m.generic_error }}" data-msg-confirm="{{ m.confirm_working }}"
      data-msg-exists="{{ m.passkey_exists }}" data-msg-last="{{ m.last_passkey_error }}"
-     data-msg-changed="{{ m.changed_error }}" data-msg-gone="{{ m.passkey_gone_error }}" data-msg-signed-out="{{ m.signed_out_error }}">
+     data-msg-changed="{{ m.changed_error }}" data-msg-gone="{{ m.passkey_gone_error }}" data-msg-signed-out="{{ m.signed_out_error }}"
+     data-msg-device-passkey="{{ m.device_passkey_needed }}">
 {%- match view %}
 {%- when None %}
 {% call ui::card() %}

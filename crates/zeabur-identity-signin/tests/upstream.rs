@@ -18,6 +18,7 @@ mod tests {
     use serde_json::{Value, json};
     use tower::ServiceExt as _;
     use tracing::instrument::WithSubscriber as _;
+    use zeabur_identity_core::account::AccountType;
     use zeabur_identity_core::clock::{Clock, SystemClock};
     use zeabur_identity_core::config::BaseUrl;
     use zeabur_identity_core::crypto::{Sealer, hash_secret, sha256};
@@ -211,7 +212,6 @@ mod tests {
             audiences: vec!["kubernetes".into()],
             secret_hash: None,
             id_token_alg: Algorithm::Es256,
-            allow_elevation: true,
             home_url: None,
         });
         for (name, disabled) in [("alice", false), ("dana", false), ("zed", true)] {
@@ -227,10 +227,7 @@ mod tests {
         let issuer = BaseUrl::parse("issuer", ISSUER).unwrap();
         let oauth = Arc::new(AuthorizationServer {
             issuer: issuer.clone(),
-            lifetimes: Lifetimes {
-                elevated_token: Some(std::time::Duration::from_mins(5)),
-                ..Lifetimes::DEFAULT
-            },
+            lifetimes: Lifetimes::DEFAULT,
             directory,
             grants: MemoryGrantStore::default(),
             clock: SystemClock,
@@ -648,7 +645,7 @@ mod tests {
         let claims: Value =
             serde_json::from_slice(&URL_SAFE_NO_PAD.decode(payload).unwrap()).unwrap();
         assert_eq!(claims["sub"], "uid-alice");
-        // No passkey: no `amr`, and so never elevation.
+        // No passkey: no `amr`.
         assert!(claims.get("amr").is_none(), "{claims}");
     }
 
@@ -758,13 +755,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn start_requires_a_pending_request_and_refuses_elevation() {
+    async fn start_requires_a_pending_request() {
         let h = harness().await;
         let reply = start(&h, "github", &json!({}), "").await;
         assert_eq!(reply.status, StatusCode::BAD_REQUEST);
-        let flow = authorize(&h, "openid+elevate").await;
-        let reply = start(&h, "github", &json!({}), &format!("{FLOW_COOKIE}={flow}")).await;
-        assert_eq!(reply.status, StatusCode::FORBIDDEN, "{}", reply.body);
         let reply = start(&h, "gitlab", &json!({}), "").await;
         assert_eq!(reply.status, StatusCode::NOT_FOUND);
         // Cross-site requests are refused before anything else.
@@ -778,6 +772,38 @@ mod tests {
         )
         .await;
         assert_eq!(reply.status, StatusCode::FORBIDDEN);
+    }
+
+    async fn make_admin(h: &Harness, name: &str) {
+        let directory = &h.service.sign_in.oauth.directory;
+        let mut user = directory.user(name).await.unwrap().unwrap();
+        user.account_type = AccountType::Admin;
+        directory.put_user(user);
+    }
+
+    #[tokio::test]
+    async fn admin_accounts_neither_sign_in_with_nor_link_github_or_google() {
+        let h = harness().await;
+        link(&h, Kind::GitHub, &GITHUB_ID.to_string(), "alice").await;
+        make_admin(&h, "alice").await;
+        let reply = sign_in(&h, "github", "code-1").await;
+        assert!(reply.status.is_client_error(), "{}", reply.status);
+        assert!(reply.body.contains("admin_needs_passkey"), "{}", reply.body);
+        assert_audit(
+            &reply,
+            "auth.sign_in",
+            Some("admin_needs_passkey"),
+            Some("alice"),
+            Some("uid-alice"),
+        );
+
+        make_admin(&h, "dana").await;
+        let started = start(&h, "google", &json!({ "token": INVITATION }), "").await;
+        assert_eq!(started.status, StatusCode::FORBIDDEN, "{}", started.body);
+        assert_eq!(
+            started.json()["type"],
+            "urn:zeabur-identity:problem:admin-needs-passkey"
+        );
     }
 
     #[tokio::test]

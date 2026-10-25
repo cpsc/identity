@@ -17,13 +17,15 @@
 //!   enrolled, removed or an account is linked. On credentials it may write only `status` (the
 //!   label a user gives a passkey, and when it was last used), never the key material. It has no
 //!   write access to users.
+//! - **Account settings.** It reads one `ConfigMap`, [`SETTINGS_CONFIG_MAP`], by name. Admins write
+//!   it.
 //! - **Account events.** It creates core `Event`s about users who change their own passkeys or
 //!   sessions, and cannot read, change or delete events.
 //! - **Runtime state is Zeabur Identity's.** Full access to grants; invitations it can read and
 //!   redeem (`delete`), but not create.
 //! - **Nothing else.** No cluster-scoped rights, nothing in other namespaces, no RBAC objects, no
-//!   `impersonate`. The admin bindings ([`ADMINS_BINDING`], [`ELEVATED_ADMINS_BINDING`]) are
-//!   applied at install with the cluster admin's rights; Zeabur Identity cannot change them.
+//!   `impersonate`. The admin binding ([`ADMINS_BINDING`]) is applied at install with the cluster
+//!   admin's rights; Zeabur Identity cannot change them.
 //!
 //! # References
 //!
@@ -43,7 +45,7 @@ use k8s_openapi::api::rbac::v1::{
 };
 use kube::api::ObjectMeta;
 use serde_json::Value;
-use zeabur_identity_core::protocol::ELEVATED_GROUP_PREFIX;
+use zeabur_identity_core::account::SETTINGS_CONFIG_MAP;
 
 use super::keys::SECRET_TYPE;
 use super::setup::{ADMIN_GROUP, SETUP_SECRET};
@@ -53,11 +55,12 @@ use crate::crd::GROUP;
 /// Name of the service account, `Role` and `RoleBinding`.
 pub const NAME: &str = "zeabur-identity";
 
-/// Name of the `ClusterRoleBinding` that lets `zeabur:admins` read the cluster.
-pub const ADMINS_BINDING: &str = "zeabur-identity-admins";
-
-/// Name of the `ClusterRoleBinding` that makes `zeabur:elevated:admins` cluster admins.
-pub const ELEVATED_ADMINS_BINDING: &str = "zeabur-identity-elevated-admins";
+/// Name of the `ClusterRoleBinding` that binds `zeabur:admins` (the admin accounts) to
+/// `cluster-admin`.
+///
+/// Earlier versions bound `view` under the name `zeabur-identity-admins`. A `roleRef` cannot
+/// change, so this binding has a new name.
+pub const ADMINS_BINDING: &str = "zeabur-identity-cluster-admins";
 
 pub use zeabur_identity_core::protocol::IDENTITY_PREFIX;
 
@@ -119,6 +122,8 @@ pub fn rules() -> Vec<PolicyRule> {
             &[],
             &["get", "list", "watch", "delete"],
         ),
+        // Account settings, written by admins.
+        rule(&[""], &["configmaps"], &[SETTINGS_CONFIG_MAP], &["get"]),
         // Account changes users make themselves, as events on the User.
         rule(&[""], &["events"], &[], &["create"]),
     ]
@@ -189,17 +194,10 @@ pub fn manifests(namespace: &str) -> serde_json::Result<Vec<Value>> {
                 ..Subject::default()
             }]),
         })?,
-        // Least privilege by default: `zeabur:admins` can read (the built-in `view` role, which
-        // excludes Secrets), and becomes cluster admin only as `zeabur:elevated:admins`, which
-        // exists only in short tokens issued right after a passkey sign-in. Applied by the
-        // installer with the cluster admin's own rights; Zeabur Identity's service account cannot
-        // create bindings.
-        serde_json::to_value(group_binding(ADMINS_BINDING, "view", ADMIN_GROUP))?,
-        serde_json::to_value(group_binding(
-            ELEVATED_ADMINS_BINDING,
-            "cluster-admin",
-            &format!("{ELEVATED_GROUP_PREFIX}{ADMIN_GROUP}"),
-        ))?,
+        // Only admin accounts carry `zeabur:admins`, and they sign in with a passkey only. Applied
+        // by the installer with the cluster admin's own rights; Zeabur Identity's service account
+        // cannot create bindings.
+        serde_json::to_value(group_binding(ADMINS_BINDING, "cluster-admin", ADMIN_GROUP))?,
         // Created empty by the installer; Zeabur Identity fills it.
         serde_json::to_value(Secret {
             metadata: meta(KEY_SECRET, ns),

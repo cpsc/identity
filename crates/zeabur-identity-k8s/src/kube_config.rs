@@ -32,10 +32,6 @@
 //!   tokens, which carry `client_id` ([RFC 9068] §2.2), and rejects ID tokens, which are meant for
 //!   the client.
 //! - `exp - iat` is bounded, because kube-apiserver cannot revoke a token before it expires.
-//! - A token whose groups include `elevated:` must be short and issued within two minutes of the
-//!   sign-in (`auth_time`), so a mistake in the issuer cannot hand out long-lived privilege. JSON
-//!   claims are untyped in CEL, so the list is wrapped in `dyn(claims.groups)` for the
-//!   comprehension to type-check; this was verified on a real API server.
 //! - Usernames and groups get the `zeabur:` prefix, which already rules out `system:`. Structured
 //!   configuration has no built-in rejection of `system:`, so `userValidationRules` reject it as
 //!   well, in case the mapping changes.
@@ -97,16 +93,13 @@ use kube::{Client, ResourceExt as _};
 use serde_json::Value;
 use thiserror::Error;
 use zeabur_identity_core::config::{BaseUrl, ConfigError};
-use zeabur_identity_core::protocol::{ELEVATED_GROUP_PREFIX, OPENID_CONFIGURATION_PATH};
+use zeabur_identity_core::protocol::OPENID_CONFIGURATION_PATH;
 
 use crate::internal_tls::{self, TlsError};
 use crate::rbac::{IDENTITY_PREFIX, NAME};
 
 /// Prefix of the `extra` keys Zeabur Identity maps into Kubernetes user info.
 pub const EXTRA_PREFIX: &str = "identity.zeabur.com/";
-
-/// Most seconds between sign-in and an elevated token's issue: the code lifetime with slack.
-const ELEVATED_FRESHNESS: u64 = 120;
 
 /// Field manager of the cert-manager objects.
 const FIELD_MANAGER: &str = "zeabur-identityctl";
@@ -156,8 +149,6 @@ pub struct ApiserverOptions {
     pub audiences: Vec<String>,
     /// Longest accepted token lifetime (`exp - iat`).
     pub max_token_lifetime: Duration,
-    /// Longest accepted lifetime of a token carrying `elevated:` groups.
-    pub max_elevated_token_lifetime: Duration,
 }
 
 /// Why `kube-config` failed.
@@ -273,16 +264,6 @@ pub fn authentication_configuration(options: &ApiserverOptions) -> Result<String
     line(&format!(
         "    message: \"token lifetime must not exceed {lifetime} seconds\""
     ));
-    // Elevated groups only in short tokens issued right after a sign-in, enforced here too, so a
-    // mistake in the issuer cannot hand out long-lived privilege. JSON claims are untyped in CEL;
-    // `dyn()` lets the comprehension accept the list.
-    let elevated = options.max_elevated_token_lifetime.as_secs();
-    line(&format!(
-        "  - expression: \"!has(claims.groups) || !dyn(claims.groups).exists(g, g.startsWith('{ELEVATED_GROUP_PREFIX}')) || (claims.exp - claims.iat <= {elevated} && claims.iat - claims.auth_time <= {ELEVATED_FRESHNESS})\""
-    ));
-    line(&format!(
-        "    message: \"elevated groups need a token of at most {elevated} seconds issued right after a passkey sign-in\""
-    ));
     line("  claimMappings:");
     line("    username:");
     line("      claim: preferred_username");
@@ -374,8 +355,6 @@ pub struct Request {
     pub audiences: Vec<String>,
     /// Longest accepted token lifetime.
     pub max_token_lifetime: Duration,
-    /// Longest accepted lifetime of an elevated token.
-    pub max_elevated_token_lifetime: Duration,
 }
 
 /// Prepares the cluster for internal discovery (if chosen) and renders the
@@ -396,7 +375,6 @@ pub async fn prepare(client: Client, request: &Request) -> Result<String, KubeCo
         internal,
         audiences: request.audiences.clone(),
         max_token_lifetime: request.max_token_lifetime,
-        max_elevated_token_lifetime: request.max_elevated_token_lifetime,
     })
 }
 
@@ -539,7 +517,6 @@ mod tests {
             }),
             audiences: vec!["kubernetes".into()],
             max_token_lifetime: Duration::from_hours(1),
-            max_elevated_token_lifetime: Duration::from_mins(5),
         }
     }
 
@@ -567,8 +544,6 @@ jwt:
     message: "only Zeabur Identity access tokens are accepted (ID tokens carry no client_id)"
   - expression: "claims.exp - claims.iat <= 3600"
     message: "token lifetime must not exceed 3600 seconds"
-  - expression: "!has(claims.groups) || !dyn(claims.groups).exists(g, g.startsWith('elevated:')) || (claims.exp - claims.iat <= 300 && claims.iat - claims.auth_time <= 120)"
-    message: "elevated groups need a token of at most 300 seconds issued right after a passkey sign-in"
   claimMappings:
     username:
       claim: preferred_username

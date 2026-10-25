@@ -7,12 +7,12 @@ scenario is `tests/e2e.rs`:
 2. Prepare kube-apiserver exactly as `zeabur-identityctl kube-config --distro k3s` does (internal
    discovery through the Service's ClusterIP and a freshly issued certificate) and write the
    `AuthenticationConfiguration` into kube-apiserver's configuration directory.
-3. Issue a setup link, enrol a software passkey, and sign in as kubectl's OIDC plugin would
-   (authorization code with PKCE).
+3. Issue a setup link, which creates the first user as an admin account, enrol a software
+   passkey, and sign in as kubectl's OIDC plugin would (authorization code with PKCE).
 4. Check with `kubectl auth whoami` and `kubectl auth can-i` that kube-apiserver accepts the
-   access token, that a normal token can read but not administer, that an `elevate` sign-in
-   yields a short token without a refresh token in which the user is `zeabur:elevated:admins`,
-   and that an ID token is rejected.
+   access token, that the admin account is in `zeabur:admins` and has full rights, that a
+   refresh needs no passkey and follows the account type (made regular, the account loses its
+   rights; made admin again, it gets them back), and that an ID token is rejected.
 5. Check that the pod's working set after the sign-in is at most 30 MiB.
 
 ## Running it

@@ -17,6 +17,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
+use zeabur_identity_core::account::{AccountType, Settings};
 use zeabur_identity_core::clock::{Clock, UnixTime};
 use zeabur_identity_core::config::BaseUrl;
 use zeabur_identity_core::crypto::Sealer;
@@ -27,7 +28,8 @@ use zeabur_identity_store::{Directory, GrantStore};
 ///
 /// Access and ID tokens are short because kube-apiserver verifies them offline and caches the
 /// result: nothing issued can be revoked, so the token lifetime is the revocation latency.
-/// Long sessions come from refresh tokens instead, which can be revoked.
+/// Long sessions come from refresh tokens instead, which can be revoked. Token and refresh
+/// lifetimes depend on the account type: see [`Lifetimes::for_account`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Lifetimes {
     /// Pending sign-in (the sealed authorization request).
@@ -36,40 +38,72 @@ pub struct Lifetimes {
     pub code: Duration,
     /// PAR `request_uri` (RFC 9126 §2.2 suggests 5 to 600 seconds).
     pub par: Duration,
-    /// Access token. kube-apiserver cannot revoke it, so it is short.
+    /// Access and ID tokens of a regular account.
     pub access_token: Duration,
-    /// ID token.
-    pub id_token: Duration,
     /// A refresh-token family dies if unused this long.
     pub refresh_idle: Duration,
     /// A refresh-token family dies this long after sign-in, regardless of use.
     pub refresh_absolute: Duration,
-    /// Tokens carrying elevated groups (the `elevate` scope). They have no refresh token, so
-    /// this bounds how long privilege lasts after a passkey sign-in. `None` disables elevation;
-    /// the `zeabur-identity` server always enables it.
-    pub elevated_token: Option<Duration>,
+    /// Access and ID tokens of an admin account. They carry `cluster-admin`, so they are
+    /// shorter.
+    pub admin_access_token: Duration,
+    /// The idle limit of an admin family if [`Settings::short_admin_idle`] is true.
+    pub admin_refresh_idle: Duration,
+}
+
+/// The lifetimes that apply to one account: see [`Lifetimes::for_account`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TokenLifetimes {
+    /// Access and ID tokens.
+    pub access_token: Duration,
+    /// Idle limit of the refresh-token family.
+    pub refresh_idle: Duration,
+    /// Absolute limit of the refresh-token family, from sign-in.
+    pub refresh_absolute: Duration,
 }
 
 impl Lifetimes {
-    /// The defaults: codes and PAR request URIs 60 s, pending sign-ins 10 min, access and ID
-    /// tokens 10 min, elevated tokens 5 min, refresh families 4 h idle and 12 h absolute.
+    /// The defaults: codes and PAR request URIs 60 s, pending sign-ins 10 min. Regular accounts:
+    /// tokens 10 min, refresh families 1 h idle. Admin accounts: tokens 5 min, refresh families
+    /// 15 min idle if several teams share the cluster or AAL3 is on, else 1 h. Every family
+    /// ends 12 h after sign-in.
+    ///
+    /// NIST SP 800-63B-4 sets the AAL2 reauthentication limits at 1 h idle and 24 h overall,
+    /// and the AAL3 limits at 15 min idle and 12 h overall ([sp800-63b]).
+    ///
+    /// [sp800-63b]: https://pages.nist.gov/800-63-4/sp800-63b.html
     pub const DEFAULT: Self = Self {
         flow: Duration::from_mins(10),
         code: Duration::from_mins(1),
         par: Duration::from_mins(1),
         access_token: Duration::from_mins(10),
-        id_token: Duration::from_mins(10),
-        refresh_idle: Duration::from_hours(4),
+        refresh_idle: Duration::from_hours(1),
         refresh_absolute: Duration::from_hours(12),
-        elevated_token: Some(Duration::from_mins(5)),
+        admin_access_token: Duration::from_mins(5),
+        admin_refresh_idle: Duration::from_mins(15),
     };
+
+    /// The lifetimes for an account of type `account` under `settings`.
+    #[must_use]
+    pub const fn for_account(&self, account: AccountType, settings: Settings) -> TokenLifetimes {
+        let (access_token, refresh_idle) = match account {
+            AccountType::Regular => (self.access_token, self.refresh_idle),
+            AccountType::Admin if settings.short_admin_idle() => {
+                (self.admin_access_token, self.admin_refresh_idle)
+            }
+            AccountType::Admin => (self.admin_access_token, self.refresh_idle),
+        };
+        TokenLifetimes {
+            access_token,
+            refresh_idle,
+            refresh_absolute: self.refresh_absolute,
+        }
+    }
 
     /// The longest lifetime of any signed token, which signing keys must outlive.
     #[must_use]
     pub fn longest_signed_token(&self) -> Duration {
-        self.access_token
-            .max(self.id_token)
-            .max(self.elevated_token.unwrap_or_default())
+        self.access_token.max(self.admin_access_token)
     }
 }
 
@@ -140,7 +174,61 @@ impl OneTimeIds {
 
 #[cfg(test)]
 mod tests {
+    use zeabur_identity_core::account::Teams;
+
     use super::*;
+
+    #[test]
+    fn lifetimes_per_account_type() {
+        let mins = Duration::from_mins;
+        let single = Settings::default();
+        let multiple = Settings {
+            teams: Teams::Multiple,
+            admin_aal3: false,
+        };
+        let aal3 = Settings {
+            teams: Teams::Single,
+            admin_aal3: true,
+        };
+        let cases = [
+            ("regular", AccountType::Regular, single, mins(10), mins(60)),
+            (
+                "regular, several teams",
+                AccountType::Regular,
+                multiple,
+                mins(10),
+                mins(60),
+            ),
+            (
+                "regular, AAL3",
+                AccountType::Regular,
+                aal3,
+                mins(10),
+                mins(60),
+            ),
+            (
+                "admin, one team",
+                AccountType::Admin,
+                single,
+                mins(5),
+                mins(60),
+            ),
+            (
+                "admin, several teams",
+                AccountType::Admin,
+                multiple,
+                mins(5),
+                mins(15),
+            ),
+            ("admin, AAL3", AccountType::Admin, aal3, mins(5), mins(15)),
+        ];
+        for (name, account, settings, access, idle) in cases {
+            let got = Lifetimes::DEFAULT.for_account(account, settings);
+            assert_eq!(got.access_token, access, "{name}");
+            assert_eq!(got.refresh_idle, idle, "{name}");
+            assert_eq!(got.refresh_absolute, Duration::from_hours(12), "{name}");
+        }
+    }
 
     #[test]
     fn one_time_ids() {

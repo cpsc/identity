@@ -14,6 +14,7 @@ mod tests {
     use serde_json::{Value, json};
     use tokio::sync::Mutex;
     use tower::ServiceExt as _;
+    use zeabur_identity_core::account::AccountType;
     use zeabur_identity_core::clock::{Clock as _, SystemClock};
     use zeabur_identity_core::config::BaseUrl;
     use zeabur_identity_core::crypto::Sealer;
@@ -62,7 +63,7 @@ mod tests {
         match (method, path.rsplit('/').next().unwrap()) {
             (Method::GET, "alice") => ok(json!({"apiVersion":"identity.zeabur.com/v1alpha1",
             "kind":"User", "metadata":{"name":"alice","uid":"uid-alice"},
-            "spec":{"username":"alice","groups":["admins"],"elevatedGroups":[],"disabled":false}})),
+            "spec":{"username":"alice","accountType":"Admin","disabled":false}})),
             (Method::GET, "credentials") => ok(json!({"apiVersion":"identity.zeabur.com/v1alpha1",
             "kind":"CredentialList", "metadata":{}, "items":if state.credentials {
                 vec![json!({"metadata":{"name":"old"},"spec":{"user":"alice","type":"Passkey",
@@ -142,7 +143,6 @@ mod tests {
             audiences: vec!["kubernetes".into()],
             secret_hash: None,
             id_token_alg: Algorithm::Es256,
-            allow_elevation: true,
             home_url: None,
         });
         directory.put_user(User {
@@ -150,9 +150,9 @@ mod tests {
             subject: "uid-alice".into(),
             username: "alice".into(),
             display_name: None,
-            groups: vec!["admins".into()],
+            groups: vec![],
             disabled: false,
-            elevated_groups: vec![],
+            account_type: AccountType::Admin,
         });
         let keys = KeyManager::new(
             MemoryKeyStore::default(),

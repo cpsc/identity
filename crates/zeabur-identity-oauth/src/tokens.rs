@@ -13,19 +13,8 @@
 //! is never a Kubernetes credential and the rules for the two kinds stay mutually exclusive
 //! (RFC 8725 §3.12).
 //!
-//! Elevated tokens are access tokens whose `groups` additionally hold `elevated:<group>` names
-//! (see [`crate::endpoints::ELEVATED_GROUP_PREFIX`]).
-//!
-//! The ID token carries `can_elevate: true` when an `elevate` request from this client would
-//! succeed for this user now: elevation is on, the client has `allowElevation`, and the user has
-//! elevated groups. The claim is absent otherwise. It lets the client offer admin rights only to
-//! people who can get them; it grants nothing, because only the elevated access token holds the
-//! groups. It is in the ID token only, because the ID token is the token for the client
-//! ([oidc-core] §2) and the access token is for kube-apiserver. It is a private claim name
-//! ([rfc7519] §4.3).
-//!
-//! [oidc-core]: https://openid.net/specs/openid-connect-core-1_0.html#IDToken
-//! [rfc7519]: https://www.rfc-editor.org/rfc/rfc7519#section-4.3
+//! `groups` comes from [`User::token_groups`]: only admin accounts carry
+//! [`ADMIN_GROUP`](zeabur_identity_core::protocol::ADMIN_GROUP).
 
 use serde::Serialize;
 use zeabur_identity_core::clock::UnixTime;
@@ -54,8 +43,6 @@ pub struct Subject<'a> {
     pub auth_time: UnixTime,
     /// Authentication methods.
     pub amr: &'a [String],
-    /// Whether an `elevate` request would succeed for this user and client.
-    pub can_elevate: bool,
 }
 
 impl Subject<'_> {
@@ -103,8 +90,6 @@ struct IdTokenClaims<'a> {
     name: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     groups: Option<&'a [String]>,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    can_elevate: bool,
 }
 
 fn signer(
@@ -133,6 +118,7 @@ pub fn access_token(
     now: UnixTime,
     expires_at: UnixTime,
 ) -> Result<String, OAuthError> {
+    let groups = subject.user.token_groups();
     let claims = AccessTokenClaims {
         iss: subject.issuer,
         sub: &subject.user.subject,
@@ -145,7 +131,7 @@ pub fn access_token(
         auth_time: subject.auth_time.as_secs(),
         amr: subject.amr,
         preferred_username: &subject.user.username,
-        groups: &subject.user.groups,
+        groups: &groups,
     };
     let key = signer(keys, Algorithm::Es256, now)?;
     sign_compact(&key, "at+jwt", &claims).map_err(|error| {
@@ -172,6 +158,7 @@ pub fn id_token(
     expires_at: UnixTime,
 ) -> Result<String, OAuthError> {
     let profile = subject.has_scope("profile");
+    let groups = subject.user.token_groups();
     let claims = IdTokenClaims {
         iss: subject.issuer,
         sub: &subject.user.subject,
@@ -188,10 +175,7 @@ pub fn id_token(
         } else {
             None
         },
-        groups: subject
-            .has_scope("groups")
-            .then_some(subject.user.groups.as_slice()),
-        can_elevate: subject.can_elevate,
+        groups: subject.has_scope("groups").then_some(groups.as_slice()),
     };
     let key = signer(keys, subject.client.id_token_alg, now)?;
     sign_compact(&key, "JWT", &claims).map_err(|error| {

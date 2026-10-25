@@ -9,7 +9,8 @@
 //! An account signs in as a user only if it was linked to that user: by redeeming an
 //! invitation or setup link with it, or by an admin creating the `Credential`. Nothing is
 //! created on first sign-in. Upstream sign-ins carry no `amr` value (RFC 8176 defines none for
-//! federation) and therefore never satisfy elevation, which needs a passkey.
+//! federation). Admin accounts sign in with a passkey only, so they can neither sign in nor link an
+//! account here.
 //!
 //! A link names its `User` by UID as well as by name. After a delete, a new object can have the
 //! same name, but every object gets a distinct UID ([Object Names and IDs]). Thus a link left
@@ -38,6 +39,7 @@ use axum::routing::{get, post};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::{Deserialize, Serialize};
+use zeabur_identity_core::account::Method;
 use zeabur_identity_core::clock::{Clock, UnixTime};
 use zeabur_identity_core::crypto::{ct_eq, hex, random, sha256};
 use zeabur_identity_oauth::authorize::Authentication;
@@ -45,7 +47,7 @@ use zeabur_identity_oauth::endpoints::{FLOW_COOKIE, complete_authorization, open
 use zeabur_identity_oauth::{OneTimeIds, Use};
 use zeabur_identity_store::{
     Consume, CreateCredential, CredentialStore, Directory, GrantStore, NewExternal, SetupStore,
-    external_credential_name,
+    User, external_credential_name,
 };
 use zeabur_identity_ui::i18n::Lang;
 use zeabur_identity_ui::pages::{ErrorReason, accept_language, error_page, notice_page};
@@ -54,7 +56,7 @@ use self::http::HttpClient;
 use self::provider::{Exchange, Kind, Provider, UpstreamError};
 use crate::problem::Problem;
 use crate::{
-    NO_REQUEST, SignIn, check_request, clear_cookie, cookie, internal, json, parse,
+    NO_REQUEST, SignIn, check_account, check_request, clear_cookie, cookie, internal, json, parse,
     valid_setup_token,
 };
 
@@ -68,11 +70,6 @@ const UNKNOWN_PROVIDER: Problem = Problem::new(
     StatusCode::NOT_FOUND,
     "unknown-provider",
     "This sign-in provider isn't enabled.",
-);
-const NEEDS_PASSKEY: Problem = Problem::new(
-    StatusCode::FORBIDDEN,
-    "needs-passkey",
-    "Elevated access needs a passkey. Sign in with a passkey instead.",
 );
 
 /// Upstream sign-in state shared by the handlers.
@@ -175,16 +172,16 @@ where
         let request: StartRequest = parse(&body)?;
         let now = sign_in.oauth.now();
         if let Some(token) = &request.token {
-            // Linking: check the link now, so a bad one fails before the user leaves.
-            valid_setup_token(&sign_in.setup, &sign_in.oauth.directory, token, now).await?;
+            // Linking: check the link and the account type now, so they fail before the user
+            // leaves.
+            let (_, user) =
+                valid_setup_token(&sign_in.setup, &sign_in.oauth.directory, token, now).await?;
+            check_account(&sign_in.oauth.directory, &user, Method::Upstream).await?;
         } else {
-            // Signing in: there must be a pending request, and it must not ask for elevation.
-            let flow = cookie(&headers, FLOW_COOKIE)
+            // Signing in: there must be a pending request.
+            cookie(&headers, FLOW_COOKIE)
                 .and_then(|sealed| open_flow(&sign_in.oauth, sealed))
                 .ok_or(NO_REQUEST)?;
-            if flow.request.is_elevated() {
-                return Err(NEEDS_PASSKEY);
-            }
         }
         let pending = Pending {
             id: hex(&random::<16>().map_err(internal)?),
@@ -237,6 +234,16 @@ fn failure(lang: Lang, reason: ErrorReason, detail: &str) -> Response {
 
 /// Why a callback failed: the audit `reason`, what the page says, and a note for the details.
 type Failure = (&'static str, ErrorReason, Option<String>);
+
+/// Refuses an admin account: it signs in with a passkey only.
+async fn refuse_admin<D: Directory>(directory: &D, user: &User) -> Result<(), Failure> {
+    check_account(directory, user, Method::Upstream)
+        .await
+        .map_err(|problem| match problem.kind {
+            "admin-needs-passkey" => ("admin_needs_passkey", ErrorReason::AdminNeedsPasskey, None),
+            _ => ("account_check_failed", ErrorReason::ServerError, None),
+        })
+}
 
 /// A provider answer that did not verify. An ID token outside its validity window usually means
 /// this server's clock is off. HTTP errors are not shown: they can carry the provider's text.
@@ -366,6 +373,7 @@ where
             if user.disabled {
                 return Err(("user_unavailable", ErrorReason::UserUnavailable, None));
             }
+            refuse_admin(&oauth.directory, user).await?;
             let flow = cookie(&headers, FLOW_COOKIE).ok_or(("missing_flow", ErrorReason::RequestExpired, None))?;
             let authentication = Authentication {
                 user: user.name.clone(),
@@ -374,6 +382,7 @@ where
                 amr: Vec::new(),
                 credential: Some(name.clone()),
                 user_verified: false,
+                device_bound: false,
             };
             let location = complete_authorization(oauth, flow, authentication)
                 .map_err(|error| {
@@ -399,6 +408,7 @@ where
             .await
             .map_err(|_problem| ("invalid_setup", ErrorReason::SetupLinkInvalid, None))?;
         link_user = Some(stored.user.clone());
+        refuse_admin(&oauth.directory, &user).await?;
         let user_subject = user.subject;
         match sign_in.setup.consume(&stored).await {
             Ok(Consume::Consumed) => {}

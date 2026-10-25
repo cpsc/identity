@@ -36,6 +36,11 @@ function ended(): void {
   view.focus()
 }
 
+const failures: Record<string, string | undefined> = {
+  "passkey-failed": messages.msgFailed,
+  "device-passkey-needed": messages.msgDevicePasskey,
+}
+
 async function finish(credential: Credential | null): Promise<void> {
   if (!(credential instanceof PublicKeyCredential))
     throw new DOMException("no credential", "NotAllowedError")
@@ -49,8 +54,7 @@ async function finish(credential: Credential | null): Promise<void> {
   say("status", "")
   const kind = problem(reply)
   if (kind === "no-request") ended()
-  else
-    say("error", kind === "passkey-failed" ? (messages.msgFailed ?? "") : (messages.msgError ?? ""))
+  else say("error", failures[kind] ?? messages.msgError ?? "")
 }
 
 async function options(): Promise<PublicKeyCredentialRequestOptions | null> {

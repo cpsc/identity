@@ -166,11 +166,9 @@ work and not just cached tokens. On your computer, with the kubeconfig from
 
 ```sh
 export KUBECONFIG=~/.kube/zeabur-identity-k3s.yaml
-rm -rf ~/.kube/cache/oidc-login ~/.kube/cache/oidc-login-elevated   # forget cached tokens
+rm -rf ~/.kube/cache/oidc-login   # forget cached tokens
 kubectl auth whoami
-kubectl auth can-i list pods --all-namespaces
-kubectl auth can-i '*' '*' --all-namespaces
-kubectl --context=zeabur-identity-k3s-admin auth can-i '*' '*' --all-namespaces
+kubectl auth can-i '*' '*' --all-namespaces   # yes for an admin account
 ```
 
 You should see your username as `zeabur:<username>`, then `yes`, `no` and, for an admin, `yes`.
@@ -223,7 +221,8 @@ cluster version, the namespace, the issuer URL and the install options you used:
 | `users`, `credentials`, `oauthclients` (`*.identity.zeabur.com`) | People and their groups, passkey records and linked GitHub or Google accounts, registered clients. |
 | Secret `zeabur-identity-signing-keys` | All of Zeabur Identity's private signing keys, including upcoming and retired ones. Can't be rebuilt from anything else. |
 | Secret `zeabur-identity-internal-ca` | The root CA and its private key, which cert-manager uses to sign the certificate kube-apiserver checks on the internal address. Belongs with the authentication file on each control-plane machine. cert-manager issues `zeabur-identity-internal-tls` again from it. |
-| Deployment, Service, ServiceAccount, Role and RoleBinding `zeabur-identity`; ClusterRoleBindings `zeabur-identity-admins` and `zeabur-identity-elevated-admins` | How Zeabur Identity runs and who gets admin rights. Back up your own RoleBindings for other apps too. |
+| Deployment, Service, ServiceAccount, Role and RoleBinding `zeabur-identity`; ClusterRoleBinding `zeabur-identity-cluster-admins` | How Zeabur Identity runs and who gets admin rights. Back up your own RoleBindings for other apps too. |
+| ConfigMap `zeabur-identity-settings`, if you created it | The `teams` and `admin-aal3` settings. Without it, every setting falls back to its default. |
 | Secrets mounted into Zeabur Identity, such as `zeabur-identity-config` | GitHub and Google client secrets. Keep the upstream app registrations with them. |
 | Public TLS and routing | In Get started: Secret `zeabur-identity-tls`, Ingress `zeabur-identity`; for rate limiting, Ingress `zeabur-identity-rate-limited`, Middleware `zeabur-identity-rate-limit` and the `traefik` HelmChartConfig in `kube-system`. |
 | kube-apiserver's configuration on each control-plane machine | For k3s: `/etc/rancher/k3s/zeabur-identity/authn.yaml` and the config that loads it. |
@@ -284,8 +283,10 @@ kubectl -n "$NS" get secret zeabur-identity-signing-keys zeabur-identity-interna
 kubectl -n "$NS" get svc zeabur-identity -o json > "$BACKUP/service.json"
 kubectl -n "$NS" get serviceaccount/zeabur-identity role/zeabur-identity rolebinding/zeabur-identity -o json \
   > "$BACKUP/namespaced-rbac.json"
-kubectl get clusterrolebinding zeabur-identity-admins zeabur-identity-elevated-admins -o json \
+kubectl get clusterrolebinding zeabur-identity-cluster-admins -o json \
   > "$BACKUP/admin-bindings.json"
+kubectl -n "$NS" get configmap zeabur-identity-settings -o json --ignore-not-found \
+  > "$BACKUP/settings.json"
 kubectl get crd users.identity.zeabur.com credentials.identity.zeabur.com \
   oauthclients.identity.zeabur.com grants.identity.zeabur.com \
   invitations.identity.zeabur.com -o json > "$BACKUP/crds.json"
@@ -397,7 +398,7 @@ Use this when you have a datastore backup. People keep their identity and passke
    ```
 
    Everyone is signed out. Tokens already issued still work until they expire, because they are
-   self-contained: by default 10 minutes, or 5 for admin tokens, unless you changed the limits.
+   self-contained: by default 10 minutes, or 5 for admin accounts, unless you changed the limits.
 6. **Restore the rest:** configuration Secrets, app client secrets, public TLS, routes and
    kube-apiserver's authentication file. Run `zeabur-identityctl kube-config` with the original
    issuer: it has cert-manager issue the internal certificate from the restored CA, for the
@@ -793,6 +794,42 @@ get an old version to start.
 
 Afterwards, check the image, readiness and logs, sign in fresh, and check normal and admin access
 and your emergency access. Write down what you restored and what was lost.
+
+### From elevation to admin accounts
+
+Versions up to v0.0.1 gave admin rights through elevation: an `elevate` scope, `elevatedGroups`
+on users and `allowElevation` on clients. Admin accounts replace all of it. After you upgrade:
+
+1. **Make your admins admin accounts.** Every user that had `groups: [admins]` or
+   `elevatedGroups` and should keep admin rights needs `accountType: Admin`, and `admins` must
+   leave `groups`. This command does both:
+
+   ```sh
+   zeabur-identityctl account-type alice admin
+   ```
+
+   The CRD now refuses `admins` in `groups`, so a later edit to such a user fails until you do
+   this. Admin accounts sign in with a passkey only: their linked GitHub and Google accounts stop
+   working.
+2. **Replace the cluster bindings.** The old read-only binding and the elevated binding are gone;
+   `zeabur:admins` is now bound to `cluster-admin` by `zeabur-identity-cluster-admins`. The
+   upgrade above applies the new binding. If you skipped it, apply the RBAC objects without the
+   empty signing-key Secret. Then delete the old bindings:
+
+   ```sh
+   zeabur-identityctl rbac | jq '.items |= map(select(.kind != "Secret"))' \
+     | kubectl apply --server-side -f -
+   kubectl delete clusterrolebinding zeabur-identity-admins zeabur-identity-elevated-admins
+   ```
+
+   Regular accounts no longer get the `view` role. Bind what they need to their groups.
+3. **Regenerate kube-apiserver's configuration** with `zeabur-identityctl kube-config` and install
+   it as in [Get started](get-started.md#5-let-kube-apiserver-trust-zeabur-identity). The rule for elevated groups
+   is gone.
+4. **Remove the admin `kubectl` context** (`zeabur-identity-k3s-admin` in Get started), its user
+   entry with `--oidc-extra-scope=elevate`, and `~/.kube/cache/oidc-login-elevated`.
+5. **Clean up clients.** The `allowElevation` field of `OAuthClient` is no longer known. Remove it
+   from manifests you keep in Git.
 
 ## Practise before you need it
 

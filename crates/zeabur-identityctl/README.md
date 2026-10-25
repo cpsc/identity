@@ -19,7 +19,7 @@ Replace the example URL with your own issuer. `zeabur-identityctl` reads `ZEABUR
 
 - `zeabur-identityctl crds`: the custom resource definitions as a Kubernetes `List`, for
   `kubectl apply --server-side -f -`.
-- `zeabur-identityctl rbac`: the namespace, service account, `Role`, `RoleBinding`, the admin bindings and
+- `zeabur-identityctl rbac`: the namespace, service account, `Role`, `RoleBinding`, the admin binding and
   the empty key Secret.
 - `zeabur-identityctl manifests --image <ref>`: everything `rbac` prints plus the Service
   and the single-replica Deployment.
@@ -27,11 +27,13 @@ Replace the example URL with your own issuer. `zeabur-identityctl` reads `ZEABUR
   internal listener's certificate if needed (the CA key is discarded), prints the kube-apiserver
   `AuthenticationConfiguration` on stdout and how to install it on stderr. `k3s` covers K3s/RKE2.
 - `zeabur-identityctl setup-link [--username admin] [--reset]`: a one-time link that
-  enrols a passkey for the first admin (group `admins`, elevated group `admins`), or recovers
+  enrols a passkey for the first admin (created as an admin account, with no groups), or recovers
   the account with `--reset`, which first deletes the user's pending invitations, passkeys and
   sessions. It expires after 60 minutes by default.
-- `zeabur-identityctl invite --username <name>`: creates the `User` if needed and a
+- `zeabur-identityctl invite --username <name> [--admin]`: creates the `User` if needed and a
   one-time enrolment link (7 days by default), printed for you to send.
+- `zeabur-identityctl account-type <name> <admin|regular>`: changes a user's account type and
+  removes `admins` from its groups. The change applies at the user's next sign-in or refresh.
 - `zeabur-identityctl client create <client-id> --type <public|confidential> --redirect-uri <uri>`:
   prints an `OAuthClient` after checking it against the same rules as the CRD schema. A
   confidential client gets a generated 256-bit secret, printed once on stderr; the object holds
@@ -48,26 +50,24 @@ The server must accept invitations: enable `zeabur-identity --invitations` or se
 
 ```sh
 zeabur-identityctl invite --username alice --display-name 'Alice' \
-  --group developers --elevated-group operators --valid-for 1d
+  --group developers --valid-for 1d
 ```
 
-`--group` and `--elevated-group` are repeatable. Together with `--display-name`, they apply
-**only when creating a new user**; inviting an existing user does not change their name or
-groups. Edit that user's `User` resource to change those fields. Ordinary groups appear to
-Kubernetes as `zeabur:<group>`; elevated groups appear as `zeabur:elevated:<group>` only
-after a passkey sign-in requesting the `elevate` scope. `--valid-for` controls how long the
-link can be redeemed (default `7d`). Send the printed link privately.
+`--group` is repeatable. Together with `--display-name` and `--admin`, it applies **only when
+creating a new user**; inviting an existing user does not change their name, groups or account
+type. Edit that user's `User` resource, or use `account-type`, to change those fields. Groups
+appear to Kubernetes as `zeabur:<group>`. `--admin` makes the new user an admin account: it
+signs in with a passkey only, and its tokens carry `zeabur:admins`. `--valid-for` controls how
+long the link can be redeemed (default `7d`). Send the printed link privately.
 
 ### Configure token limits and the internal certificate
 
-`kube-config` generates a maximum accepted token lifetime of `1h` and an elevated-token
-maximum of `5m`. If the server's `--elevated-token-lifetime` is raised above its `5m` default,
-set `--max-elevated-token-lifetime` to match when generating the configuration, then install
-the updated configuration on kube-apiserver. For example, for a server issuing 10-minute
-elevated tokens:
+`kube-config` generates a maximum accepted token lifetime of `1h` (`--max-token-lifetime`).
+The server issues tokens of at most 1 hour, so the default accepts all of them. A lower limit
+makes kube-apiserver refuse longer tokens:
 
 ```sh
-zeabur-identityctl kube-config --distro k3s --max-elevated-token-lifetime 10m
+zeabur-identityctl kube-config --distro k3s --max-token-lifetime 15m
 ```
 
 The default internal discovery mode needs [cert-manager](https://cert-manager.io/docs/).
@@ -89,9 +89,9 @@ Depends on `zeabur-identity-core` and `zeabur-identity-k8s`. Nothing depends on 
 
 ## Key properties
 
-- **Least privilege by default.** The installed bindings give `zeabur:admins` the built-in
-  `view` role and `cluster-admin` only to `zeabur:elevated:admins`, which appears only in short
-  tokens issued right after a passkey sign-in.
+- **Admin rights only for admin accounts.** The installed binding gives `cluster-admin` to
+  `zeabur:admins`, which only accounts with `accountType: Admin` carry. Other groups get no
+  rights until you bind them.
 - **Secrets stay hashed.** Setup and invitation tokens and client secrets are 256-bit random
   values; only their SHA-256 is written to the cluster, and a link carries its token in the URL
   fragment.

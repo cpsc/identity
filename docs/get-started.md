@@ -420,11 +420,10 @@ cert-manager renews the internal certificate by itself. See
 ## 6. Register kubectl and create the first passkey
 
 Every application that signs in through Zeabur Identity is registered as a client. Register `kubectl`
-(through kubelogin, which receives the sign-in result on `127.0.0.1`). `--allow-elevation`
-lets this client ask for admin rights:
+(through kubelogin, which receives the sign-in result on `127.0.0.1`):
 
 ```sh
-zeabur-identityctl client create kubectl --type public --allow-elevation \
+zeabur-identityctl client create kubectl --type public \
   --redirect-uri http://127.0.0.1:8000/ --audience kubernetes | kubectl apply -f -
 ```
 
@@ -433,6 +432,10 @@ Then get a one-time link for the first admin:
 ```sh
 zeabur-identityctl setup-link --username admin
 ```
+
+This creates the user `admin` as an **admin account**: it signs in with a passkey only, and
+Kubernetes gives it full rights (`cluster-admin`). See
+[Admin accounts](managing-users.md#admin-accounts).
 
 Open the printed link in the browser on your computer and create a passkey. The link works
 once and expires after 60 minutes; run the command again if you need a new one.
@@ -446,11 +449,8 @@ it talks to the right API server.
 CA=$(ssh "$SERVER" "grep certificate-authority-data ~/.kube/config | awk '{print \$2}'")
 ```
 
-Then write a kubeconfig with two contexts:
-
-- `zeabur-identity-k3s` for everyday work: read-only by default, and renews itself quietly;
-- `zeabur-identity-k3s-admin` for changes: asks for your passkey every time, and keeps its tokens apart
-  from the everyday ones.
+Then write a kubeconfig. kubelogin signs you in once and then renews the token quietly with a
+refresh token, until the session ends:
 
 ```sh
 mkdir -p ~/.kube
@@ -475,23 +475,8 @@ users:
         --oidc-use-access-token,
         --listen-address=127.0.0.1:8000,
         --oidc-redirect-url=http://127.0.0.1:8000/]
-- name: passkey-elevated
-  user:
-    exec:
-      apiVersion: client.authentication.k8s.io/v1
-      interactiveMode: IfAvailable
-      command: kubectl
-      args: [oidc-login, get-token,
-        --oidc-issuer-url=https://identity.example.test,
-        --oidc-client-id=kubectl,
-        --oidc-use-access-token,
-        --oidc-extra-scope=elevate,
-        --token-cache-dir=~/.kube/cache/oidc-login-elevated,
-        --listen-address=127.0.0.1:8000,
-        --oidc-redirect-url=http://127.0.0.1:8000/]
 contexts:
 - {name: zeabur-identity-k3s, context: {cluster: zeabur-identity-k3s, user: passkey}}
-- {name: zeabur-identity-k3s-admin, context: {cluster: zeabur-identity-k3s, user: passkey-elevated}}
 current-context: zeabur-identity-k3s
 EOF
 ```
@@ -500,7 +485,7 @@ Krew and Nix install kubelogin as a `kubectl` plugin, so the file works as writt
 installed it with Homebrew, set `command: kubelogin` and drop `oidc-login` from `args`.
 
 With WSL, kubelogin runs inside Linux and does not see the CA that the Windows mkcert trusted.
-Add the CA to both `args` lists, using the path from the WSL check in step 4:
+Add the CA to `args`, using the path from the WSL check in step 4:
 
 ```sh
 wslpath "$(mkcert.exe -CAROOT | tr -d '\r')"   # e.g. /mnt/c/Users/you/AppData/Local/mkcert
@@ -517,27 +502,28 @@ address in your browser, and the sign-in continues as usual.
 Keep `--oidc-use-access-token`: kube-apiserver accepts only Zeabur Identity's access tokens, not ID
 tokens.
 
+kubelogin keeps the refresh token in `~/.kube/cache/oidc-login`. To keep it in the system
+keychain instead, add `--token-cache-storage=keyring`. With `--token-cache-storage=none`,
+kubelogin keeps nothing, and each `kubectl` command opens the sign-in page.
+
 ## 8. Try it
 
 ```sh
 export KUBECONFIG=~/.kube/zeabur-identity-k3s.yaml
 kubectl auth whoami                      # opens the browser; user zeabur:admin, group zeabur:admins
-kubectl get pods -A                      # allowed: zeabur:admins has the built-in view role
+kubectl get pods -A                      # allowed: zeabur:admins is bound to cluster-admin
 kubectl -n default create configmap zeabur-identity-permission-check --from-literal=check=ok
-# Forbidden: the everyday context is read-only.
-kubectl --context zeabur-identity-k3s-admin -n default create configmap zeabur-identity-permission-check --from-literal=check=ok
-# Asks for your passkey again, then creates the ConfigMap.
-kubectl --context zeabur-identity-k3s-admin auth whoami
-# Includes zeabur:elevated:admins.
-kubectl --context zeabur-identity-k3s-admin -n default delete configmap zeabur-identity-permission-check
+kubectl -n default delete configmap zeabur-identity-permission-check
 ```
 
 What just happened:
 
-- **Everyday tokens** last 10 minutes and renew without a prompt. You sign in again 12 hours
-  after the first sign-in, or after 4 hours without using `kubectl`.
-- **Admin tokens** last at most 5 minutes and never renew. When one expires, the admin context
-  asks for your passkey again.
+- **Admin tokens** last 5 minutes and renew without a prompt. You sign in again 12 hours after
+  the first sign-in, or after an hour without using `kubectl` (15 minutes if several teams share
+  the cluster). Regular accounts' tokens last 10 minutes. See
+  [Sessions](managing-users.md#sessions).
+- **Use the admin account for admin work only.** For everyday work, invite yourself a regular
+  account and bind the rights you need to its groups; see [Manage users](managing-users.md).
 - **Each token is traceable.** `kubectl auth whoami` shows `identity.zeabur.com/jti` and
   `identity.zeabur.com/client-id`. They also appear in Kubernetes audit events, so each request maps to one sign-in.
 - **People, passkeys and sessions are Kubernetes objects** in `zeabur-identity`: a passkey is a
@@ -596,5 +582,5 @@ Then, on your computer:
 
 ```sh
 rm ~/.kube/zeabur-identity-k3s.yaml
-rm -rf ~/.kube/cache/oidc-login ~/.kube/cache/oidc-login-elevated
+rm -rf ~/.kube/cache/oidc-login
 ```

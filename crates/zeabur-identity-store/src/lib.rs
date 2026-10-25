@@ -7,8 +7,10 @@ use std::sync::{Mutex, PoisonError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use zeabur_identity_core::account::{AccountType, Settings};
 use zeabur_identity_core::clock::UnixTime;
 use zeabur_identity_core::crypto::ct_eq;
+use zeabur_identity_core::protocol::ADMIN_GROUP;
 
 /// Client type (RFC 6749 §2.1).
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, JsonSchema)]
@@ -58,9 +60,6 @@ pub struct Client {
     pub secret_hash: Option<String>,
     /// Algorithm for this client's ID tokens.
     pub id_token_alg: zeabur_identity_keys::Algorithm,
-    /// Whether the client may request the `elevate` scope. Off unless the administrator turns it
-    /// on, so signing users in never implies obtaining their elevated groups.
-    pub allow_elevation: bool,
     /// Where people open the application. The sign-in page links to it.
     pub home_url: Option<String>,
 }
@@ -121,9 +120,29 @@ pub struct User {
     pub groups: Vec<String>,
     /// Disabled users get no tokens.
     pub disabled: bool,
-    /// Groups the user may take on after a fresh passkey sign-in. They appear only as
-    /// `elevated:<group>` in short, non-refreshable tokens, never in refreshed ones.
-    pub elevated_groups: Vec<String>,
+    /// Admin or regular. It decides how the user may sign in, how long tokens last, and whether
+    /// tokens carry [`ADMIN_GROUP`].
+    pub account_type: AccountType,
+}
+
+impl User {
+    /// The groups tokens carry: [`User::groups`] without
+    /// [`ADMIN_GROUP`], then that group if the user
+    /// is an admin account. Only the account type decides who holds `cluster-admin`.
+    #[must_use]
+    pub fn token_groups(&self) -> Vec<String> {
+        let mut groups: Vec<String> = self
+            .groups
+            .iter()
+            .filter(|group| *group != ADMIN_GROUP)
+            .cloned()
+            .collect();
+        match self.account_type {
+            AccountType::Admin => groups.push(ADMIN_GROUP.to_owned()),
+            AccountType::Regular => {}
+        }
+        groups
+    }
 }
 
 /// Read access to clients and users.
@@ -146,6 +165,9 @@ pub trait Directory: Send + Sync + 'static {
     /// The applications the sign-in page offers to open (see [`apps`]), from a local index.
     /// Anyone can load the page, so it reads no backend. Nothing here is authorization data.
     fn apps(&self) -> Vec<App>;
+    /// The install-wide account settings, read from storage on each call. They decide who may
+    /// sign in, so a cache could keep a revoked method working.
+    fn settings(&self) -> impl Future<Output = Result<Settings, StoreError>> + Send;
 }
 
 /// A refresh-token family to create.
@@ -181,6 +203,9 @@ pub struct NewGrant {
     pub credential: Option<String>,
     /// Whether the authenticator verified the user (WebAuthn UV) at sign-in.
     pub user_verified: bool,
+    /// Whether the user signed in with a passkey whose authenticator reported BE unset. A
+    /// refresh checks it again when AAL3 is on for admin accounts.
+    pub device_bound: bool,
 }
 
 /// One authentication of a session: at sign-in, or a later re-authentication.
@@ -355,6 +380,7 @@ pub fn rotated(grant: &Grant, next_hash: &str, idle_expires_at: UnixTime) -> Gra
 pub struct MemoryDirectory {
     clients: Mutex<HashMap<String, Client>>,
     users: Mutex<HashMap<String, User>>,
+    settings: Mutex<Settings>,
 }
 
 impl MemoryDirectory {
@@ -368,6 +394,11 @@ impl MemoryDirectory {
     pub fn put_user(&self, user: User) {
         let mut users = self.users.lock().unwrap_or_else(PoisonError::into_inner);
         users.insert(user.name.clone(), user);
+    }
+
+    /// Replaces the account settings.
+    pub fn put_settings(&self, settings: Settings) {
+        *self.settings.lock().unwrap_or_else(PoisonError::into_inner) = settings;
     }
 
     /// Removes a user.
@@ -412,6 +443,13 @@ impl Directory for MemoryDirectory {
     fn apps(&self) -> Vec<App> {
         let clients = self.clients.lock().unwrap_or_else(PoisonError::into_inner);
         apps(clients.values())
+    }
+
+    fn settings(&self) -> impl Future<Output = Result<Settings, StoreError>> + Send {
+        future::ready(Ok(*self
+            .settings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)))
     }
 }
 
@@ -1121,9 +1159,22 @@ mod tests {
             audiences: vec![],
             secret_hash: None,
             id_token_alg: zeabur_identity_keys::Algorithm::Es256,
-            allow_elevation: false,
             home_url: home_url.map(Into::into),
         }
+    }
+
+    #[test]
+    fn only_admin_accounts_carry_the_admin_group() {
+        let user = |account_type| User {
+            groups: vec!["dev".into(), ADMIN_GROUP.into()],
+            account_type,
+            ..User::default()
+        };
+        assert_eq!(user(AccountType::Regular).token_groups(), ["dev"]);
+        assert_eq!(
+            user(AccountType::Admin).token_groups(),
+            ["dev", ADMIN_GROUP]
+        );
     }
 
     #[test]

@@ -27,14 +27,14 @@ Keep tokens, private keys and setup or invitation links out of the record.
 - [ ] Install kube-apiserver's authentication configuration and wait for its successful reload.
 - [ ] Create the first admin's setup link. Open it in the browser and create a passkey.
 - [ ] Sign in through kubelogin. `kubectl auth whoami` should show `zeabur:admin` and `zeabur:admins`.
-- [ ] Try the guide's ConfigMap write with the everyday context. Expect `Forbidden`.
-- [ ] Repeat with the admin context. After a fresh passkey sign-in, expect the write to succeed and `whoami` to include `zeabur:elevated:admins`.
+- [ ] Try the guide's ConfigMap write and delete. Expect both to succeed without another sign-in.
 - [ ] Check admin-token expiry using the steps below.
+- [ ] Wait more than five minutes, then run `kubectl auth whoami` again. Expect it to succeed without the browser: kubelogin renews the token with its refresh token.
 
 ## Check the five-minute admin token
 
 Use the computer's kubeconfig from the guide. Install `jq` for this check. These commands
-save one admin token in a private temporary directory so every request uses that same token:
+save one admin account's token in a private temporary directory so every request uses that same token:
 
 ```sh
 umask 077
@@ -43,11 +43,10 @@ kubectl oidc-login get-token \
   --oidc-issuer-url=https://identity.example.test \
   --oidc-client-id=kubectl \
   --oidc-use-access-token \
-  --oidc-extra-scope=elevate \
   --token-cache-dir="$work/cache" \
   --listen-address=127.0.0.1:8000 \
   --oidc-redirect-url=http://127.0.0.1:8000/ > "$work/credential.json"
-kubectl --context zeabur-identity-k3s-admin config view --raw --minify -o json |
+kubectl config view --raw --minify -o json |
   jq --slurpfile credential "$work/credential.json" '
     .users = [{name: "fixed-admin", user: {token: $credential[0].status.token}}] |
     .contexts[0].context.user = "fixed-admin"
@@ -71,7 +70,7 @@ Wait until after that time, then repeat the request:
 kubectl --kubeconfig="$work/kubeconfig" auth whoami
 ```
 
-The first request should show the elevated group. The second should fail with
+The first request should show `zeabur:admins`. The second should fail with
 `Unauthorized`. Save the expiry time and request results, then remove the temporary files:
 
 ```sh
@@ -86,6 +85,7 @@ Use a test user such as `alice`, keeping the server's cluster-admin kubeconfig a
 - [ ] **Invitation:** invite Alice, open her link and create a passkey. Sign in as Alice and check her username and groups. Opening the used invitation again should fail.
 - [ ] **Disable:** set Alice's `disabled` field to `true`. Check that a fresh sign-in fails and her existing session cannot renew. Re-enable her before continuing.
 - [ ] **Sign out:** sign in as Alice, then delete her `Grant`. Check that the session cannot renew. Kubernetes still accepts an access token already issued until its expiry, up to ten minutes with the default settings.
+- [ ] **Account type:** run `zeabur-identityctl account-type alice admin`. Check that Alice's next sign-in includes `zeabur:admins` and, if GitHub or Google sign-in is set up, that signing in with it shows "Use a passkey for this account". Run `zeabur-identityctl account-type alice regular` before continuing.
 - [ ] **Lost passkey:** run `zeabur-identityctl setup-link --username alice --reset`. Check that the old passkey fails, pending invitations are removed and old sessions cannot renew. Open the new link, create a replacement passkey and sign in again.
 
 When checking session renewal, use the same session before and after the change. A new

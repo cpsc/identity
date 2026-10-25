@@ -546,7 +546,6 @@ mod tests {
             discovery: DiscoveryMode::Internal,
             audiences: vec!["kubernetes".into()],
             max_token_lifetime: Duration::from_hours(1),
-            max_elevated_token_lifetime: Duration::from_mins(5),
         };
         let configuration = kube_config::prepare(admin.clone(), &request).await.unwrap();
         write_authn(&authn_dir, &configuration);
@@ -566,7 +565,6 @@ mod tests {
                             audiences: vec!["kubernetes".into()],
                             secret_hash: None,
                             id_token_signing_alg: None,
-                            allow_elevation: client_id == "kubectl",
                             home_url: None,
                         },
                     ),
@@ -745,34 +743,48 @@ mod tests {
         );
         assert!(user["uid"].as_str().is_some_and(|uid| !uid.is_empty()));
 
-        // Least privilege: a normal token can read, not administer.
-        assert_eq!(
-            can_i(&as_user, &["list", "pods", "--all-namespaces"]),
-            "yes"
-        );
-        assert_eq!(can_i(&as_user, &["*", "*", "--all-namespaces"]), "no");
+        // An admin account acts with full rights, with no second sign-in.
+        assert_eq!(can_i(&as_user, &["*", "*", "--all-namespaces"]), "yes");
 
-        // Elevation: another passkey sign-in with `elevate` yields a 5-minute token, without a
-        // refresh token, in which the user is `zeabur:elevated:admins`, bound to cluster-admin.
-        let elevated = sign_in(&address, &mut device, "openid+elevate").await;
-        assert!(elevated.get("refresh_token").is_none(), "{elevated}");
-        assert_eq!(elevated["expires_in"], 300);
+        // A refresh needs no passkey, as kubelogin uses it. The token follows the account type
+        // at each refresh: as a regular account, the admin group and its rights are gone.
+        let set_type = |account_type: &'static str| {
+            let users = users.clone();
+            async move {
+                users
+                    .patch(
+                        "admin",
+                        &PatchParams::default(),
+                        &Patch::Merge(json!({"spec": {"accountType": account_type}})),
+                    )
+                    .await
+                    .unwrap();
+            }
+        };
+        set_type("Regular").await;
+        let regular = refresh(&address, &latest_refresh).await;
+        assert_eq!(regular.status, StatusCode::OK, "{:?}", regular.body);
+        let regular = regular.json();
+        let as_regular = token_kubeconfig(
+            &scratch,
+            "regular",
+            regular["access_token"].as_str().unwrap(),
+        );
+        assert_eq!(
+            can_i(&as_regular, &["list", "pods", "--all-namespaces"]),
+            "no"
+        );
+        set_type("Admin").await;
+        let refreshed = refresh(&address, regular["refresh_token"].as_str().unwrap()).await;
+        assert_eq!(refreshed.status, StatusCode::OK, "{:?}", refreshed.body);
+        let refreshed = refreshed.json();
         let as_admin = token_kubeconfig(
             &scratch,
-            "elevated",
-            elevated["access_token"].as_str().unwrap(),
-        );
-        let whoami = kubectl(&as_admin, &["auth", "whoami", "-o", "json"]).unwrap();
-        let groups =
-            &serde_json::from_str::<Value>(&whoami).unwrap()["status"]["userInfo"]["groups"];
-        assert!(
-            groups
-                .as_array()
-                .unwrap()
-                .contains(&json!("zeabur:elevated:admins")),
-            "{groups}"
+            "admin",
+            refreshed["access_token"].as_str().unwrap(),
         );
         assert_eq!(can_i(&as_admin, &["*", "*", "--all-namespaces"]), "yes");
+        let latest_refresh = refreshed["refresh_token"].as_str().unwrap().to_owned();
 
         // ID tokens are for the client, not for the cluster.
         let as_id_token = token_kubeconfig(&scratch, "id", id_token);
@@ -947,7 +959,7 @@ mod tests {
 
         // Clean up: forget the issuer, remove the namespace.
         write_authn(&authn_dir, EMPTY_AUTHN);
-        for file in [as_user, as_admin, as_id_token, as_rotated] {
+        for file in [as_user, as_regular, as_admin, as_id_token, as_rotated] {
             drop(std::fs::remove_file(file));
         }
         Api::<Namespace>::all(admin)

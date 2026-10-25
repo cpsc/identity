@@ -13,13 +13,30 @@
   until kube-apiserver loads the new configuration, about a minute.
 - The root CA's private key now lives in Secret `zeabur-identity-internal-ca`. Anyone who can read
   Secrets in Zeabur Identity's namespace can issue a certificate for the internal address.
+- Admin accounts replace elevation. A `User` with `accountType: Admin` signs in with a passkey
+  only, and its tokens carry `zeabur:admins`, bound to `cluster-admin` by the new
+  ClusterRoleBinding `zeabur-identity-cluster-admins`. `zeabur-identityctl setup-link` creates
+  the first user as an admin account. New commands: `zeabur-identityctl invite --admin` and
+  `zeabur-identityctl account-type <name> <admin|regular>`.
+- Sessions follow NIST SP 800-63B-4: regular accounts' tokens last 10 minutes, admin accounts'
+  5 minutes; sessions end after 1 hour idle (15 minutes for admins with several teams or AAL3)
+  and 12 hours after sign-in. New server options: `--refresh-idle`, `--refresh-absolute`,
+  `--admin-token-lifetime`, `--admin-refresh-idle`.
+- The ConfigMap `zeabur-identity-settings` holds install-wide settings: `teams`
+  (`single` or `multiple`) and `admin-aal3`, which limits admin accounts to device-bound
+  passkeys.
 
 ### Removed
 
 - `zeabur-identityctl kube-config --renew-certificate` and `--certificate-validity`. cert-manager
   renews the certificate. See [operations](docs/operations.md#internal-certificate) to replace
   the root CA.
-
+- Elevation: the `elevate` scope, `elevatedGroups` on users, `allowElevation` on clients
+  (`client create --allow-elevation`), the `can_elevate` claim, `--elevated-token-lifetime`,
+  `kube-config --max-elevated-token-lifetime` and `invite --elevated-group`. The read-only
+  `view` binding for `zeabur:admins` (`zeabur-identity-admins`) and the elevated binding
+  (`zeabur-identity-elevated-admins`) are gone. To upgrade, follow
+  [From elevation to admin accounts](docs/operations.md#from-elevation-to-admin-accounts).
 - `zeabur-identityctl kube-config --distro` no longer accepts `k0s`, `kubeadm` or `kubesolo`.
   Use `k3s` on K3s/RKE2 and `generic` elsewhere.
 - A new passkey without a name is no longer named after its authenticator or browser. The

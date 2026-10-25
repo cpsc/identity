@@ -41,11 +41,6 @@ async fn login<D: Directory, G: GrantStore, C: Clock>(
 ) -> Response {
     let lang = page_lang(query.as_deref(), &headers);
     let pending = pending(&server, &headers).await;
-    // Elevation needs a passkey, so upstream providers are not offered for it, and the page
-    // says that the application is asking for elevated access.
-    let elevated = pending
-        .as_ref()
-        .is_some_and(|(flow, _)| flow.request.is_elevated());
     // The page swaps the form for the app links once the request expires.
     let expires_in = pending.as_ref().map(|(flow, _)| {
         Duration::from_secs(
@@ -62,9 +57,8 @@ async fn login<D: Directory, G: GrantStore, C: Clock>(
     login_page(
         lang,
         client.zip(expires_in),
-        server.lifetimes.elevated_token.filter(|_| elevated),
         login_hint,
-        if elevated { &[] } else { &providers },
+        &providers,
         &links(&apps),
     )
 }

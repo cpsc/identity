@@ -204,7 +204,7 @@ COMMON: tuple[Pair, ...] = (
     Pair(name="alert description", kind=Kind.TEXT, fg=paint("text-secondary"), bg=ALERT,
          source="ds.html alert default, description text-secondary"),
     Pair(name="warning alert text", kind=Kind.TEXT, fg=paint("warn-strong"), bg=ALERT_WARN,
-         source="ds.html alert warn (login elevation notice), text-warn-strong"),
+         source="ds.html alert warn (account.html backup notice), text-warn-strong"),
     Pair(name="error alert text", kind=Kind.TEXT, fg=paint("fail-strong"), bg=ALERT_FAIL,
          source="ds.html alert destructive (account.html), text-fail-strong"),
     Pair(name="primary button text", kind=Kind.TEXT, fg=paint("#ffffff"), bg=PRIMARY_LIGHTEST,

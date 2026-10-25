@@ -29,7 +29,12 @@ const APPS: [AppLink<'static>; 2] = [
         url: "https://grafana.example.com/",
     },
 ];
-const REASONS: [(&str, ErrorReason, &str); 14] = [
+const REASONS: [(&str, ErrorReason, &str); 15] = [
+    (
+        "admin-needs-passkey",
+        ErrorReason::AdminNeedsPasskey,
+        "admin_needs_passkey (github)",
+    ),
     (
         "request-expired",
         ErrorReason::RequestExpired,
@@ -113,7 +118,6 @@ async fn index() -> Html<String> {
         "/login/request",
         "/login/ending",
         "/login/hint",
-        "/login/elevated",
         "/setup",
         "/setup#token=preview",
         "/linked",
@@ -139,20 +143,12 @@ const PENDING: Duration = Duration::from_mins(10);
 async fn login(Path(state): Path<String>, RawQuery(q): RawQuery, h: HeaderMap) -> Response {
     let lang = lang(q.as_deref(), &h);
     match state.as_str() {
-        "apps" => login_page(lang, None, None, None, &PROVIDERS, &APPS),
-        "request" => login_page(
-            lang,
-            Some(("Zeabur", PENDING)),
-            None,
-            None,
-            &PROVIDERS,
-            &APPS,
-        ),
+        "apps" => login_page(lang, None, None, &PROVIDERS, &APPS),
+        "request" => login_page(lang, Some(("Zeabur", PENDING)), None, &PROVIDERS, &APPS),
         // The request ends a few seconds after the page loads.
         "ending" => login_page(
             lang,
             Some(("Zeabur", Duration::from_secs(5))),
-            None,
             None,
             &PROVIDERS,
             &APPS,
@@ -160,17 +156,8 @@ async fn login(Path(state): Path<String>, RawQuery(q): RawQuery, h: HeaderMap) -
         "hint" => login_page(
             lang,
             Some(("Zeabur", PENDING)),
-            None,
             Some("admin"),
             &PROVIDERS,
-            &[],
-        ),
-        "elevated" => login_page(
-            lang,
-            Some(("Zeabur", PENDING)),
-            Some(Duration::from_mins(5)),
-            None,
-            &[],
             &[],
         ),
         _ => StatusCode::NOT_FOUND.into_response(),
@@ -268,7 +255,7 @@ async fn main() -> std::io::Result<()> {
         .route(
             "/login",
             get(|RawQuery(q): RawQuery, h: HeaderMap| async move {
-                login_page(lang(q.as_deref(), &h), None, None, None, &PROVIDERS, &[])
+                login_page(lang(q.as_deref(), &h), None, None, &PROVIDERS, &[])
             }),
         )
         .route("/login/{state}", get(login))

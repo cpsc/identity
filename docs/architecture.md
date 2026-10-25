@@ -11,10 +11,12 @@ Connect client (Argo CD, Grafana, Headlamp, …) can use the same issuer.
 
 - **No passwords.** Passkeys (WebAuthn, user verification required) are the primary credential;
   GitHub and Google accounts can be linked as alternatives for ordinary access.
-- **Least privilege by default.** A normal token carries ordinary groups. Administrative groups
-  (`zeabur:elevated:<group>`) exist only in a non-refreshable token, limited to five minutes by
-  default, issued right after a passkey sign-in that asks for elevation. kube-apiserver's
-  configuration enforces the lifetime and fresh-passkey requirements independently.
+- **Admin rights belong to admin accounts.** Only a `User` with `accountType: Admin` gets the
+  `zeabur:admins` group, bound to `cluster-admin`. An admin account signs in with a passkey
+  only, its tokens last five minutes by default, and its sessions can idle out sooner. With
+  the install-wide AAL3 setting it also needs a device-bound passkey. Regular accounts get only
+  the rights bound to their groups. Every session ends 12 hours after sign-in, and
+  kube-apiserver's configuration bounds every token's lifetime independently.
 - **No standing secrets in the issuer's hands.** Tokens are short-lived and audience-bound; only
   hashes of codes, refresh tokens and links are stored; signing keys rotate on a schedule. The
   service account cannot create Secrets, bindings or users.

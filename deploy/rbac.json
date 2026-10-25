@@ -163,6 +163,20 @@
           "apiGroups": [
             ""
           ],
+          "resourceNames": [
+            "zeabur-identity-settings"
+          ],
+          "resources": [
+            "configmaps"
+          ],
+          "verbs": [
+            "get"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
           "resources": [
             "events"
           ],
@@ -202,29 +216,7 @@
         "labels": {
           "app.kubernetes.io/managed-by": "zeabur-identity"
         },
-        "name": "zeabur-identity-admins"
-      },
-      "roleRef": {
-        "apiGroup": "rbac.authorization.k8s.io",
-        "kind": "ClusterRole",
-        "name": "view"
-      },
-      "subjects": [
-        {
-          "apiGroup": "rbac.authorization.k8s.io",
-          "kind": "Group",
-          "name": "zeabur:admins"
-        }
-      ]
-    },
-    {
-      "apiVersion": "rbac.authorization.k8s.io/v1",
-      "kind": "ClusterRoleBinding",
-      "metadata": {
-        "labels": {
-          "app.kubernetes.io/managed-by": "zeabur-identity"
-        },
-        "name": "zeabur-identity-elevated-admins"
+        "name": "zeabur-identity-cluster-admins"
       },
       "roleRef": {
         "apiGroup": "rbac.authorization.k8s.io",
@@ -235,7 +227,7 @@
         {
           "apiGroup": "rbac.authorization.k8s.io",
           "kind": "Group",
-          "name": "zeabur:elevated:admins"
+          "name": "zeabur:admins"
         }
       ]
     },

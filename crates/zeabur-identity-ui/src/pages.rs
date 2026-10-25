@@ -66,6 +66,8 @@ pub enum ErrorReason {
     AccountAlreadyLinked,
     /// The linked user is disabled or gone.
     UserUnavailable,
+    /// An admin account tried to sign in with, or link, a GitHub or Google account.
+    AdminNeedsPasskey,
     /// The enrolment link is invalid, used or expired.
     SetupLinkInvalid,
     /// Storage or another server-side step failed.
@@ -88,6 +90,7 @@ impl ErrorReason {
             Self::AccountNotLinked => m.err_account_not_linked,
             Self::AccountAlreadyLinked => m.err_account_already_linked,
             Self::UserUnavailable => m.err_user_unavailable,
+            Self::AdminNeedsPasskey => m.err_admin_passkey,
             Self::SetupLinkInvalid => m.err_setup_link,
             Self::ServerError => m.err_server,
             Self::Other => ErrorText {
@@ -111,6 +114,7 @@ impl ErrorReason {
             | Self::AccountNotLinked
             | Self::AccountAlreadyLinked
             | Self::UserUnavailable
+            | Self::AdminNeedsPasskey
             | Self::SetupLinkInvalid
             | Self::Other => None,
         }
@@ -128,7 +132,6 @@ struct LoginPage<'a> {
     /// Seconds left on the pending request.
     expires_in: Option<u64>,
     subtitle: String,
-    elevation_notice: Option<String>,
     login_hint: Option<&'a str>,
     providers: &'a [ProviderButton],
     apps: &'a [AppLink<'a>],
@@ -246,14 +249,10 @@ pub fn error_page(lang: Lang, reason: ErrorReason, detail: &str) -> Response {
 /// `request` is the pending request's client name and the time left on it. Without one the page
 /// explains that there is nothing to sign in to and offers `apps`; with one, it offers them only
 /// once the request has ended. `providers` adds "Continue with …" buttons.
-///
-/// `elevation` is the elevated token's lifetime when the request asks for one; the page then
-/// says so before the passkey prompt.
 #[must_use]
 pub fn login_page(
     lang: Lang,
     request: Option<(&str, Duration)>,
-    elevation: Option<Duration>,
     login_hint: Option<&str>,
     providers: &[ProviderButton],
     apps: &[AppLink<'_>],
@@ -264,14 +263,6 @@ pub fn login_page(
         || m.login_subtitle.to_owned(),
         |c| format!("{} {c}", m.login_continue_to),
     );
-    let elevation_notice = client.zip(elevation).map(|(client, lifetime)| {
-        // Whole minutes, rounded up, so the page never understates how long access lasts.
-        let minutes = lifetime.as_secs().div_ceil(60).max(1);
-        // `%minutes%` first, so a display name containing it is shown verbatim.
-        m.elevated_body
-            .replace("%minutes%", &minutes.to_string())
-            .replace("%app%", client)
-    });
     let page = LoginPage {
         lang,
         langs: &Lang::ALL,
@@ -280,7 +271,6 @@ pub fn login_page(
         client,
         expires_in: request.map(|(_, left)| left.as_secs()),
         subtitle,
-        elevation_notice,
         login_hint,
         providers,
         apps,

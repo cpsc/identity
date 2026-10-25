@@ -17,7 +17,7 @@
 //! - only `response_type=code` with `response_mode=query`;
 //! - PKCE S256 is required for every client, confidential ones included (RFC 9700 §2.1.1); `plain`
 //!   is refused, as in OAuth 2.1;
-//! - unknown scopes are ignored; `elevate` from a client not allowed to elevate is `invalid_scope`;
+//! - unknown scopes are ignored;
 //! - the access-token audience is one value from the client's allowlist: the RFC 8707 `resource` if
 //!   sent, otherwise the client's only audience, otherwise the client ID; an ambiguous or
 //!   disallowed resource is `invalid_target` (RFC 9068 §3);
@@ -55,14 +55,6 @@ use super::pkce;
 /// that are not understood by an implementation SHOULD be ignored").
 pub const SUPPORTED_SCOPES: [&str; 4] = ["openid", "profile", "groups", "offline_access"];
 
-/// Asks for a short-lived token carrying the user's elevated groups; understood only when
-/// elevation is enabled.
-///
-/// kube-apiserver never sends a step-up challenge (RFC 9470) and RBAC sees only users and
-/// groups, so privilege is expressed as extra groups in a separate token, decided when the token
-/// is minted. See [`crate::endpoints::ELEVATED_GROUP_PREFIX`].
-pub const ELEVATE_SCOPE: &str = "elevate";
-
 /// A validated authorization request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuthorizationRequest {
@@ -89,12 +81,6 @@ pub struct AuthorizationRequest {
 }
 
 impl AuthorizationRequest {
-    /// Whether the request asks for elevated groups.
-    #[must_use]
-    pub fn is_elevated(&self) -> bool {
-        self.scopes.iter().any(|s| s == ELEVATE_SCOPE)
-    }
-
     /// Whether an ID token is requested.
     #[must_use]
     pub fn is_openid(&self) -> bool {
@@ -147,9 +133,7 @@ fn loopback_match(registered: &str, requested: &str) -> bool {
 
 /// Validates an authorization request against its client.
 ///
-/// `client` is `None` when the `client_id` is unknown. The `elevate` scope is understood only if
-/// `elevation` is enabled, and ignored otherwise like any unknown scope; when it is understood,
-/// a client without [`Client::allow_elevation`] gets `invalid_scope`.
+/// `client` is `None` when the `client_id` is unknown.
 ///
 /// # Errors
 ///
@@ -162,7 +146,6 @@ fn loopback_match(registered: &str, requested: &str) -> bool {
 pub fn validate(
     params: &Params,
     client: Option<&Client>,
-    elevation: bool,
 ) -> Result<AuthorizationRequest, Rejection> {
     let local = |d| Rejection::Local(OAuthError::new(ErrorCode::InvalidRequest, d));
     let client = client.ok_or_else(|| local("The client_id is missing or not registered."))?;
@@ -236,17 +219,7 @@ pub fn validate(
 
     let mut scopes: Vec<String> = Vec::new();
     for scope in params.get("scope").unwrap_or_default().split(' ') {
-        let elevate = elevation && scope == ELEVATE_SCOPE;
-        // Refused rather than ignored: a client that expects elevation would otherwise get an
-        // ordinary token and fail later, far from the cause (RFC 6749 §4.1.2.1 `invalid_scope`).
-        if elevate && !client.allow_elevation {
-            return Err(reject(
-                ErrorCode::InvalidScope,
-                "This client is not allowed to request the elevate scope.",
-            ));
-        }
-        let known = SUPPORTED_SCOPES.contains(&scope) || elevate;
-        if known && !scopes.iter().any(|s| s == scope) {
+        if SUPPORTED_SCOPES.contains(&scope) && !scopes.iter().any(|s| s == scope) {
             scopes.push(scope.to_owned());
         }
     }
@@ -345,6 +318,8 @@ pub struct Authentication {
     pub credential: Option<String>,
     /// Whether the authenticator verified the user (WebAuthn UV).
     pub user_verified: bool,
+    /// Whether the user signed in with a passkey whose authenticator reported BE unset.
+    pub device_bound: bool,
 }
 
 /// Builds the redirect for a successful or failed response, with `iss` (RFC 9207).
@@ -387,7 +362,6 @@ mod tests {
             audiences: audiences.iter().map(|a| (*a).into()).collect(),
             secret_hash: None,
             id_token_alg: zeabur_identity_keys::Algorithm::Es256,
-            allow_elevation: false,
             home_url: None,
         }
     }
@@ -411,7 +385,7 @@ mod tests {
 
     #[test]
     fn accepts_a_valid_request() {
-        let request = validate(&params(""), Some(&client(&["kubernetes"])), false).unwrap();
+        let request = validate(&params(""), Some(&client(&["kubernetes"]))).unwrap();
         assert_eq!(request.scopes, ["openid", "groups"]);
         assert_eq!(request.audience, "kubernetes");
         assert!(request.is_openid());
@@ -444,13 +418,13 @@ mod tests {
     #[test]
     fn untrusted_client_or_redirect_is_never_redirected() {
         assert!(matches!(
-            validate(&params(""), None, false),
+            validate(&params(""), None),
             Err(Rejection::Local(_))
         ));
         let p =
             Params::parse(b"client_id=kubectl&redirect_uri=https%3A%2F%2Fevil.example%2F").unwrap();
         assert!(matches!(
-            validate(&p, Some(&client(&[])), false),
+            validate(&p, Some(&client(&[]))),
             Err(Rejection::Local(_))
         ));
     }
@@ -459,11 +433,11 @@ mod tests {
     fn errors_are_redirected_with_state() {
         let c = client(&["kubernetes", "other"]);
         assert_eq!(
-            redirected(validate(&params("&resource=nope"), Some(&c), false)),
+            redirected(validate(&params("&resource=nope"), Some(&c))),
             ErrorCode::InvalidTarget
         );
         assert_eq!(
-            redirected(validate(&params(""), Some(&c), false)),
+            redirected(validate(&params(""), Some(&c))),
             ErrorCode::InvalidTarget,
             "ambiguous"
         );
@@ -471,33 +445,28 @@ mod tests {
             redirected(validate(
                 &params("&resource=kubernetes&resource=other"),
                 Some(&c),
-                false
             )),
             ErrorCode::InvalidTarget
         );
         let c = client(&[]);
         assert_eq!(
-            redirected(validate(&params("&prompt=none"), Some(&c), false)),
+            redirected(validate(&params("&prompt=none"), Some(&c))),
             ErrorCode::LoginRequired
         );
         assert_eq!(
-            redirected(validate(&params("&prompt=none%20login"), Some(&c), false)),
+            redirected(validate(&params("&prompt=none%20login"), Some(&c))),
             ErrorCode::InvalidRequest
         );
         assert_eq!(
-            redirected(validate(&params("&request=eyJ"), Some(&c), false)),
+            redirected(validate(&params("&request=eyJ"), Some(&c))),
             ErrorCode::RequestNotSupported
         );
         assert_eq!(
-            redirected(validate(&params("&max_age=-1"), Some(&c), false)),
+            redirected(validate(&params("&max_age=-1"), Some(&c))),
             ErrorCode::InvalidRequest
         );
         assert_eq!(
-            redirected(validate(
-                &params("&response_mode=fragment"),
-                Some(&c),
-                false
-            )),
+            redirected(validate(&params("&response_mode=fragment"), Some(&c),)),
             ErrorCode::InvalidRequest
         );
         let no_pkce = Params::parse(
@@ -505,7 +474,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            redirected(validate(&no_pkce, Some(&c), false)),
+            redirected(validate(&no_pkce, Some(&c))),
             ErrorCode::InvalidRequest
         );
         let plain = Params::parse(
@@ -513,7 +482,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            redirected(validate(&plain, Some(&c), false)),
+            redirected(validate(&plain, Some(&c))),
             ErrorCode::InvalidRequest
         );
         let token = Params::parse(
@@ -521,7 +490,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            redirected(validate(&token, Some(&c), false)),
+            redirected(validate(&token, Some(&c))),
             ErrorCode::UnsupportedResponseType
         );
     }
@@ -529,48 +498,19 @@ mod tests {
     #[test]
     fn audience_defaults() {
         assert_eq!(
-            validate(&params(""), Some(&client(&[])), false)
-                .unwrap()
-                .audience,
+            validate(&params(""), Some(&client(&[]))).unwrap().audience,
             "kubectl"
         );
         assert!(
-            validate(&params("&max_age=0"), Some(&client(&[])), false)
+            validate(&params("&max_age=0"), Some(&client(&[])))
                 .unwrap()
                 .force_login
         );
         assert!(
-            validate(&params("&prompt=login"), Some(&client(&[])), false)
+            validate(&params("&prompt=login"), Some(&client(&[])))
                 .unwrap()
                 .force_login
         );
-    }
-
-    #[test]
-    fn elevate_needs_the_feature_and_the_client_opt_in() {
-        let elevate = Params::parse(
-            format!("client_id=kubectl&redirect_uri=http%3A%2F%2F127.0.0.1%3A8000%2F&response_type=code&scope=openid%20elevate&state=s1&code_challenge={CHALLENGE}&code_challenge_method=S256").as_bytes(),
-        )
-        .unwrap();
-        let mut c = client(&[]);
-        // Elevation off: ignored like any unknown scope, whatever the client allows.
-        for allow in [false, true] {
-            c.allow_elevation = allow;
-            let request = validate(&elevate, Some(&c), false).unwrap();
-            assert!(!request.is_elevated());
-        }
-        // Elevation on: only a client that opted in may ask.
-        c.allow_elevation = false;
-        assert_eq!(
-            redirected(validate(&elevate, Some(&c), true)),
-            ErrorCode::InvalidScope
-        );
-        assert!(
-            validate(&params(""), Some(&c), true).is_ok(),
-            "requests without elevate are unaffected"
-        );
-        c.allow_elevation = true;
-        assert!(validate(&elevate, Some(&c), true).unwrap().is_elevated());
     }
 
     #[test]

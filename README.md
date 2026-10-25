@@ -18,17 +18,18 @@ token that lasts minutes, not years.
 https://github.com/user-attachments/assets/4c6e29f2-341c-4622-8cc5-4337e13e53b5
 
 *Signing in to [Aptakube](https://aptakube.com) with a passkey: the cluster opens for browsing,
-and restarting a deployment is refused with 403 until you ask for admin rights.*
+and restarting a deployment is refused with 403 for an account without that right.*
 
 ## Why Zeabur Identity
 
 - **Passkeys, not passwords.** Touch ID, Windows Hello or a security key. Teammates can also
   link a GitHub or Google account for everyday access.
-- **Admin rights only when you ask, for five minutes.** By default your everyday token can look
-  but not touch. Changing the cluster needs a fresh passkey tap and a token that expires on its own.
-- **No forever key on anyone's laptop.** Tokens last minutes and Kubernetes checks them itself;
-  admin tokens cannot be renewed at all. Revoke a person's sessions and their access ends when
-  the token in hand expires, within ten minutes.
+- **Admin rights belong to admin accounts.** Keep a separate admin account for cluster changes.
+  It signs in with a passkey only, its tokens last 5 minutes, and its sessions are shorter.
+  Everyday accounts get only the rights you bind to their groups.
+- **No forever key on anyone's laptop.** Tokens last minutes and Kubernetes checks them itself.
+  Every session ends 12 hours after sign-in. Revoke a person's sessions and their access ends
+  when the token in hand expires, within ten minutes.
 - **Runs inside the cluster it protects.** One small pod (about 20 MB), no database, no extra
   servers. Tested in CI on k3s; the same configuration covers RKE2, but installation there is
   unverified. OpenID Connect apps such as Argo CD or Grafana can use the same issuer.
@@ -37,22 +38,17 @@ and restarting a deployment is refused with 403 until you ask for admin rights.*
 
 <table>
   <tr>
-    <td width="33%"><picture>
+    <td width="50%"><picture>
       <source media="(prefers-color-scheme: dark)" srcset="docs/images/sign-in-dark.avif">
       <img alt="Sign-in page with a passkey button and Continue with GitHub" src="docs/images/sign-in-light.avif">
     </picture></td>
-    <td width="33%"><picture>
-      <source media="(prefers-color-scheme: dark)" srcset="docs/images/sign-in-elevated-dark.avif">
-      <img alt="Sign-in page for admin access: an elevated access notice for kubectl, valid for 5 minutes, and the passkey button only" src="docs/images/sign-in-elevated-light.avif">
-    </picture></td>
-    <td width="33%"><picture>
+    <td width="50%"><picture>
       <source media="(prefers-color-scheme: dark)" srcset="docs/images/setup-dark.avif">
       <img alt="Setup page for creating a passkey from a one-time link" src="docs/images/setup-light.avif">
     </picture></td>
   </tr>
   <tr>
     <td align="center"><b>Everyday sign-in</b><br>passkey or GitHub</td>
-    <td align="center"><b>Admin access</b><br>clearly flagged, passkey only, 5 minutes</td>
     <td align="center"><b>Joining</b><br>a one-time invitation link</td>
   </tr>
 </table>
@@ -64,8 +60,9 @@ and restarting a deployment is refused with 403 until you ask for admin rights.*
    quietly while you work.
 3. Kubernetes checks the token itself. Zeabur Identity never sits in the path of your requests.
 
-Need to change something? Use your admin context: one more passkey tap, five minutes of admin
-rights, then back to read-only.
+Need to change something? Sign in with your admin account. It uses a passkey only and has full
+rights at once, without a second sign-in. For stricter rules, such as security keys only for
+admins, see [Manage users](docs/managing-users.md#admin-accounts).
 
 ## Get started
 

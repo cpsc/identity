@@ -30,6 +30,7 @@ use webauthn_rs::prelude::{
     DiscoverableAuthentication, PasskeyRegistration, PublicKeyCredential,
     RegisterPublicKeyCredential, Uuid,
 };
+use zeabur_identity_core::account::Method;
 use zeabur_identity_core::clock::{Clock, UnixTime};
 use zeabur_identity_core::crypto::{CryptoError, ct_eq, hash_secret, hex, random, sha256};
 use zeabur_identity_oauth::Use;
@@ -43,12 +44,12 @@ use zeabur_identity_ui::pages::{
 };
 
 use crate::device::Requester;
-use crate::passkeys::backup_flags;
+use crate::passkeys::{authenticator, backup_flags};
 use crate::problem::Problem;
 use crate::{
     Accepted, BAD_REQUEST, CEREMONY_COOKIE, CEREMONY_EXPIRED, CEREMONY_LIFETIME, Ceremony,
-    PASSKEY_AMR, PASSKEY_FAILED, Refused, SignIn, Verified, accepted, check_request, clean_label,
-    clear_cookie, cookie, internal, json, new_passkey, open, parse, seal, set_cookie,
+    PASSKEY_AMR, PASSKEY_FAILED, Refused, SignIn, Verified, accepted, check_account, check_request,
+    clean_label, clear_cookie, cookie, internal, json, new_passkey, open, parse, seal, set_cookie,
     set_cookie_with, touch, verify_assertion,
 };
 
@@ -755,6 +756,7 @@ where
             subject: Some(verified.user.subject.clone()),
             credential: Some(verified.credential.clone()),
             user_verified: true,
+            device_bound: verified.device_bound,
         };
         match service
             .oauth
@@ -990,6 +992,13 @@ where
                 tracing::warn!(reason = PASSKEY_FAILED.kind, %error, "passkey registration verification failed");
                 PASSKEY_FAILED
             })?;
+        let device_bound = !authenticator(&request.credential).backup_eligible;
+        check_account(
+            &service.oauth.directory,
+            &account.user,
+            Method::Passkey { device_bound },
+        )
+        .await?;
         if service
             .used_ceremonies
             .first_use(&ceremony.id, ceremony.expires_at, "", now)

@@ -25,6 +25,7 @@ const errors: Record<string, string | undefined> = {
   conflict: messages.msgChanged,
   "not-found": messages.msgGone,
   "signed-out": messages.msgSignedOut,
+  "device-passkey-needed": messages.msgDevicePasskey,
 }
 
 /** Where a task reports progress and failure: the page header, or a passkey's row. */

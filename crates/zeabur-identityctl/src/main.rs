@@ -8,10 +8,11 @@ use std::process::ExitCode;
 
 use clap::Parser as _;
 use zeabur_identity_core::clock::Clock as _;
+use zeabur_identity_k8s::crd::user::AccountType;
 
 use crate::cli::{
-    Cli, ClientCommand, ClientCreateArgs, ClientKind, Command, InviteArgs, KubeConfigArgs,
-    SetupLinkArgs, SigningAlg,
+    AccountTypeArg, AccountTypeArgs, Cli, ClientCommand, ClientCreateArgs, ClientKind, Command,
+    InviteArgs, KubeConfigArgs, SetupLinkArgs, SigningAlg,
 };
 
 fn main() -> ExitCode {
@@ -32,6 +33,7 @@ fn main() -> ExitCode {
         )),
         Command::KubeConfig(args) => kube_config(&args),
         Command::Invite(args) => invite(&args),
+        Command::AccountType(args) => account_type(&args),
         Command::Client {
             command: ClientCommand::Create(args),
         } => client_create(args),
@@ -53,7 +55,6 @@ fn client_create(args: ClientCreateArgs) -> ExitCode {
         display_name: args.display_name,
         redirect_uris: args.redirect_uris,
         audiences: args.audiences,
-        allow_elevation: args.allow_elevation,
         home_url: args.home_url,
     };
     let registration = match zeabur_identity_k8s::clients::register(new, &args.namespace) {
@@ -81,7 +82,11 @@ fn invite(args: &InviteArgs) -> ExitCode {
         username: args.username.clone(),
         display_name: args.display_name.clone(),
         groups: args.groups.clone(),
-        elevated_groups: args.elevated_groups.clone(),
+        account_type: if args.admin {
+            AccountType::Admin
+        } else {
+            AccountType::Regular
+        },
     };
     let result = runtime.block_on(async {
         let client = kube::Client::try_default().await?;
@@ -100,7 +105,7 @@ fn invite(args: &InviteArgs) -> ExitCode {
         Ok(created) => {
             if !created.created_user {
                 output::stderr(&format!(
-                    "User {} already exists; this command left its groups unchanged.",
+                    "User {} already exists; this command left its groups and account type unchanged.",
                     args.username
                 ));
             }
@@ -110,6 +115,44 @@ fn invite(args: &InviteArgs) -> ExitCode {
                 args.username,
                 span(args.valid_for)
             ));
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            output::stderr(&format!("error: {error}"));
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn account_type(args: &AccountTypeArgs) -> ExitCode {
+    let Some(runtime) = current_thread_runtime() else {
+        return ExitCode::FAILURE;
+    };
+    let account_type = match args.account_type {
+        AccountTypeArg::Admin => AccountType::Admin,
+        AccountTypeArg::Regular => AccountType::Regular,
+    };
+    let result = runtime.block_on(async {
+        let client = kube::Client::try_default().await?;
+        zeabur_identity_k8s::users::set_account_type(
+            client,
+            &args.namespace,
+            &args.username,
+            account_type,
+        )
+        .await
+    });
+    match result {
+        Ok(_) => {
+            let note = match account_type {
+                AccountType::Admin => {
+                    "is now an admin account. It signs in with a passkey only; sessions from GitHub or Google end at their next refresh."
+                }
+                AccountType::Regular => {
+                    "is now a regular account. Its tokens lose the admins group at the next refresh, within 5 minutes."
+                }
+            };
+            output::stderr(&format!("{} {note}", args.username));
             ExitCode::SUCCESS
         }
         Err(error) => {
@@ -145,7 +188,6 @@ fn kube_config(args: &KubeConfigArgs) -> ExitCode {
         discovery: args.discovery,
         audiences: args.audiences.clone(),
         max_token_lifetime: args.max_token_lifetime,
-        max_elevated_token_lifetime: args.max_elevated_token_lifetime,
     };
     let result = runtime.block_on(async {
         let client = kube::Client::try_default().await?;

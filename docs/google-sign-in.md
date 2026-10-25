@@ -29,8 +29,9 @@ pod needs outbound HTTPS to `oauth2.googleapis.com` and `www.googleapis.com`.
   by email address, name or Workspace domain. Groups and display names come from the `User`.
 - **Zeabur Identity remembers Google's stable account ID** (`sub`), and asks Google for nothing else: no
   email address, no profile.
-- **Not for admin rights.** Even if the Google account uses two-factor authentication, admin
-  sign-ins always need a passkey.
+- **Not for admin accounts.** Even if the Google account uses two-factor authentication,
+  [admin accounts](managing-users.md#admin-accounts) sign in with a passkey only. They can
+  neither sign in with Google nor link a Google account.
 
 ## 1. Register a Google OAuth client
 
@@ -110,7 +111,7 @@ rm -rf ~/.kube/cache/oidc-login
 kubectl auth whoami          # choose "Continue with Google"
 ```
 
-The admin context still asks for a passkey.
+Use a regular account: an admin account, such as `admin` from Get started, refuses Google.
 
 ## Later changes
 
@@ -139,7 +140,8 @@ The admin context still asks for a passkey.
   organization policies; see [Google's audience rules][google-audience].
 - **"This account is not linked to any user here":** use an invitation to link the selected
   Google account; a matching email address or name does not suffice.
-- **"This sign-in needs a passkey":** the client requested elevation; use a passkey.
+- **"Use a passkey for this account":** the Google account belongs to an admin account, which
+  signs in with a passkey only.
 - **No Google button, or the pod cannot read the secret:** check both `--google-*` options,
   `--config-secret zeabur-identity-config`, the Secret's `google-client-secret` key and the file path. If
   you customised the pod's security context, keep the generated `fsGroup`.

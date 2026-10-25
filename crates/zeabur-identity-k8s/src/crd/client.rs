@@ -106,12 +106,6 @@ pub struct OAuthClientSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id_token_signing_alg: Option<zeabur_identity_keys::Algorithm>,
 
-    /// Whether this client may request the `elevate` scope, which yields a short token carrying
-    /// the user's `elevated:<group>` groups after a passkey sign-in. Off by default: turn it on
-    /// only for clients meant for administration, such as an admin `kubectl` context.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub allow_elevation: bool,
-
     /// Where people open this application, for example `https://zeabur.example.com/`. When set,
     /// the sign-in page links here, labelled with the display name, for anyone who reaches it with
     /// nothing to sign in to, and after someone sets up a passkey.

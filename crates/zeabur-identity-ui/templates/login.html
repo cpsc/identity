@@ -27,9 +27,6 @@
       {{ ui::app_links(apps, m) }}
     </div>
     <div id="request" class="flex flex-col gap-5">
-    {%- if let Some(notice) = elevation_notice %}
-    {% call ui::alert(m.elevated_title, "warn", "Key", id = "elevation", live = "") %}{{ notice }}{% endcall %}
-    {%- endif %}
     {#- Present and empty from first paint, so screen readers announce what the script writes. -#}
     <div id="status" role="status" aria-live="polite" class="empty:sr-only text-[0.8125rem] leading-5 text-secondary"></div>
     <div id="error" role="alert" class="empty:sr-only text-[0.8125rem] leading-5 text-pretty text-fail-strong"></div>
@@ -40,6 +37,7 @@
     <form id="sign-in" class="flex flex-col gap-5" novalidate
           data-msg-failed="{{ m.passkey_failed }}" data-msg-cancelled="{{ m.passkey_cancelled }}"
           data-msg-working="{{ m.working }}" data-msg-error="{{ m.generic_error }}"
+          data-msg-device-passkey="{{ m.device_passkey_needed }}"
           {%- if let Some(seconds) = expires_in %} data-expires-in="{{ seconds }}"{% endif %}>
       {#- Without a login hint the script folds this away when the browser offers passkeys itself. -#}
       <div id="username-field"{% if login_hint.is_none() %} data-collapsible{% endif %}>

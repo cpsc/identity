@@ -27,6 +27,11 @@ function invalid(): void {
   document.getElementById("upstream")?.setAttribute("hidden", "")
 }
 
+const failures: Record<string, string | undefined> = {
+  "passkey-failed": messages.msgFailed,
+  "device-passkey-needed": messages.msgDevicePasskey,
+}
+
 async function register(event: SubmitEvent): Promise<void> {
   event.preventDefault()
   if (!token) return
@@ -55,11 +60,7 @@ async function register(event: SubmitEvent): Promise<void> {
     if (!finished.ok) {
       const kind = problem(finished)
       if (kind === "setup-invalid") invalid()
-      else
-        say(
-          "error",
-          kind === "passkey-failed" ? (messages.msgFailed ?? "") : (messages.msgError ?? ""),
-        )
+      else say("error", failures[kind] ?? messages.msgError ?? "")
       return
     }
     // Done: forget the token in the address bar and history, show the result.
@@ -77,7 +78,11 @@ async function register(event: SubmitEvent): Promise<void> {
 
 if (form) {
   // Linking an upstream account works without passkey support.
-  if (token) upstreamButtons(() => ({ token }), messages, { "setup-invalid": invalid })
+  if (token)
+    upstreamButtons(() => ({ token }), messages, {
+      "setup-invalid": invalid,
+      "admin-needs-passkey": () => say("error", messages.msgAdminPasskey ?? ""),
+    })
   else document.getElementById("upstream")?.setAttribute("hidden", "")
   if (!supported()) {
     document.getElementById("unsupported")?.removeAttribute("hidden")

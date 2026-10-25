@@ -17,13 +17,9 @@ pub const USERINFO_PATH: &str = "/userinfo";
 /// RFC 8414 location for an issuer without a path (RFC 8414 §3).
 pub const OAUTH_METADATA_PATH: &str = "/.well-known/oauth-authorization-server";
 
-/// The scope that asks for a short-lived token carrying the user's elevated groups.
-pub const ELEVATE_SCOPE: &str = "elevate";
-/// Prefix of the group names elevation adds. Regular group names cannot contain `:`, so no
-/// group can spell an elevated one.
-pub const ELEVATED_GROUP_PREFIX: &str = "elevated:";
 /// Prefix kube-apiserver puts before every Zeabur Identity username and group.
 pub const IDENTITY_PREFIX: &str = "zeabur:";
-/// The group (and elevated group) of the first administrator. Installed RBAC lets
-/// `zeabur:admins` read the cluster and makes `zeabur:elevated:admins` cluster admin.
+/// The group every token of an admin account carries, and no other token. Installed RBAC makes
+/// `zeabur:admins` cluster admin. A regular account cannot hold this group (see
+/// [`crate::account`]).
 pub const ADMIN_GROUP: &str = "admins";

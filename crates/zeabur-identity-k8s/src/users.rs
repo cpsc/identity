@@ -1,11 +1,13 @@
-//! Owner references from a `User`'s dependents (credentials, grants, invitations) to the `User`.
+//! Account types, and owner references from a `User`'s dependents (credentials, grants,
+//! invitations) to the `User`.
 
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::OwnerReference;
 use kube::Resource;
-use kube::api::{Api, ObjectMeta};
+use kube::api::{Api, ObjectMeta, Patch, PatchParams};
+use zeabur_identity_core::protocol::ADMIN_GROUP;
 use zeabur_identity_store::StoreError;
 
-use crate::crd::user::User;
+use crate::crd::user::{AccountType, User};
 
 fn backend(error: &kube::Error) -> StoreError {
     StoreError(error.to_string())
@@ -60,4 +62,43 @@ pub(crate) fn user_owner_uid(meta: &ObjectMeta) -> Option<&str> {
         .map(|owner| owner.uid.as_str());
     let first = uids.next()?;
     uids.all(|uid| uid == first).then_some(first)
+}
+
+/// Sets the account type of the `User` named `name`, with the caller's credentials. Also removes
+/// the admin group from `spec.groups`, which only Zeabur Identity adds to tokens.
+///
+/// This is the same as
+/// `kubectl patch user <name> --type merge -p '{"spec":{"accountType":"Admin"}}'`. The next
+/// sign-in or refresh uses the new type; access tokens already issued stay valid until they
+/// expire.
+///
+/// # Errors
+///
+/// The Kubernetes error if the User cannot be read or patched.
+pub async fn set_account_type(
+    client: kube::Client,
+    namespace: &str,
+    name: &str,
+    account_type: AccountType,
+) -> Result<User, kube::Error> {
+    let users: Api<User> = Api::namespaced(client, namespace);
+    let user = users.get(name).await?;
+    let patch = if user.spec.groups.iter().any(|group| group == ADMIN_GROUP) {
+        let groups: Vec<&String> = user
+            .spec
+            .groups
+            .iter()
+            .filter(|group| *group != ADMIN_GROUP)
+            .collect();
+        // The resource version makes the patch fail, not lose a concurrent change of groups.
+        serde_json::json!({
+            "metadata": { "resourceVersion": user.metadata.resource_version },
+            "spec": { "accountType": account_type, "groups": groups },
+        })
+    } else {
+        serde_json::json!({ "spec": { "accountType": account_type } })
+    };
+    users
+        .patch(name, &PatchParams::default(), &Patch::Merge(patch))
+        .await
 }

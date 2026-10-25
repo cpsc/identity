@@ -37,7 +37,8 @@
     <form id="setup" class="flex flex-col gap-5" novalidate
           data-msg-failed="{{ m.passkey_failed }}" data-msg-cancelled="{{ m.passkey_cancelled }}"
           data-msg-working="{{ m.working }}" data-msg-error="{{ m.generic_error }}"
-          data-msg-invalid="{{ m.setup_invalid }}" data-msg-missing="{{ m.setup_missing_token }}">
+          data-msg-invalid="{{ m.setup_invalid }}" data-msg-missing="{{ m.setup_missing_token }}"
+          data-msg-device-passkey="{{ m.device_passkey_needed }}" data-msg-admin-passkey="{{ m.admin_passkey_only }}">
       {% call ui::field("label", m.setup_label, m.setup_label_hint) %}
       <input id="label" name="label" type="text" maxlength="64" class="{{ ds::input() }}" autocomplete="off"
              {{- ui::field_describedby("label", m.setup_label_hint) }}>

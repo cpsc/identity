@@ -30,6 +30,11 @@
                 "type": "string"
               },
               {
+                "jsonPath": ".spec.accountType",
+                "name": "Type",
+                "type": "string"
+              },
+              {
                 "jsonPath": ".spec.disabled",
                 "name": "Disabled",
                 "type": "boolean"
@@ -46,8 +51,17 @@
                 "description": "A person who can sign in to Zeabur Identity.",
                 "properties": {
                   "spec": {
-                    "description": "A person who can sign in. The admin (or GitOps) owns `spec`; Zeabur Identity only reads it.\n\nKubernetes sees the user as `zeabur:<username>` with groups `zeabur:<group>`.",
+                    "description": "A person who can sign in. The admin (or GitOps) owns `spec`; Zeabur Identity only reads it.\n\nKubernetes sees the user as `zeabur:<username>` with groups `zeabur:<group>`, plus\n`zeabur:admins` for an admin account.",
                     "properties": {
+                      "accountType": {
+                        "default": "Regular",
+                        "description": "`Admin` or `Regular` (the default). An admin account signs in only with a passkey, gets\nshorter sessions, and its tokens carry the group `zeabur:admins`, which is bound to\n`cluster-admin`.",
+                        "enum": [
+                          "Regular",
+                          "Admin"
+                        ],
+                        "type": "string"
+                      },
                       "disabled": {
                         "default": false,
                         "description": "A disabled user cannot sign in, and refresh tokens stop working at their next use.",
@@ -59,19 +73,8 @@
                         "nullable": true,
                         "type": "string"
                       },
-                      "elevatedGroups": {
-                        "description": "Groups the user can take on for a few minutes after a fresh passkey sign-in that asks for\nthe `elevate` scope, when elevation is enabled. Kubernetes sees each as\n`zeabur:elevated:<group>`; bind powerful roles only to those names.",
-                        "items": {
-                          "maxLength": 128,
-                          "minLength": 1,
-                          "pattern": "^[a-z0-9]([-a-z0-9._/]{0,126}[a-z0-9])?$",
-                          "type": "string"
-                        },
-                        "maxItems": 16,
-                        "type": "array"
-                      },
                       "groups": {
-                        "description": "Groups. Kubernetes sees each as `zeabur:<group>`. The characters exclude ':', so a group\ncan never spell a reserved or elevated name.",
+                        "description": "Groups. Kubernetes sees each as `zeabur:<group>`. The characters exclude ':', so a group\ncan never spell a reserved name. `admins` is refused: set `accountType: Admin` instead.",
                         "items": {
                           "maxLength": 128,
                           "minLength": 1,
@@ -79,7 +82,13 @@
                           "type": "string"
                         },
                         "maxItems": 64,
-                        "type": "array"
+                        "type": "array",
+                        "x-kubernetes-validations": [
+                          {
+                            "message": "the admins group comes from accountType: Admin; remove it from groups",
+                            "rule": "!self.exists(g, g == 'admins')"
+                          }
+                        ]
                       },
                       "username": {
                         "description": "Login name: a lowercase DNS subdomain of at most 63 characters. Kubernetes sees\n`zeabur:<username>`. The length limit keeps the username usable as the\n`identity.zeabur.com/user` label value on invitations, credentials and grants.\nUse the username as the object name so object-name uniqueness also prevents duplicate\nusernames. Immutable because RBAC bindings and audit logs refer to it.",
@@ -357,10 +366,6 @@
                   "spec": {
                     "description": "A registered OAuth 2.0 / OpenID Connect client. The object name is the `client_id`.\n\nAdmission rules reject redirect URIs that RFC 9700 §2.1 and OAuth 2.1 forbid, so a\nmistake in a GitOps repository fails at `kubectl apply`, not at login.",
                     "properties": {
-                      "allowElevation": {
-                        "description": "Whether this client may request the `elevate` scope, which yields a short token carrying\nthe user's `elevated:<group>` groups after a passkey sign-in. Off by default: turn it on\nonly for clients meant for administration, such as an admin `kubectl` context.",
-                        "type": "boolean"
-                      },
                       "audiences": {
                         "description": "Audiences this client may request tokens for (RFC 8707 resource indicators), for example\nthe `audiences` entry of the cluster's AuthenticationConfiguration.",
                         "items": {
@@ -541,6 +546,10 @@
                         "minLength": 1,
                         "nullable": true,
                         "type": "string"
+                      },
+                      "deviceBound": {
+                        "description": "Whether the user signed in with a device-bound passkey (BE unset).",
+                        "type": "boolean"
                       },
                       "expiresAt": {
                         "description": "Absolute expiry, in Unix seconds. The family cannot be refreshed after this.",

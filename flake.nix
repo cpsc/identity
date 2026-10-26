@@ -1,0 +1,133 @@
+{
+  description = "zeabur-identity development environment";
+
+  inputs = {
+    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1"; # unstable Nixpkgs
+    # Rust toolchains. The locked revision sets the nightly (overlays.default).
+    rust-overlay = {
+      url = "https://flakehub.com/f/oxalica/rust-overlay/0.1";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    # Compiler cache, built from source at a release tag.
+    kache = {
+      url = "github:kunobi-ninja/kache/v1.2.2";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.rust-overlay.follows = "rust-overlay";
+    };
+  };
+
+  outputs =
+    { self, ... }@inputs:
+
+    let
+      supportedSystems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "aarch64-darwin"
+      ];
+      forEachSupportedSystem =
+        f:
+        inputs.nixpkgs.lib.genAttrs supportedSystems (
+          system:
+          f {
+            inherit system;
+            pkgs = import inputs.nixpkgs {
+              inherit system;
+              overlays = [
+                inputs.rust-overlay.overlays.default
+                inputs.kache.overlays.kache
+                inputs.self.overlays.default
+              ];
+            };
+          }
+        );
+    in
+    {
+      overlays.default = final: prev: {
+        # The newest nightly in the locked rust-overlay that has all these components and targets.
+        rustToolchain = final.rust-bin.selectLatestNightlyWith (
+          toolchain:
+          toolchain.minimal.override {
+            extensions = [
+              "rustfmt"
+              "clippy"
+              "rust-src"
+              "rust-analyzer"
+            ];
+            targets = [
+              "x86_64-unknown-linux-musl"
+              "aarch64-unknown-linux-musl"
+            ];
+          }
+        );
+        # kache's own CI tests each release. Its 4,500 tests take 6 min here and some are timing-sensitive.
+        kache = prev.kache.overrideAttrs { doCheck = false; };
+      };
+
+      devShells = forEachSupportedSystem (
+        { pkgs, system }:
+        {
+          default = pkgs.mkShell {
+            packages = with pkgs; [
+              rustToolchain
+
+              # Quality and supply chain
+              cargo-deny
+              cargo-nextest
+              cargo-auditable
+              cargo-cyclonedx
+              kache
+              jq
+              shellcheck
+              actionlint
+              # Release signing, SBOM generation and registry transport; pinned by flake.lock.
+              cosign
+              syft
+              skopeo
+              curl
+              gh
+              binutils
+
+              # Sign-in page assets: bun installs the rest from ui/bun.lock.
+              bun
+              brotli
+              python3 # .claude/skills/zeabur-identity-ui/contrast.py
+
+              # Kubernetes integration tests
+              kind
+              k3d
+              kubectl
+
+              self.formatter.${system}
+            ];
+
+            env = {
+              # Compiler cache shared by every checkout and worktree; scripts/release-build.sh turns it off.
+              RUSTC_WRAPPER = "kache";
+              # Required by rust-analyzer
+              RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
+              # Mozilla's CA bundle (MPL-2.0), copied into the image for outgoing TLS to identity
+              # providers; pinned with nixpkgs.
+              ZEABUR_IDENTITY_CA_BUNDLE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+            }
+            // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
+              # Static musl builds of the host architecture: aws-lc-sys must be compiled against musl
+              # headers, not glibc ones (else `__isoc23_strtol`, `__memcpy_chk`... are undefined).
+              let
+                muslCc = pkgs.pkgsStatic.stdenv.cc;
+                bin = "${muslCc}/bin/${muslCc.targetPrefix}";
+                triple = "${pkgs.stdenv.hostPlatform.parsed.cpu.name}_unknown_linux_musl";
+              in
+              {
+                "CC_${triple}" = "${bin}cc";
+                "AR_${triple}" = "${bin}ar";
+                "CARGO_TARGET_${pkgs.lib.toUpper triple}_LINKER" = "${bin}cc";
+              }
+            );
+          };
+        }
+      );
+
+      formatter = forEachSupportedSystem ({ pkgs, ... }: pkgs.nixfmt);
+    };
+}

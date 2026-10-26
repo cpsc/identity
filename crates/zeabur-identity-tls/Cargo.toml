@@ -1,0 +1,24 @@
+[package]
+name = "zeabur-identity-tls"
+description = "Zeabur Identity: trust roots, certificate loading and a reloadable TLS listener"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+
+[lints]
+workspace = true
+
+[dependencies]
+axum.workspace = true
+rustls.workspace = true
+rustls-native-certs.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-rustls.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+zeabur-identity-test-support.workspace = true

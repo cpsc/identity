@@ -1,0 +1,70 @@
+{%- extends "base.html" -%}
+{%- import "ui.html" as ui -%}
+{%- import "icons.html" as icons -%}
+{%- import "ds.html" as ds -%}
+{%- import "upstream.html" as upstream -%}
+{%- block title %}{{ m.login_title }}{% endblock -%}
+{%- block head %}<script type="module" src="/assets/login.js?v={{ assets.login_js }}"></script>{% endblock -%}
+{%- block content %}
+{% call ui::card() %}
+  {{ ui::card_header(m.login_title, subtitle) }}
+  {% call ui::card_content() %}
+  <div class="flex flex-col gap-5">
+    {%- if client.is_none() %}
+    {%- if apps.is_empty() %}
+    {% call ui::alert(m.no_request_title, "default", "WarningCircle", live = "") %}{{ m.no_request_body }}{% endcall %}
+    {%- else %}
+    {% call ui::alert(m.no_request_title, "default", "WarningCircle", live = "") %}{{ m.no_request_apps_body }}{% endcall %}
+    {{ ui::app_links(apps, m) }}
+    {%- endif %}
+    <a href="/account" class="{{ ds::button("secondary", "lg") }} w-full">{{ icons::icon("Key") }}{{ m.manage_passkeys }}</a>
+    {%- else %}
+    {#- Shown by the script once the request has ended: signing in can then only fail. -#}
+    <div id="ended" hidden tabindex="-1" class="flex flex-col gap-5 outline-none">
+      {% call ui::alert(m.err_request_expired.title, "default", "WarningCircle", live = "") -%}
+      {{ m.err_request_expired.cause }} {% if apps.is_empty() %}{{ m.err_request_expired.next }}{% else %}{{ m.no_request_apps_body }}{% endif %}
+      {%- endcall %}
+      {{ ui::app_links(apps, m) }}
+    </div>
+    <div id="request" class="flex flex-col gap-5">
+    {#- Present and empty from first paint, so screen readers announce what the script writes. -#}
+    <div id="status" role="status" aria-live="polite" class="empty:sr-only text-[0.8125rem] leading-5 text-secondary"></div>
+    <div id="error" role="alert" class="empty:sr-only text-[0.8125rem] leading-5 text-pretty text-fail-strong"></div>
+    <div id="unsupported" hidden>
+      {% call ui::alert(m.passkey_unsupported_title, "default", "Key", live = "") %}{{ m.passkey_unsupported_body }}{% endcall %}
+    </div>
+    <noscript>{% call ui::alert(m.noscript_title, "default", "Key", live = "") %}{{ m.noscript_body }}{% endcall %}</noscript>
+    <form id="sign-in" class="flex flex-col gap-5" novalidate
+          data-msg-failed="{{ m.passkey_failed }}" data-msg-cancelled="{{ m.passkey_cancelled }}"
+          data-msg-working="{{ m.working }}" data-msg-error="{{ m.generic_error }}"
+          data-msg-device-passkey="{{ m.device_passkey_needed }}"
+          {%- if let Some(seconds) = expires_in %} data-expires-in="{{ seconds }}"{% endif %}>
+      {#- Without a login hint the script folds this away when the browser offers passkeys itself. -#}
+      <div id="username-field"{% if login_hint.is_none() %} data-collapsible{% endif %}>
+      {% call ui::field("username", m.login_username, m.login_username_hint) %}
+      <input id="username" name="username" type="text" class="{{ ds::input() }}"
+             autocomplete="username webauthn" autocapitalize="none" spellcheck="false"
+             value="{{ login_hint.unwrap_or_default() }}"
+             {{- ui::field_describedby("username", m.login_username_hint) }}>
+      {% endcall %}
+      </div>
+      <div class="flex flex-col gap-2">
+        <button type="submit" class="{{ ds::button("primary", "lg") }} w-full">{{ icons::icon("Fingerprint") }}{{ m.login_passkey }}</button>
+        {%- if login_hint.is_none() %}
+        <button type="button" id="use-username" hidden aria-controls="username-field"
+                class="inline-flex min-h-8 items-center self-center rounded-md px-2 text-[0.8125rem] leading-5 text-secondary underline-offset-4 hover:text-main hover:underline">{{ m.use_username }}</button>
+        {%- endif %}
+      </div>
+    </form>
+    {{ upstream::buttons(providers, m) }}
+    {% call ui::disclosure(m.lost_passkey_title, center = true) %}
+    <p>{{ m.lost_passkey_body }}</p>
+    {{ ui::command(reset_command) }}
+    <p>{{ m.lost_passkey_note }}</p>
+    {% endcall %}
+    </div>
+    {%- endif %}
+  </div>
+  {% endcall %}
+{% endcall %}
+{%- endblock %}

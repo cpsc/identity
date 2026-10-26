@@ -1,0 +1,44 @@
+[package]
+name = "zeabur-identity-k8s"
+description = "Zeabur Identity: Kubernetes custom resources, storage adapters, garbage collection, install manifests and kube-apiserver configuration"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+
+[lints]
+workspace = true
+
+[dependencies]
+zeabur-identity-core.workspace = true
+zeabur-identity-keys.workspace = true
+zeabur-identity-store.workspace = true
+zeabur-identity-tls.workspace = true
+base64.workspace = true
+clap.workspace = true
+futures-util.workspace = true
+k8s-openapi.workspace = true
+kube.workspace = true
+rustls.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+aws-lc-rs.workspace = true
+axum.workspace = true
+form_urlencoded.workspace = true
+http-body-util.workspace = true
+tower = { workspace = true, features = ["util"] }
+zeabur-identity-oauth.workspace = true
+zeabur-identity-test-support.workspace = true
+tokio-rustls.workspace = true
+rustls.workspace = true
+time.workspace = true
+proptest.workspace = true

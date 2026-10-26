@@ -1,0 +1,27 @@
+/* Built by scripts/build-ui.sh into crates/zeabur-identity-ui/assets, which are committed.
+   The font file is copied there from the design system. */
+@import "tailwindcss" source(none);
+@source "../../crates/zeabur-identity-ui/templates";
+@import "@zeabur/design-system/tokens.css";
+
+@custom-variant dark (@media (prefers-color-scheme: dark));
+:root {
+  color-scheme: light dark;
+}
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(/assets/Geist-Variable.woff2) format("woff2");
+}
+
+/* Fields show focus by their border, which forced colours override. */
+@media (forced-colors: active) {
+  :focus-visible,
+  :is(input, textarea, select):focus-visible {
+    outline: 2px solid CanvasText !important;
+    outline-offset: 2px;
+  }
+}

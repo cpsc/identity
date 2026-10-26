@@ -1,0 +1,37 @@
+[package]
+name = "zeabur-identity"
+description = "Passkey-first OpenID Connect issuer for Kubernetes: the server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+zeabur-identity-core.workspace = true
+zeabur-identity-keys.workspace = true
+zeabur-identity-store.workspace = true
+zeabur-identity-ui.workspace = true
+zeabur-identity-tls.workspace = true
+zeabur-identity-oauth.workspace = true
+zeabur-identity-signin.workspace = true
+zeabur-identity-k8s.workspace = true
+axum.workspace = true
+bytes.workspace = true
+clap.workspace = true
+k8s-openapi.workspace = true
+kube.workspace = true
+rustls.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tokio-rustls.workspace = true
+zeabur-identity-test-support.workspace = true

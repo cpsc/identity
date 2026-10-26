@@ -1,0 +1,50 @@
+# cargo-deny policy. Rationale: CONTRIBUTING.md, "Dependencies".
+
+[graph]
+# Check the dependency graph that ships in the container image.
+targets = ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+# Every ignore needs an id and the reason it is acceptable.
+ignore = [
+  { id = "RUSTSEC-2023-0071", reason = "rsa (Marvin) is reached only through webauthn-rs/crypto-glue, which verifies RS256 passkey signatures with public keys; Zeabur Identity's private-key RSA operations use aws-lc-rs. Re-check when crypto-glue leaves rsa 0.9." },
+  { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 (timing) is reached only through webauthn-rs/crypto-glue and elliptic-curve 0.13, which verify passkey signatures with public keys; no secret goes through it. 0.5 has no fixed release. Re-check when webauthn-rs moves to elliptic-curve 0.14." },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.93
+# OSI-approved licences only (SPDX `isOsiApproved`).
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-3-Clause",
+  "ISC",
+  "MIT",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Zlib",
+]
+unused-allowed-license = "allow"
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Workspace crates refer to each other by path and are never published.
+allow-wildcard-paths = true
+deny = [
+  { crate = "ring", reason = "aws-lc-rs is the only crypto backend for rustls and JOSE" },
+  { crate = "aws-lc-fips-sys", reason = "FIPS is not needed; it declares the non-OSI OpenSSL licence" },
+  { crate = "openssl", reason = "no system OpenSSL; rustls only" },
+  { crate = "openssl-sys", reason = "no system OpenSSL; rustls only" },
+  { crate = "native-tls", reason = "rustls only" },
+  { crate = "webpki-roots", reason = "CDLA-Permissive-2.0 is not OSI-approved; the image ships a CA bundle" },
+  { crate = "webpki-root-certs", reason = "CDLA-Permissive-2.0 is not OSI-approved" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

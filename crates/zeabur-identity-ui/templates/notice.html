@@ -1,0 +1,11 @@
+{%- extends "base.html" -%}
+{%- import "ui.html" as ui -%}
+{%- block title %}{{ title }}{% endblock -%}
+{%- block content %}
+{% call ui::card() %}
+  {{ ui::card_header(title, body) }}
+  {%- if !apps.is_empty() %}
+  {% call ui::card_content() %}{{ ui::app_links(apps, m) }}{% endcall %}
+  {%- endif %}
+{% endcall %}
+{%- endblock %}

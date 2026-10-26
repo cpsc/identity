@@ -1,0 +1,248 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "Namespace",
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/managed-by": "zeabur-identity"
+        },
+        "name": "zeabur-identity"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "automountServiceAccountToken": true,
+      "kind": "ServiceAccount",
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/managed-by": "zeabur-identity"
+        },
+        "name": "zeabur-identity",
+        "namespace": "zeabur-identity"
+      }
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "Role",
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/managed-by": "zeabur-identity"
+        },
+        "name": "zeabur-identity",
+        "namespace": "zeabur-identity"
+      },
+      "rules": [
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resourceNames": [
+            "zeabur-identity-signing-keys"
+          ],
+          "resources": [
+            "secrets"
+          ],
+          "verbs": [
+            "get",
+            "update"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resourceNames": [
+            "zeabur-identity-setup"
+          ],
+          "resources": [
+            "secrets"
+          ],
+          "verbs": [
+            "get",
+            "delete"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resourceNames": [
+            "zeabur-identity-internal-tls"
+          ],
+          "resources": [
+            "secrets"
+          ],
+          "verbs": [
+            "get"
+          ]
+        },
+        {
+          "apiGroups": [
+            "identity.zeabur.com"
+          ],
+          "resources": [
+            "users",
+            "credentials",
+            "oauthclients"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "identity.zeabur.com"
+          ],
+          "resources": [
+            "credentials"
+          ],
+          "verbs": [
+            "create",
+            "delete"
+          ]
+        },
+        {
+          "apiGroups": [
+            "identity.zeabur.com"
+          ],
+          "resources": [
+            "credentials/status"
+          ],
+          "verbs": [
+            "update",
+            "patch"
+          ]
+        },
+        {
+          "apiGroups": [
+            "identity.zeabur.com"
+          ],
+          "resources": [
+            "grants"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch",
+            "create",
+            "update",
+            "delete",
+            "deletecollection"
+          ]
+        },
+        {
+          "apiGroups": [
+            "identity.zeabur.com"
+          ],
+          "resources": [
+            "grants/status"
+          ],
+          "verbs": [
+            "update"
+          ]
+        },
+        {
+          "apiGroups": [
+            "identity.zeabur.com"
+          ],
+          "resources": [
+            "invitations"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch",
+            "delete"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resourceNames": [
+            "zeabur-identity-settings"
+          ],
+          "resources": [
+            "configmaps"
+          ],
+          "verbs": [
+            "get"
+          ]
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "events"
+          ],
+          "verbs": [
+            "create"
+          ]
+        }
+      ]
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "RoleBinding",
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/managed-by": "zeabur-identity"
+        },
+        "name": "zeabur-identity",
+        "namespace": "zeabur-identity"
+      },
+      "roleRef": {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": "Role",
+        "name": "zeabur-identity"
+      },
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "zeabur-identity",
+          "namespace": "zeabur-identity"
+        }
+      ]
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "ClusterRoleBinding",
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/managed-by": "zeabur-identity"
+        },
+        "name": "zeabur-identity-cluster-admins"
+      },
+      "roleRef": {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": "ClusterRole",
+        "name": "cluster-admin"
+      },
+      "subjects": [
+        {
+          "apiGroup": "rbac.authorization.k8s.io",
+          "kind": "Group",
+          "name": "zeabur:admins"
+        }
+      ]
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Secret",
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/managed-by": "zeabur-identity"
+        },
+        "name": "zeabur-identity-signing-keys",
+        "namespace": "zeabur-identity"
+      },
+      "type": "identity.zeabur.com/signing-keys"
+    }
+  ],
+  "kind": "List"
+}

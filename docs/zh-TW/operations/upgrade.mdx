@@ -1,18 +1,18 @@
 ---
 title: 升級與回復 Zeabur Identity
-description: 備份並記錄目前的部署，檢查版本差異後升級 Zeabur Identity，並依資料相容性回復到舊版或還原備份。
+description: 備份並記錄目前的部署，檢查版本差異後升級 Zeabur Identity，再依資料相容性切回舊版或還原備份。
 source: "59a539cb61a1"
 ---
 
-先備份並記錄目前的部署，再檢查版本差異、套用新版設定並驗證登入與權限。需要回復到舊版時，依資料相容性選擇切回舊映像檔或還原升級前的備份。
+先備份並記錄目前的部署，再檢查版本差異、套用新版設定，確認登入與權限正常。需要回復到舊版時，依資料相容性選擇切回舊映像檔或還原升級前的備份。
 
 ### 目前不保證的事
 
-Zeabur Identity 目前是 alpha，沒有升級與回復保證。資源版本仍是 `v1alpha1`，版本之間沒有轉換機制。在發行說明明確承諾前，不要假設任何方向的版本切換都能成功。記錄實際執行的完整 commit 與映像檔，不要只記錄會重複使用的標籤，例如 `zeabur-identity:dev`。
+Zeabur Identity 目前是 alpha，不保證能順利升級或回復。資源版本仍是 `v1alpha1`，版本之間沒有轉換機制。發行說明明確承諾前，不要假設升級或降版都能成功。記錄實際執行的完整 commit 與映像檔，不要只記錄會重複使用的 tag，例如 `zeabur-identity:dev`。
 
 `kubectl rollout undo` 只會回復 Pod 範本，不會回復 CRD、使用者、簽署金鑰、Secret、RBAC、Service、Ingress 或 kube-apiserver 的檔案。新版 Zeabur Identity 寫入資料後，不保證舊版能讀取。
 
-Zeabur Identity 執行單一副本，更新時會替換副本，不採滾動更新。升級會短暫中斷服務，當時正在登入的使用者必須重新登入。不要增加副本來掩蓋中斷。
+Zeabur Identity 只執行一個副本，更新時會替換這個副本，不採滾動更新。升級會短暫中斷服務，當時正在登入的使用者必須重新登入。不要增加副本來掩蓋中斷。
 
 ## 升級前
 
@@ -32,9 +32,9 @@ Zeabur Identity 執行單一副本，更新時會替換副本，不採滾動更�
 
 ### 記錄目前的部署
 
-記錄來源 commit、`zeabur-identityctl` 版本，以及安裝時使用的所有選項，包括 Issuer、Namespace、映像檔、每個 `--serve-arg`、`--config-secret` 和所有 overlay。讓每個節點都保留可用的舊映像檔。
+記錄來源 commit、`zeabur-identityctl` 版本，以及安裝時使用的所有選項，包括 Issuer、Namespace、映像檔、每個 `--serve-arg`、`--config-secret` 和所有 overlay。確認每個節點都保留可用的舊映像檔。
 
-執行以下指令，保存目前的部署資訊。這些檔案必須保密。
+執行以下指令，儲存目前的部署資訊。這些檔案必須保密。
 
 ```sh
 umask 077
@@ -47,7 +47,7 @@ kubectl -n "$NS" get pods -l app.kubernetes.io/name=zeabur-identity \
 kubectl -n "$NS" rollout history deployment/zeabur-identity > upgrade-record/rollout-history.before.txt
 ```
 
-這些檔案只是部署紀錄，不是備份。
+這些檔案只是部署紀錄，不能當作備份。
 
 </Step>
 
@@ -55,7 +55,7 @@ kubectl -n "$NS" rollout history deployment/zeabur-identity > upgrade-record/rol
 
 ### 準備新版映像檔
 
-使用 digest，或指向已知 commit 且不會重複使用的標籤。將映像檔載入所有能執行 Zeabur Identity 的節點。
+使用 digest，或指向已知 commit 且不會重複使用的 tag。將映像檔載入所有能執行 Zeabur Identity 的節點。
 
 </Step>
 
@@ -63,7 +63,7 @@ kubectl -n "$NS" rollout history deployment/zeabur-identity > upgrade-record/rol
 
 ### 準備新版資源清單
 
-使用新版 `zeabur-identityctl`，搭配原本的安裝選項，將新版資源清單產生到檔案，再與目前的部署比較。不要將使用新版預設值產生的資源清單直接以管線送進叢集。
+使用新版 `zeabur-identityctl`，搭配原本的安裝選項，產生新版資源清單並存成檔案，再與目前的部署比較。不要用新版預設值產生資源清單後，就直接用管線送進叢集。
 
 </Step>
 
@@ -73,7 +73,7 @@ kubectl -n "$NS" rollout history deployment/zeabur-identity > upgrade-record/rol
 
 閱讀兩個版本之間的變更，包括 CRD schema、儲存格式、選項與權杖宣告。
 
-先在還原的副本上測試完全相同的升級流程，也要使用既有通行密鑰登入。
+先用備份還原出一份副本，在副本上完整試跑同一套升級流程，也要用既有通行密鑰登入。
 
 </Step>
 
@@ -81,7 +81,7 @@ kubectl -n "$NS" rollout history deployment/zeabur-identity > upgrade-record/rol
 
 ### 決定回復方式
 
-如果無法確認舊版能讀取新版資料，回復方式就是還原先前的備份，並接受備份之後的資料損失。
+如果無法確認舊版能讀取新版資料，就必須靠還原先前的備份來回復，並接受備份之後的資料損失。
 
 如果資料需要遷移，但沒有遷移方式，就不要升級。
 
@@ -97,7 +97,7 @@ kubectl -n "$NS" rollout history deployment/zeabur-identity > upgrade-record/rol
 
 ### 產生升級檔案
 
-將前四行換成你的設定值。以下 `manifests` 指令與[在 k3s 上安裝並登入](../get-started/quickstart.mdx)相同，會啟用邀請功能。補上安裝時使用的所有選項；如果原本沒有啟用邀請功能，移除 `--serve-arg=--invitations`。
+將前四行換成你的設定值。以下 `manifests` 指令與[在 k3s 上安裝並登入](../get-started/quickstart.mdx)相同，會啟用邀請功能。補上安裝時使用的所有選項。如果原本沒有啟用邀請功能，移除 `--serve-arg=--invitations`。
 
 ```sh
 NS=zeabur-identity
@@ -118,7 +118,7 @@ jq '.items |= map(select(.kind != "Secret"))' upgrade-record/manifests.next.json
 
 ### 檢查並套用資源清單
 
-套用前，閱讀 `upgrade-record/crds.next.json` 與 `upgrade-record/manifests.upgrade.json`。
+套用前，先閱讀 `upgrade-record/crds.next.json` 與 `upgrade-record/manifests.upgrade.json`。
 
 如果套用時出現衝突，先找出原因，不要加上 `--force-conflicts`。不要為了排除錯誤而刪除並重建 CRD，這會刪除該類型的所有物件。
 
@@ -129,9 +129,9 @@ kubectl -n "$NS" rollout status deployment/zeabur-identity --timeout=5m
 kubectl -n "$NS" logs deployment/zeabur-identity --tail=200
 ```
 
-保留 `zeabur-identity` Service、`zeabur-identity-internal-ca` 與 `zeabur-identity-signing-keys`，不要替換。新 Service 不保證沿用原本的 IP，而每個 kube-apiserver 的驗證檔案都固定使用舊 IP。
+保留 `zeabur-identity` Service、`zeabur-identity-internal-ca` 與 `zeabur-identity-signing-keys`，不要替換。新 Service 不保證沿用原本的 IP，但每個 kube-apiserver 的驗證檔案都固定使用舊 IP。
 
-不要在升級時替換根 CA、變更 Issuer 或刪除工作階段。如果新版確實需要不同的 kube-apiserver 設定，將它視為獨立變更，一次處理一台機器。
+不要在升級時替換根 CA、變更 Issuer 或刪除工作階段。如果新版確實需要不同的 kube-apiserver 設定，請另外處理這項變更，一次處理一台機器。
 
 </Step>
 
@@ -142,8 +142,8 @@ kubectl -n "$NS" logs deployment/zeabur-identity --tail=200
 檢查實際執行的映像檔、就緒狀態與日誌，再完成以下驗證：
 
 - 使用既有通行密鑰重新登入。
-- 嘗試一項有權限的操作與一項沒有權限的操作。
-- 確認管理員存取正常。
+- 分別試做一項你有權限執行的操作，以及一項你沒有權限執行的操作。
+- 確認管理員能正常存取。
 
 Pod 就緒不代表登入功能正常。
 
@@ -173,7 +173,7 @@ kubectl -n zeabur-identity scale deployment/zeabur-identity --replicas=0
 
 #### 舊版能讀取目前的資料
 
-只有在確認舊版能讀取目前資料時，才切回舊映像檔。
+只有在確認舊版能讀取目前資料時，才能切回舊映像檔。
 
 如果只變更映像檔，執行：
 
@@ -193,17 +193,17 @@ kubectl rollout history deployment/zeabur-identity --revision=N
 kubectl rollout undo deployment/zeabur-identity --to-revision=N
 ```
 
-手動回復其他變更，再恢復副本數。
+手動回復其他變更，再還原副本數。
 
 #### 無法確認舊版能讀取目前的資料
 
-依[備份與還原](./backup-restore.mdx)的還原流程，還原升級前的備份，搭配舊映像檔、資源清單、CRD 與 Secret。還原期間保持 Zeabur Identity 停止。
+依[備份與還原](./backup-restore.mdx)的還原流程，還原升級前的備份，搭配舊映像檔、資源清單、CRD 與 Secret。還原期間不要啟動 Zeabur Identity。
 
 你會失去備份之後的所有變更，包括新增的通行密鑰、群組變更、用戶端更新與金鑰輪替。
 
 <Callout type="warn">
 
-還原備份會帶回備份中已撤銷的工作階段與已使用的邀請。重新開放服務前，先刪除這些工作階段與邀請。
+還原備份後，工作階段與邀請會回到備份當時的樣子。備份之後才撤銷的工作階段，和已經用掉的邀請，都會回來。重新開放服務前，先刪除這些工作階段與邀請。
 
 </Callout>
 
@@ -215,7 +215,7 @@ kubectl rollout undo deployment/zeabur-identity --to-revision=N
 
 ### 確認回復結果並記錄損失
 
-檢查映像檔、就緒狀態與日誌，再重新登入。確認一般存取、管理員存取與緊急入口都正常。
+檢查映像檔、就緒狀態與日誌，再重新登入。確認一般使用者與管理員都能正常存取，緊急入口也能正常使用。
 
 記錄還原了哪些內容，以及損失了哪些資料。
 

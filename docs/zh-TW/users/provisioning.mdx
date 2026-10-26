@@ -1,12 +1,12 @@
 ---
 title: 從目錄同步使用者
-description: 設定同步工具的權限與准入政策，用小型腳本將外部目錄同步成 Zeabur Identity 的 User 物件。
+description: 設定同步工具的權限與准入政策，用小型腳本將外部目錄的使用者同步成 Zeabur Identity 的 User 物件。
 source: "7bd49306e269"
 ---
 
-執行小型同步程式，將 Okta、Entra ID、Google Workspace、LDAP 或人資系統的使用者同步成 Zeabur Identity 的 `User` 物件。同步工具只能讀寫使用者，不能刪除使用者、建立登入憑證或邀請，也不能授予或移除管理員權限。
+執行小型同步程式，將 Okta、Entra ID、Google Workspace、LDAP 或人資系統的使用者同步成 Zeabur Identity 的 `User` 物件。同步工具只能讀寫使用者，不能刪除使用者、建立登入認證資訊或邀請，也不能授予或移除管理員權限。
 
-Zeabur Identity 沒有內建目錄連接器，也不支援 SCIM。你需要自行執行同步程式，讀取目錄，再經由 Kubernetes API 寫入 `User` 物件。日常管理操作見[管理使用者](./manage-users.mdx)。
+Zeabur Identity 沒有內建目錄串接功能，也不支援 SCIM。你需要自行執行同步程式，先讀取目錄，再用 Kubernetes API 寫入 `User` 物件。日常管理操作請見[管理使用者](./manage-users.mdx)。
 
 | 目錄事件 | 寫入 Kubernetes 的內容 |
 |---|---|
@@ -17,18 +17,18 @@ Zeabur Identity 沒有內建目錄連接器，也不支援 SCIM。你需要自�
 
 同步工具不負責下列操作：
 
-- **建立 `Credential`。** 使用者必須開啟一次性連結，才能連結通行密鑰或上游帳號。同步工具不能決定誰能以哪個帳號登入。
-- **建立 `Invitation`。** 邀請連結能替既有使用者註冊通行密鑰，因此持有建立邀請權限的人能接管任何帳號。這項權限應留給管理員，由管理員執行 `zeabur-identityctl invite --username <name>`，或交給另一個具備管理員同等權限的工作。
+- **建立 `Credential`。** 使用者必須開啟一次性連結，才能連結通行密鑰或上游帳號。同步工具不能決定誰能用哪個帳號登入。
+- **建立 `Invitation`。** 邀請連結能替既有使用者註冊通行密鑰，因此有權建立邀請的人能接管任何帳號。這項權限應留給管理員，由管理員執行 `zeabur-identityctl invite --username <name>`，或交給另一個具備管理員同等權限的工作。
 - **設定管理員帳號。** 管理員可以手動將同步的使用者設為管理員帳號。同步工具後續更新時會保留帳號類型。
-- **刪除使用者。** 安全移除使用者前，必須先刪除其憑證與工作階段，詳見[登出、救援與移除使用者](./offboarding.mdx)。停用帳號就能阻止登入，之後也能恢復啟用。
+- **刪除使用者。** 要安全移除使用者，必須先刪除該使用者的認證資訊與工作階段，詳見[登出、救援與移除使用者](./offboarding.mdx)。停用帳號就能阻止登入，之後也能重新啟用。
 
-使用目錄本身的永久 ID 比對人員，並將 ID 存在 `User` 的 annotation。不要用電子郵件地址比對，人員離職後，其他人會沿用相同地址。
+請用目錄本身的永久 ID 比對人員，並將 ID 存在 `User` 的 annotation。不要用電子郵件地址比對，因為人員離職後，其他人會沿用相同地址。
 
 ## 開始前
 
 - 使用 Kubernetes 1.30 或更新版本，才能套用下方的 `ValidatingAdmissionPolicy`。
-- 準備自己的 `directory-export` 指令。每行輸出一個 JSON 物件，包含 `id`、`username`、`name`、`groups` 和 `active`。無法完整列出所有人員時，指令必須以錯誤結束。
-- 若使用下方的 shell 範例，執行環境需要 Bash、`jq` 和 `kubectl`。
+- 準備自己的 `directory-export` 指令。每行輸出一個 JSON 物件，包含 `id`、`username`、`name`、`groups` 和 `active`。如果無法完整列出所有人員，指令必須以錯誤狀態結束。
+- 如果使用下方的 shell 範例，執行環境需要 Bash、`jq` 和 `kubectl`。
 
 <Steps>
 
@@ -70,7 +70,7 @@ subjects:
   namespace: zeabur-identity
 ```
 
-這個 Role 沒有 `delete` 權限，也無法存取憑證、邀請、授權或 Secret。
+這個 Role 沒有 `delete` 權限，也無法存取認證資訊、邀請、授權或 Secret。
 
 </Step>
 
@@ -78,14 +78,14 @@ subjects:
 
 ### 用准入政策限制同步工具
 
-RBAC 能允許工具寫入使用者，但無法限制它只能寫入哪些使用者、指定哪些群組。`ValidatingAdmissionPolicy` 補上這些限制。政策只套用到 `user-sync` 帳號；無法評估政策時，API 會拒絕寫入。
+RBAC 能允許工具寫入使用者，但無法限制工具可以寫入哪些使用者、指定哪些群組。`ValidatingAdmissionPolicy` 能補上這些限制。政策只套用到 `user-sync` 帳號。如果無法評估政策，API 就會拒絕寫入。
 
 政策要求同步工具：
 
 - 只能修改自己建立的使用者，以 `identity.zeabur.com/source=directory` 標籤識別。
 - 不能授予或移除管理員權限。
-- 只能指定允許清單內的群組。請將下方的 `['dev', 'ops']` 改成你的群組。
-- 必須讓物件名稱與使用者名稱相同。
+- 只能指定允許清單內的群組。把下方的 `['dev', 'ops']` 換成你允許同步工具指定的群組。
+- 物件名稱必須和使用者名稱相同。
 
 將下列內容存成 `user-sync-policy.yaml`，再執行 `kubectl apply -f user-sync-policy.yaml`：
 
@@ -143,11 +143,11 @@ spec:
   validationActions: [Deny]
 ```
 
-管理員仍可手動將同步的使用者設為管理員帳號。同步程式沒有寫入帳號類型，server-side apply 會保留這個欄位。
+管理員仍可手動將同步的使用者設為管理員帳號。同步程式不會寫入帳號類型，因此 server-side apply 會保留這個欄位。
 
 #### 物件名稱必須等於使用者名稱
 
-Kubernetes 以 `zeabur:<username>` 識別每個 `User`。兩個物件若有相同的使用者名稱，RBAC 就會將它們視為同一人。物件名稱具有唯一性，因此要求物件名稱等於使用者名稱，就能阻止同步程式建立另一個 `admin`。
+Kubernetes 用 `zeabur:<username>` 識別每個 `User`。如果兩個物件的使用者名稱相同，RBAC 就會把它們視為同一人。物件名稱不能重複，因此要求物件名稱等於使用者名稱，就能阻止同步程式建立另一個 `admin`。
 
 #### 使用者名稱規則
 
@@ -159,11 +159,11 @@ Kubernetes 以 `zeabur:<username>` 識別每個 `User`。兩個物件若有相�
 
 `zeabur-identityctl invite` 和 `zeabur-identityctl setup-link` 也會檢查相同規則。
 
-如果目錄以電子郵件地址識別人員，請從地址產生符合規則的短名稱，例如將 `alice.chen@example.com` 轉成 `alice.chen`。不同人員會產生相同的短名稱，因此同步程式更新使用者前，仍須檢查目錄 ID。
+如果目錄用電子郵件地址識別人員，請從地址產生符合規則的短名稱，例如將 `alice.chen@example.com` 轉成 `alice.chen`。不同人員會產生相同的短名稱，因此同步程式更新使用者前，仍須檢查目錄 ID。
 
 #### 測試政策
 
-使用政策前，先確認它會拒絕不允許的寫入。下列兩個指令都必須失敗：
+使用政策前，先確認政策會拒絕不允許的寫入。下列兩個指令都必須失敗：
 
 ```sh
 as=(--as=system:serviceaccount:zeabur-identity:user-sync)
@@ -187,7 +187,7 @@ EOF
 
 ### 撰寫同步程式
 
-使用有 Kubernetes 用戶端的語言撰寫程式，並以 `user-sync` ServiceAccount 執行。你可以將程式放在叢集內的 `CronJob`，或在叢集外使用 `kubectl -n zeabur-identity create token user-sync` 取得的權杖。
+選用有 Kubernetes 用戶端的語言撰寫程式，並以 `user-sync` ServiceAccount 執行。你可以將程式放在叢集內的 `CronJob`，也可以在叢集外執行，使用 `kubectl -n zeabur-identity create token user-sync` 取得的權杖。
 
 下方是 shell 範例。`directory-export` 代表你自己的目錄匯出指令。
 
@@ -228,11 +228,11 @@ done <<<"$people"
 exit "$failed"
 ```
 
-這個範例採用下列處理方式：
+這個範例的處理邏輯如下：
 
-- **讀完完整匯出內容後才寫入。** 匯出中途失敗時，程式會在修改任何使用者前停止，避免漏掉後續人員及其停權狀態。請在 `directory-export` 內使用目錄提供的完整性檢查，例如總筆數或清單結束標記。
-- **拒絕空的匯出結果。** 加上「停用匯出清單外的使用者」邏輯後，空的匯出結果會導致所有使用者停用。
-- **單一使用者失敗不會中止其餘同步。** 清單後方的停權狀態仍須寫入。迴圈會回報每筆失敗，並在結束時以錯誤狀態退出，讓工作顯示為失敗。
+- **讀完完整匯出內容後才寫入。** 如果匯出中途失敗，程式會在修改任何使用者前停止，避免漏掉後續人員及其停權狀態。請在 `directory-export` 內使用目錄提供的完整性檢查，例如總筆數或清單結束標記。
+- **拒絕空的匯出結果。** 加上「停用匯出清單外的使用者」邏輯後，如果匯出結果為空，程式就會停用所有使用者。
+- **單一使用者同步失敗時，繼續同步其餘使用者。** 程式仍須寫入清單後方人員的停權狀態。迴圈會回報每筆失敗，並在結束時以錯誤狀態退出，讓工作顯示為失敗。
 
 同步程式管理使用者的 `displayName`、`groups` 和 `disabled`。請在目錄修改這些欄位，不要用 `kubectl` 手動修改，否則下次同步該使用者時會發生欄位衝突。帳號類型不受這項限制，因為程式從未寫入這個欄位。
 
@@ -244,8 +244,8 @@ exit "$failed"
 
 寫入前，同步工具還需要：
 
-- 拒絕變更既有使用者的目錄 ID annotation，避免目錄中更名或重新使用的帳號接手別人的 `User`。
-- 停用不再出現在匯出清單中的受管理使用者。使用 `kubectl get zbuser -l identity.zeabur.com/source=directory` 取得受管理使用者。
+- 檢查既有使用者的目錄 ID annotation，若有變更就拒絕寫入。這樣能避免目錄帳號更名或重新使用後，誤用他人的 `User`。
+- 停用由同步工具管理、但已不在匯出清單中的使用者。使用 `kubectl get zbuser -l identity.zeabur.com/source=directory` 取得同步工具管理的使用者。
 - 將使用者名稱轉成小寫，並依前述規則檢查。
 
 </Step>
@@ -254,7 +254,7 @@ exit "$failed"
 
 ### 傳送一次性連結給新使用者
 
-同步程式會建立使用者，但使用者仍需要一次性連結才能設定通行密鑰。管理員負責建立並傳送連結，操作見[管理使用者](./manage-users.mdx)。
+同步程式會建立使用者，但使用者仍需要一次性連結才能設定通行密鑰。管理員負責建立並傳送連結，操作請見[管理使用者](./manage-users.mdx)。
 
 Zeabur Identity 伺服器必須啟用 `--invitations`，連結才有效。
 

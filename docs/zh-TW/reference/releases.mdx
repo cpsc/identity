@@ -4,22 +4,22 @@ description: 選擇適合平台的 Zeabur Identity 發行檔，下載並驗證�
 source: "2d2a26346b77"
 ---
 
-到 [GitHub Releases](https://github.com/zeabur-oss/identity/releases) 下載 Zeabur Identity，先驗證簽章與 checksum 再執行。Zeabur Identity 在 alpha 階段的發行版本皆標記為預先發行版。
+到 [GitHub Releases](https://github.com/zeabur-oss/identity/releases) 下載 Zeabur Identity，先驗證簽章與 checksum 再執行。Zeabur Identity 在 alpha 階段的所有版本都會標記為預先發行版。
 
 ## 檔案與平台
 
 | 平台 | CLI 壓縮檔 | 容器映像檔 |
 |---|---|---|
 | Linux amd64 / x86_64 | `zeabur-identityctl-v<VERSION>-linux-amd64.tar.gz` | `ghcr.io/zeabur-oss/identity:v<VERSION>` |
-| Linux arm64 / aarch64 | `zeabur-identityctl-v<VERSION>-linux-arm64.tar.gz` | 使用相同的映像檔標籤，Docker 會選擇你的架構 |
+| Linux arm64 / aarch64 | `zeabur-identityctl-v<VERSION>-linux-arm64.tar.gz` | 使用相同的映像檔 tag，Docker 會選擇你的架構 |
 
-CLI 與伺服器皆採用靜態連結。macOS、Windows 或其他架構需要從原始碼建置 CLI。
+CLI 與伺服器都採用靜態連結。如果使用 macOS、Windows 或其他架構，需要從原始程式碼建置 CLI。
 
-每個發行版本都包含 checksum、簽章與 SBOM。SBOM 列出發行檔包含的相依套件，供下載的 SBOM 檔名以 `.cdx.json` 結尾。
+每個發行版本都包含 checksum、簽章與 SBOM。SBOM 列出發行檔包含的相依套件。供下載的 SBOM 檔名以 `.cdx.json` 結尾。
 
 ## 下載並驗證
 
-你需要 GitHub CLI（`gh`）、`cosign` `3.x` 與 GNU `sha256sum`。拉取映像檔還需要 Docker。除了 Docker，這些命令列工具都可在儲存庫的 `nix develop` shell 中使用。
+你需要 GitHub CLI（`gh`）、`cosign` `3.x` 與 GNU `sha256sum`。拉取映像檔還需要 Docker。除了 Docker，其他命令列工具都可在儲存庫的 `nix develop` shell 中使用。
 
 <Steps>
 
@@ -42,7 +42,7 @@ gh release download "$version" --repo zeabur-oss/identity --dir downloaded
 
 ### 驗證簽章與 checksum
 
-先驗證 `SHA256SUMS` 的簽章，再用它檢查下載的檔案。`identity` 將簽章連結到 Zeabur Identity 的發行工作流程與你選擇的版本。
+先驗證 `SHA256SUMS` 的簽章，再用它檢查下載的檔案。驗證時會用 `identity` 確認簽章來自 Zeabur Identity 的發行工作流程，且對應你選擇的版本。
 
 ```sh
 (
@@ -85,7 +85,7 @@ cosign verify-attestation --type cyclonedx --certificate-identity "$identity" \
 docker pull --platform "linux/$arch" "$image"
 ```
 
-映像檔與各平台版本都有簽章，並附上伺服器的 SBOM。已簽章的 checksum 也涵蓋 CLI 壓縮檔、供下載的 SBOM、映像檔 digest 與 `provenance.json`。`provenance.json` 記錄原始碼提交與建置執行紀錄。
+映像檔與各平台版本都有簽章，並附上伺服器的 SBOM。已簽章的 checksum 也涵蓋 CLI 壓縮檔、供下載的 SBOM、映像檔 digest 與 `provenance.json`。`provenance.json` 記錄原始程式碼提交與建置執行紀錄。
 
 </Step>
 

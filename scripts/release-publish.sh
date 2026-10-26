@@ -66,7 +66,7 @@ jq -n --arg commit "$GITHUB_SHA" --arg repository "https://github.com/$GITHUB_RE
   printf 'Linux amd64 and arm64 static CLI archives and container image.\n\n'
   printf '## Image digests\n\n```text\n'
   cat "$work/assets/image-digests.txt"
-  printf '```\n\nVerify signatures, checksums and SBOMs using [the release instructions](https://github.com/%s/blob/%s/docs/releases.md).\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA"
+  printf '```\n\nVerify signatures, checksums and SBOMs using [the release instructions](https://github.com/%s/blob/%s/docs/reference/releases.mdx).\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA"
 } >> "$work/notes.md"
 gh release create "$version" "$work/assets/"* --repo "$GITHUB_REPOSITORY" --verify-tag \
   --target "$GITHUB_SHA" --draft --prerelease --title "Zeabur Identity $version" --notes-file "$work/notes.md"

@@ -1,11 +1,11 @@
 # Check a release installation
 
 Use this checklist when preparing a release. Start with a fresh Ubuntu server or VM and
-follow [Get started](get-started.md), using the release CLI and image. Run it on Linux amd64
+follow [Get started](../get-started/quickstart.mdx), using the release CLI and image. Run it on Linux amd64
 and arm64, with a browser on a separate computer.
 
 For a draft candidate, use a maintainer's authenticated `gh release download` as described in
-[Publish a release](releases.md#publish-a-release), then transfer those exact assets to the
+[Publish a release](releasing.md), then transfer those exact assets to the
 test server and run the guide's verification commands. Draft download URLs are not public.
 Repeat the public download and verification steps after publication, before announcing the release.
 
@@ -80,7 +80,7 @@ rm -rf "$work"
 ## Check account changes
 
 Use a test user such as `alice`, keeping the server's cluster-admin kubeconfig available.
-[Managing users](managing-users.md) has the commands for each operation.
+[Managing users](../users/manage-users.mdx) has the commands for each operation.
 
 - [ ] **Invitation:** invite Alice, open her link and create a passkey. Sign in as Alice and check her username and groups. Opening the used invitation again should fail.
 - [ ] **Disable:** set Alice's `disabled` field to `true`. Check that a fresh sign-in fails and her existing session cannot renew. Re-enable her before continuing.

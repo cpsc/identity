@@ -1,0 +1,103 @@
+---
+title: 退出用户登录、找回账号与移除用户
+description: 退出用户登录、重置丢失通行密钥的账号、停用或移除用户，并用 Git 管理用户配置。
+source: "10772266ee5e"
+---
+
+删除会话可以让用户退出登录；重置账号可以重新获取访问权限。要停止用户访问，先停用账号，确定不再需要后再移除。你也可以把 `User` 配置存入 Git，交给 GitOps 管理。
+
+## 退出用户登录
+
+```sh
+kubectl -n zeabur-identity get zbgrant -l identity.zeabur.com/user=alice
+kubectl -n zeabur-identity delete zbgrant -l identity.zeabur.com/user=alice
+```
+
+每个已登录的会话都是一个 `Grant`。上述命令会列出并删除 `alice` 的所有会话。
+
+删除后，这些会话无法再刷新令牌。用户持有的令牌仍可使用，直到过期，最长为 10 分钟。
+
+## 通行密钥丢失时找回账号
+
+```sh
+zeabur-identityctl setup-link --username alice --reset
+```
+
+这个命令会删除 `alice` 的所有凭据、会话及待接受的邀请。凭据包含通行密钥，以及已关联的 GitHub 或 Google 账号。
+
+命令会输出新的一次性设置链接，有效期为 1 小时。
+
+<Callout type="warn">
+
+任何打开设置链接的人都能获得 `alice` 的身份。发送链接前，先确认对方就是账号本人。
+
+</Callout>
+
+发出链接时，`User` 会新增 `SetupLinkIssued` 事件。链接使用后，会新增 `SetupLinkRedeemed` 事件。
+
+普通账号也可以改用邀请：
+
+```sh
+zeabur-identityctl invite --username alice --reset
+```
+
+这个命令会执行相同的重置，并输出邀请。用户也能通过邀请关联 GitHub 或 Google 账号。
+
+## 停用用户
+
+```sh
+kubectl -n zeabur-identity patch zbuser alice --type=merge -p '{"spec":{"disabled":true}}'
+```
+
+移除用户前，先停用账号。停用后，用户无法登录，会话无法再刷新令牌，设置链接与邀请也会失效。
+
+停用不会删除任何数据。把 `disabled` 改回 `false` 即可恢复账号。
+
+执行以下命令确认状态：
+
+```sh
+kubectl -n zeabur-identity get zbuser alice
+```
+
+输出中的 **Disabled** 字段会显示 `true`。
+
+## 永久移除用户
+
+```sh
+kubectl -n zeabur-identity delete zbuser alice
+```
+
+删除 `User` 后，用户的通行密钥、已关联的 GitHub 或 Google 账号、会话及邀请链接都会失效。
+
+这些对象都绑定原有 `User` 的 UID。即使创建同名的 `User`，新对象也会获得新的 UID。
+
+用户持有的令牌仍可使用，直到过期，最长为 10 分钟。
+
+Kubernetes 垃圾回收机制会在稍后删除相关对象。若要立即删除，可以在删除 `User` 前或后执行：
+
+```sh
+for kind in zbcred zbgrant zbinvite; do
+  kubectl -n zeabur-identity delete "$kind" -l identity.zeabur.com/user=alice
+done
+```
+
+## 用 Git 管理用户
+
+```yaml
+apiVersion: identity.zeabur.com/v1alpha1
+kind: User
+metadata:
+  name: alice
+  namespace: zeabur-identity
+spec:
+  username: alice
+  displayName: Alice Chen
+  groups: [dev]
+  # accountType: Admin   # for an admin account
+```
+
+`User` 是普通的 Kubernetes 声明文件，可以存放在 GitOps 仓库中。
+
+不要把 `Credential`、`Grant` 或 `Invitation` 存入 Git。Zeabur Identity 会创建与删除这些对象。若同步工具清理这些对象，就会移除用户的通行密钥，或让用户退出登录。
+
+若要让用户数据与公司目录保持同步，参考[从目录同步用户](./provisioning.mdx)。

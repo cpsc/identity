@@ -30,7 +30,7 @@ and restarting a deployment is refused with 403 for an account without that righ
 - **No forever key on anyone's laptop.** Tokens last minutes and Kubernetes checks them itself.
   Every session ends 12 hours after sign-in. Revoke a person's sessions and their access ends
   when the token in hand expires, within ten minutes.
-- **Runs inside the cluster it protects.** One small pod (about 20 MB), no database, no extra
+- **Runs inside the cluster it protects.** One small pod (CI holds its memory under 30 MiB), no database, no extra
   servers. Tested in CI on k3s; the same configuration covers RKE2, but installation there is
   unverified. OpenID Connect apps such as Argo CD or Grafana can use the same issuer.
 
@@ -62,15 +62,15 @@ and restarting a deployment is refused with 403 for an account without that righ
 
 Need to change something? Sign in with your admin account. It uses a passkey only and has full
 rights at once, without a second sign-in. For stricter rules, such as security keys only for
-admins, see [Manage users](docs/managing-users.md#admin-accounts).
+admins, see [Manage users](docs/users/admin-sessions.mdx).
 
 ## Get started
 
-Follow the [step-by-step guide](docs/get-started.md) to install k3s on an Ubuntu server,
+Follow the [step-by-step guide](docs/get-started/quickstart.mdx) to install k3s on an Ubuntu server,
 download and verify Zeabur Identity, and sign in with a passkey from your computer (macOS, Linux or
 Windows).
 
-For an existing cluster, first [download and verify Zeabur Identity](docs/get-started.md#1-download-zeabur-identity).
+For an existing cluster, first [download and verify Zeabur Identity](docs/reference/releases.mdx).
 Then install it with your cluster-admin kubeconfig:
 
 ```sh
@@ -87,20 +87,20 @@ For development builds, see [Building from source](CONTRIBUTING.md#building-from
 
 Then:
 
-- Sign in with [GitHub](docs/github-sign-in.md) or [Google](docs/google-sign-in.md).
-- [Register clients](docs/clients.md) such as Grafana or Argo CD, with
+- Sign in with [GitHub](docs/users/github-sign-in.mdx) or [Google](docs/users/google-sign-in.mdx).
+- [Register clients](docs/users/clients.mdx) such as Grafana or Argo CD, with
   `zeabur-identityctl client create`.
-- [Manage users](docs/managing-users.md): groups, admin rights, lost passkeys, removing people;
-  [provision them from a directory](docs/provisioning-users.md) with a small sync script.
+- [Manage users](docs/users/manage-users.mdx): groups, admin rights, lost passkeys, removing people;
+  [provision them from a directory](docs/users/provisioning.mdx) with a small sync script.
 - `zeabur-identityctl invite --username alice` to send someone a one-time link. It needs the server
   started with `--invitations`, as above; without it the link cannot be redeemed.
 
 ## Learn more
 
-- [Architecture](docs/architecture.md): how the pieces fit, security properties, the crates.
-- [Conformance](docs/conformance.md): every specification requirement, mapped to code and tests.
+- [Architecture](docs/reference/architecture.mdx): how the pieces fit, security properties, the crates.
+- [Conformance](docs/reference/conformance.mdx): every specification requirement, mapped to code and tests.
 - [Contributing](CONTRIBUTING.md): development setup, the checks CI runs, dependency policy.
-- [Releases](docs/releases.md): supported platforms, tag workflow, signatures, checksums and SBOMs.
+- [Releases](docs/reference/releases.mdx): supported platforms, tag workflow, signatures, checksums and SBOMs.
 
 ## Licence and credits
 

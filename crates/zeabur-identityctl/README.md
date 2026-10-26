@@ -39,7 +39,7 @@ Replace the example URL with your own issuer. `zeabur-identityctl` reads `ZEABUR
 - `zeabur-identityctl client create <client-id> --type <public|confidential> --redirect-uri <uri>`:
   prints an `OAuthClient` after checking it against the same rules as the CRD schema. A
   confidential client gets a generated 256-bit secret, printed once on stderr; the object holds
-  only its hash. See [Registering clients](../../docs/clients.md).
+  only its hash. See [Registering clients](../../docs/users/clients.mdx).
 
 Results (JSON, YAML or a link) go to stdout and messages to stderr, so commands compose with
 `kubectl apply -f -`.
@@ -90,8 +90,8 @@ configuration. cert-manager renews the serving certificate with its defaults (90
 Check the certificates with `kubectl -n zeabur-identity get certificate`. To change the serving
 certificate's duration, set `spec.duration` and `spec.renewBefore` on Certificate
 `zeabur-identity-internal-tls` with `kubectl`; `kube-config` does not reset them. See the
-[deployment guide](../../docs/get-started.md) for installation steps and
-[operations](../../docs/operations.md#internal-certificate) to replace the root CA.
+[deployment guide](../../docs/get-started/quickstart.mdx) for installation steps and
+[operations](../../docs/operations/backup-restore.mdx) to replace the root CA.
 
 ## Place in the workspace
 

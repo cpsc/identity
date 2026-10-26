@@ -1,0 +1,275 @@
+---
+title: Sync users from a directory
+description: Configure permissions and admission policies for a sync tool, then use a small script to sync an external directory to Zeabur Identity User objects.
+---
+
+Run a small sync program to sync users from Okta, Entra ID, Google Workspace, LDAP, or an HR system to Zeabur Identity `User` objects. The sync tool can only read and write users. It can't delete users, create login credentials or invitations, or grant or remove admin privileges.
+
+Zeabur Identity has no built-in directory connectors and doesn't support SCIM. You need to run your own sync program to read the directory and write `User` objects through the Kubernetes API. For day-to-day administration, see [Manage users](./manage-users.mdx).
+
+| Directory event | What to write to Kubernetes |
+|---|---|
+| Person added | Create a `User` with the label managed by the sync tool |
+| Name or groups changed | Update `spec.displayName` / `spec.groups` |
+| Account suspended | Set `spec.disabled: true` |
+| Person removed | Set `spec.disabled: true`; an admin deletes the user later |
+
+The sync tool doesn't handle the following operations:
+
+- **Creating a `Credential`.** Users must open a one-time link to link a passkey or an upstream account. The sync tool can't decide who can sign in with which account.
+- **Creating an `Invitation`.** An invitation link can register a passkey for an existing user, so anyone with permission to create invitations can take over any account. Keep this permission with admins who run `zeabur-identityctl invite --username <name>`, or assign it to a separate job with admin-equivalent privileges.
+- **Setting up admin accounts.** An admin can manually make a synced user an admin account. The sync tool preserves the account type during subsequent updates.
+- **Deleting users.** Before you safely remove a user, you must delete their credentials and sessions. See [Sign out, recover, and remove users](./offboarding.mdx). Disabling an account blocks sign-in, and you can re-enable it later.
+
+Match people by the directory's permanent ID, and store that ID in a `User` annotation. Don't match by email address: someone else may reuse the same address after a person leaves.
+
+## Before you begin
+
+- Use Kubernetes 1.30 or later to apply the `ValidatingAdmissionPolicy` below.
+- Prepare your own `directory-export` command. It must output one JSON object per line with `id`, `username`, `name`, `groups`, and `active`. The command must exit with an error if it can't list everyone.
+- If you use the shell example below, the runtime needs Bash, `jq`, and `kubectl`.
+
+<Steps>
+
+<Step>
+
+### Create a ServiceAccount that can only read and write users
+
+Save the following as `user-sync-rbac.yaml`, then run `kubectl apply -f user-sync-rbac.yaml`:
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: user-sync
+  namespace: zeabur-identity
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: user-sync
+  namespace: zeabur-identity
+rules:
+- apiGroups: [identity.zeabur.com]
+  resources: [users]
+  verbs: [get, list, watch, create, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: user-sync
+  namespace: zeabur-identity
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: user-sync
+subjects:
+- kind: ServiceAccount
+  name: user-sync
+  namespace: zeabur-identity
+```
+
+This Role has no `delete` permission and can't access credentials, invitations, authorizations, or Secrets.
+
+</Step>
+
+<Step>
+
+### Restrict the sync tool with an admission policy
+
+RBAC can grant the tool permission to write users, but it can't restrict which users the tool writes or which groups it assigns. A `ValidatingAdmissionPolicy` adds these restrictions. The policy applies only to the `user-sync` account. The API rejects writes if it can't evaluate the policy.
+
+The policy requires the sync tool to:
+
+- Modify only users it created, identified by the `identity.zeabur.com/source=directory` label.
+- Never grant or remove admin privileges.
+- Assign only groups on the allowlist. Replace `['dev', 'ops']` below with your groups.
+- Keep the object name identical to the username.
+
+Save the following as `user-sync-policy.yaml`, then run `kubectl apply -f user-sync-policy.yaml`:
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: zeabur-identity-user-sync
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [identity.zeabur.com]
+      apiVersions: ["*"]
+      operations: [CREATE, UPDATE]
+      resources: [users]
+  matchConditions:
+  - name: user-sync
+    expression: request.userInfo.username == 'system:serviceaccount:zeabur-identity:user-sync'
+  variables:
+  - name: managed
+    expression: >-
+      has(object.metadata.labels) &&
+      'identity.zeabur.com/source' in object.metadata.labels &&
+      object.metadata.labels['identity.zeabur.com/source'] == 'directory'
+  - name: wasManaged
+    expression: >-
+      request.operation == 'CREATE' || (has(oldObject.metadata.labels) &&
+      'identity.zeabur.com/source' in oldObject.metadata.labels &&
+      oldObject.metadata.labels['identity.zeabur.com/source'] == 'directory')
+  - name: admin
+    expression: "has(object.spec.accountType) && object.spec.accountType == 'Admin'"
+  - name: wasAdmin
+    expression: >-
+      request.operation == 'UPDATE' && has(oldObject.spec.accountType) &&
+      oldObject.spec.accountType == 'Admin'
+  validations:
+  - expression: variables.wasManaged
+    message: user-sync may only change users it created
+  - expression: variables.managed
+    message: users written by user-sync must keep the label identity.zeabur.com/source=directory
+  - expression: object.spec.username == object.metadata.name
+    message: the object name must equal the username, so a username cannot be taken twice
+  - expression: "!has(object.spec.groups) || object.spec.groups.all(g, g in ['dev', 'ops'])"
+    message: user-sync may only assign allowlisted groups
+  - expression: variables.admin == variables.wasAdmin
+    message: user-sync never makes or unmakes admin accounts
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: zeabur-identity-user-sync
+spec:
+  policyName: zeabur-identity-user-sync
+  validationActions: [Deny]
+```
+
+Admins can still manually make a synced user an admin account. The sync program doesn't write the account type, so server-side apply preserves that field.
+
+#### The object name must match the username
+
+Kubernetes identifies each `User` as `zeabur:<username>`. If two objects have the same username, RBAC treats them as the same person. Object names are unique, so requiring the object name to match the username prevents the sync program from creating another `admin`.
+
+#### Username rules
+
+`metadata.name` and `spec.username` must have the same value. The `User` schema accepts lowercase DNS subdomain names up to 63 characters long, with only lowercase letters, digits, `-`, and `.`. Each dot-separated label must start and end with a letter or digit. Names can't contain `@`, `+`, or `_`. The full rule is:
+
+```text
+^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+```
+
+`zeabur-identityctl invite` and `zeabur-identityctl setup-link` also check the same rule.
+
+If the directory identifies people by email address, generate a short name that follows the rules. For example, convert `alice.chen@example.com` to `alice.chen`. Different people can produce the same short name, so the sync program must still check the directory ID before updating a user.
+
+#### Test the policy
+
+Before using the policy, confirm that it rejects disallowed writes. Both commands below must fail:
+
+```sh
+as=(--as=system:serviceaccount:zeabur-identity:user-sync)
+# Refused: touches a user the tool did not create.
+kubectl -n zeabur-identity patch zbuser admin "${as[@]}" --type=merge -p '{"spec":{"disabled":true}}'
+# Refused: admin account.
+kubectl -n zeabur-identity apply "${as[@]}" -f - <<'EOF'
+apiVersion: identity.zeabur.com/v1alpha1
+kind: User
+metadata:
+  name: mallory
+  namespace: zeabur-identity
+  labels: {identity.zeabur.com/source: directory}
+spec: {username: mallory, accountType: Admin}
+EOF
+```
+
+</Step>
+
+<Step>
+
+### Write the sync program
+
+Write the program in a language with a Kubernetes client, and run it as the `user-sync` ServiceAccount. You can run the program in a `CronJob` inside the cluster or outside the cluster with a token from `kubectl -n zeabur-identity create token user-sync`.
+
+The shell example below uses `directory-export` as a stand-in for your own directory export command.
+
+```sh
+#!/usr/bin/env bash
+set -euo pipefail
+ns=zeabur-identity
+failed=0
+
+# Read the whole export before writing anything: a failing exporter stops the job here.
+people=$(directory-export)
+if [[ -z "$people" ]]; then
+  echo "the export is empty; refusing to sync" >&2
+  exit 1
+fi
+
+while read -r person; do
+  username=$(jq -r .username <<<"$person")
+  jq -n --arg ns "$ns" --argjson p "$person" '{
+    apiVersion: "identity.zeabur.com/v1alpha1",
+    kind: "User",
+    metadata: {
+      name: $p.username,
+      namespace: $ns,
+      labels: {"identity.zeabur.com/source": "directory"},
+      annotations: {"example.com/directory-id": $p.id}
+    },
+    spec: {
+      username: $p.username,
+      displayName: $p.name,
+      groups: $p.groups,
+      disabled: ($p.active | not)
+    }
+  }' | kubectl apply --server-side --field-manager=user-sync -f - ||
+    { echo "failed: $username" >&2; failed=1; continue; }
+  echo "synced $username"
+done <<<"$people"
+exit "$failed"
+```
+
+This example handles synchronization as follows:
+
+- **Read the entire export before writing.** If the export fails partway through, the program stops before modifying any users. This prevents it from missing people later in the export and their suspension status. Use the directory's completeness checks in `directory-export`, such as a total record count or an end-of-list marker.
+- **Reject an empty export.** Once you add logic to disable users missing from the export, an empty export would disable every user.
+- **Continue syncing after an individual user fails.** The program still needs to write suspension statuses later in the list. The loop reports each failure and exits with an error status at the end so the job shows as failed.
+
+The sync program manages users' `displayName`, `groups`, and `disabled` fields. Change these fields in the directory. Don't edit them manually with `kubectl`, or a field conflict will occur the next time the program syncs that user. This restriction doesn't apply to the account type because the program never writes that field.
+
+<Callout type="warn">
+
+The example above doesn't yet check directory IDs, disable users missing from the export, or validate usernames. Add the handling below before using it in practice.
+
+</Callout>
+
+Before writing, the sync tool also needs to:
+
+- Reject changes to an existing user's directory ID annotation so a renamed or reused directory account can't take over someone else's `User`.
+- Disable managed users who no longer appear in the export. Use `kubectl get zbuser -l identity.zeabur.com/source=directory` to retrieve managed users.
+- Convert usernames to lowercase and validate them against the rules above.
+
+</Step>
+
+<Step>
+
+### Send one-time links to new users
+
+The sync program creates users, but users still need a one-time link to set up a passkey. An admin creates and sends the links. For instructions, see [Manage users](./manage-users.mdx).
+
+The Zeabur Identity server must have `--invitations` enabled for the links to work.
+
+```sh
+export ZEABUR_IDENTITY_ISSUER=https://identity.example.test     # your issuer
+zeabur-identityctl invite --username <name>
+```
+
+</Step>
+
+</Steps>
+
+## Troubleshooting
+
+| Symptom or result | What to do next |
+|---|---|
+| A field conflict occurs when syncing a user | Check whether someone manually changed `displayName`, `groups`, or `disabled` with `kubectl`. The directory should manage these fields. |
+| The program reports an empty export and stops | Check the output of `directory-export`. The program refuses to sync an empty list. |
+| An invitation link doesn't work | Confirm that the Zeabur Identity server has `--invitations` enabled, and see [Manage users](./manage-users.mdx). |

@@ -34,7 +34,7 @@ docker save zeabur-identity:dev | sudo k3s ctr images import -
 export ZEABUR_IDENTITY_IMAGE=docker.io/library/zeabur-identity:dev
 ```
 
-Continue at [Install Zeabur Identity](docs/get-started.md#3-install-zeabur-identity), with the cluster-admin
+Continue at [Install Zeabur Identity](docs/get-started/quickstart.mdx), with the cluster-admin
 kubeconfig from the guide. For a k3d test cluster, use the [test setup](#disposable-k3d-cluster)
 below.
 
@@ -58,7 +58,7 @@ cargo deny --locked check
 Design rationale lives next to the code, in rustdoc: state the decision and its reason, and
 cite the specification section, paper or prior art it rests on (the crates show the style).
 Never cite something you have not read; write "not verified" instead. Code that implements a
-MUST or SHOULD of a specification updates [docs/conformance.md](docs/conformance.md).
+MUST or SHOULD of a specification updates [docs/reference/conformance.mdx](docs/reference/conformance.mdx).
 Documentation is written in English.
 
 ## Toolchain

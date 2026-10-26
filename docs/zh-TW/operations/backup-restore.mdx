@@ -1,0 +1,592 @@
+---
+title: 備份與還原 Zeabur Identity
+description: 備份 Zeabur Identity 的資料與金鑰，依備份類型還原服務，並演練身分、通行密鑰與存取權限的復原。
+source: "699ee53802d4"
+---
+
+備份叢集的資料存放區、Zeabur Identity 資源、私密金鑰與相關設定。還原資料存放區可保留所有人的身分與通行密鑰；從匯出檔重建資源會產生新的身分，所有人都要重新註冊通行密鑰、連結 GitHub 或 Google 帳號，應用程式也要遷移使用者對應。
+
+## 要備份什麼
+
+Zeabur Identity 用 `User` 物件的 UID 識別每個人。每個權杖的 `sub` 宣告都包含這個 UID，每把通行密鑰也都綁定這個 UID。Kubernetes 在建立物件時指派 UID，因此還原方式會決定使用者能否保留原本的身分。
+
+| 項目 | 還原叢集的資料存放區 | 從匯出檔重建資源 |
+|---|---|---|
+| 使用者 UID | 保留 | 重新產生 |
+| 既有通行密鑰 | 繼續使用 | 所有人重新註冊 |
+| 已連結的 GitHub 與 Google 帳號 | 繼續使用 | 所有人重新連結 |
+| 用 `sub` 追蹤使用者的應用程式 | 辨識為同一個人 | 辨識為新使用者 |
+| 工作階段 | 刪除後，所有人重新登入 | 不還原 |
+
+主要備份必須是 **Kubernetes 發行版的資料存放區備份**，例如 etcd 或 SQLite 快照。`kubectl get -o json` 匯出檔可作為備援，但無法取代資料存放區備份。
+
+匯出檔無法保留身分，原因如下：
+
+- `kubectl` 使用者名稱維持不變，例如 `zeabur:alice`，但 `sub` 宣告會改變。用 `sub` 對應帳號的應用程式會將 Alice 視為新使用者。你需要與各應用程式規劃遷移。
+- 通行密鑰儲存舊 UID。UID 不符時，Zeabur Identity 會拒絕這把通行密鑰。修改 `Credential` 物件也無法改變驗證器儲存的資料。
+- 憑證、授權與邀請使用含有 UID 的 `ownerReference` 指向使用者。過期的參照會讓物件面臨 Kubernetes 垃圾回收。
+
+<Callout type="warn">
+
+不要同時執行兩份使用相同 Issuer 與簽署金鑰的 Zeabur Identity。切換前，讓還原副本遠離正式環境的 DNS、上游登入回呼與使用者。
+
+</Callout>
+
+### 備份清單
+
+將下列資料放在一起，並記錄備份日期、Zeabur Identity 映像檔與 `zeabur-identityctl` 版本、叢集版本、Namespace、Issuer URL，以及安裝時使用的選項。
+
+| 備份項目 | 用途 |
+|---|---|
+| 叢集的資料存放區備份，以及發行版開啟備份所需的伺服器權杖、加密金鑰與叢集憑證 | 這是保留 UID 與通行密鑰的唯一方式。無法解密的快照無法用於還原。 |
+| `users`、`credentials`、`oauthclients`（`*.identity.zeabur.com`） | 保存使用者與群組、通行密鑰紀錄、已連結的 GitHub 或 Google 帳號，以及已註冊的用戶端。 |
+| Secret `zeabur-identity-signing-keys` | 保存所有私密簽署金鑰，包含即將啟用與已退役的金鑰。其他資料無法重建這些金鑰。 |
+| Secret `zeabur-identity-internal-ca` | 保存根 CA 與私密金鑰。cert-manager 用它簽發 kube-apiserver 連線至內部位址時驗證的憑證。這份 Secret 要與每台控制平面機器上的驗證檔案一起保存。cert-manager 會用它重新簽發 `zeabur-identity-internal-tls`。 |
+| Deployment、Service、ServiceAccount、Role 與 RoleBinding `zeabur-identity`，以及 ClusterRoleBinding `zeabur-identity-cluster-admins` | 保存 Zeabur Identity 的執行方式與管理員權限。也要備份你為其他應用程式建立的 RoleBinding。 |
+| ConfigMap `zeabur-identity-settings`，如果你有建立 | 保存 `teams` 與 `admin-aal3` 設定。缺少它時，所有設定都會回到預設值。 |
+| 掛載到 Zeabur Identity 的 Secret，例如 `zeabur-identity-config` | 保存 GitHub 與 Google 的用戶端密鑰。也要保留上游應用程式的註冊資料。 |
+| 公開 TLS 與路由 | 入門安裝使用 Secret `zeabur-identity-tls` 與 Ingress `zeabur-identity`。登入速率限制另使用 Ingress `zeabur-identity-rate-limited`、Middleware `zeabur-identity-rate-limit`，以及 `kube-system` 中的 HelmChartConfig `traefik`。 |
+| 每台控制平面機器上的 kube-apiserver 設定 | k3s 使用 `/etc/rancher/k3s/zeabur-identity/authn.yaml`，以及載入這份檔案的設定。 |
+| 機密用戶端應用程式各自密鑰儲存區中的用戶端密鑰 | Zeabur Identity 只保存雜湊值。 |
+| GitOps 或使用者佈建設定 | 這些系統恢復運作後，會依自己的設定覆寫還原資料。 |
+
+每次還原都要排除 `Grant` 物件（工作階段）、`Invitation` 物件與 Secret `zeabur-identity-setup`。舊備份會帶回你已撤銷的工作階段，或不該繼續使用的邀請連結。你可以匯出這些資料作為紀錄，但還原後要刪除。
+
+正在登入的流程不需要備份。Zeabur Identity 將這些狀態保存在記憶體中，使用者重新開始登入即可。
+
+還原舊資料也會帶回備份後移除的存取權限，例如已停用的使用者、已刪除的通行密鑰、舊用戶端密鑰，以及已撤銷的管理員權限。每次還原都要重新檢查誰能存取。
+
+### 機密用戶端的密鑰
+
+`OAuthClient` 只保存用戶端密鑰的雜湊值。`zeabur-identityctl client create` 只顯示密鑰一次，Zeabur Identity 無法再次提供。
+
+還原後，應用程式必須持有與雜湊值相符的密鑰，用戶端才能運作。如果你在備份後輪替過密鑰，還原的雜湊值就會對應舊密鑰。你可以將相符的密鑰交給應用程式，或依[註冊用戶端](../users/clients.mdx)產生新密鑰，並更新兩端。
+
+指令不會保留你省略的選項，因此重新產生密鑰時，必須再次提供所有選項。
+
+## 建立備份
+
+這份資源匯出檔要與資料存放區備份一起保存。你需要 `kubectl`、`jq`、`tar`、[`age`](https://github.com/FiloSottile/age)、Bash，以及管理員 kubeconfig。
+
+匯出期間必須停止 Zeabur Identity，確保使用者、憑證與金鑰來自同一個時間點。這會造成短暫的計畫性停機。
+
+<Steps>
+
+<Step>
+
+### 準備停機與備份目錄
+
+開始前：
+
+- 通知使用者。
+- 暫停 GitOps、使用者佈建，以及其他會寫入這些物件的系統。
+- 在加密磁碟上的私密目錄操作。不要開啟 `set -x`、印出 Secret，或將檔案提交到版本控制。Base64 不提供加密保護。
+
+</Step>
+
+<Step>
+
+### 停止 Zeabur Identity 並匯出資源
+
+以下腳本會記錄原本的副本數、停止 Zeabur Identity，並匯出資源與掛載的 Secret。
+
+```sh
+umask 077
+NS=zeabur-identity
+BACKUP=$(mktemp -d "$HOME/zeabur-identity-backup.XXXXXXXX")
+
+# Remember how many replicas Zeabur Identity had, then stop it.
+kubectl -n "$NS" get deploy zeabur-identity -o json > "$BACKUP/deployment.json"
+jq -r '.spec.replicas // 1' "$BACKUP/deployment.json" > "$BACKUP/replicas.txt"
+kubectl -n "$NS" scale deploy/zeabur-identity --replicas=0
+kubectl -n "$NS" wait --for=delete pod \
+  -l app.kubernetes.io/name=zeabur-identity --timeout=180s
+
+for resource in users credentials oauthclients grants invitations; do
+  kubectl -n "$NS" get "$resource.identity.zeabur.com" -o json \
+    > "$BACKUP/$resource.json"
+done
+kubectl -n "$NS" get secret zeabur-identity-signing-keys zeabur-identity-internal-ca -o json \
+  > "$BACKUP/identity-secrets.json"
+kubectl -n "$NS" get svc zeabur-identity -o json > "$BACKUP/service.json"
+kubectl -n "$NS" get serviceaccount/zeabur-identity role/zeabur-identity rolebinding/zeabur-identity -o json \
+  > "$BACKUP/namespaced-rbac.json"
+kubectl get clusterrolebinding zeabur-identity-cluster-admins -o json \
+  > "$BACKUP/admin-bindings.json"
+kubectl -n "$NS" get configmap zeabur-identity-settings -o json --ignore-not-found \
+  > "$BACKUP/settings.json"
+kubectl get crd users.identity.zeabur.com credentials.identity.zeabur.com \
+  oauthclients.identity.zeabur.com grants.identity.zeabur.com \
+  invitations.identity.zeabur.com -o json > "$BACKUP/crds.json"
+
+# Save every Secret mounted into Zeabur Identity, whatever it's called.
+jq -r '.spec.template.spec.volumes[]? | .secret.secretName // empty' \
+  "$BACKUP/deployment.json" | while IFS= read -r secret; do
+    kubectl -n "$NS" get secret "$secret" -o json \
+      > "$BACKUP/mounted-secret-$secret.json"
+  done
+```
+
+如果任何指令失敗，先重新啟動 Zeabur Identity，再排查原因，避免備份作業延長停機。
+
+```sh
+kubectl -n "$NS" scale deploy/zeabur-identity --replicas="$(cat "$BACKUP/replicas.txt")"
+```
+
+修正原因後，從頭重做。未完成的目錄不能當作備份。
+
+</Step>
+
+<Step>
+
+### 匯出公開 TLS 與路由
+
+如果你使用[在 k3s 上安裝並登入](../get-started/quickstart.mdx)的設定，匯出以下資源：
+
+```sh
+kubectl -n "$NS" get secret zeabur-identity-tls -o json > "$BACKUP/public-tls.json"
+kubectl -n "$NS" get ingress zeabur-identity -o json > "$BACKUP/ingress.json"
+```
+
+如果你也啟用了入門指南的登入速率限制，一併保存相關設定：
+
+```sh
+kubectl -n "$NS" get ingress zeabur-identity-rate-limited -o json > "$BACKUP/rate-limited-ingress.json"
+kubectl -n "$NS" get middleware.traefik.io zeabur-identity-rate-limit -o json > "$BACKUP/rate-limit.json"
+kubectl -n kube-system get helmchartconfig traefik -o json > "$BACKUP/traefik-config.json"
+```
+
+</Step>
+
+<Step>
+
+### 建立資料存放區快照並加密匯出檔
+
+如果你要取得同一個時間點的資料存放區快照，趁 Zeabur Identity 仍停止時建立。
+
+接著重新啟動 Zeabur Identity，並加密匯出檔：
+
+```sh
+kubectl -n "$NS" scale deploy/zeabur-identity \
+  --replicas="$(cat "$BACKUP/replicas.txt")"
+
+# age asks for a passphrase. Store it somewhere you can reach when the cluster is gone.
+cd ~
+ARCHIVE="$(basename "$BACKUP").tar.gz.age"
+tar -C "$BACKUP" -czf "$BACKUP.tar.gz" .
+age -p -o "$ARCHIVE" "$BACKUP.tar.gz"
+rm "$BACKUP.tar.gz"
+shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
+```
+
+`tar` 獨立執行，方便你看見無法讀取檔案的錯誤。如果它回報錯誤，不要保留該封存檔。
+
+檢查碼檔案只記錄封存檔名稱，不含目錄，因此兩份檔案一起移動後仍可驗證。
+
+</Step>
+
+<Step>
+
+### 將備份移出叢集
+
+將封存檔與 `.sha256` 檔案複製到叢集外，只開放少數人讀取，並保留離線副本。密碼要與封存檔分開保存。
+
+確認副本安全保存後，刪除未加密的目錄，再恢復 GitOps 與使用者佈建。
+
+</Step>
+
+</Steps>
+
+## 開啟備份
+
+採用任一還原方式前，先驗證封存檔，再將它解密到加密磁碟上的新私密目錄。從存放封存檔與 `.sha256` 檔案的目錄開始：
+
+```sh
+umask 077
+ARCHIVE=zeabur-identity-backup.XXXXXXXX.tar.gz.age   # your archive's file name
+shasum -a 256 -c "$ARCHIVE.sha256"
+RESTORE=$(mktemp -d "$HOME/zeabur-identity-restore.XXXXXXXX")
+age -d "$ARCHIVE" | tar -xz -C "$RESTORE"
+cd "$RESTORE"
+```
+
+這個目錄包含 Zeabur Identity 的私密簽署金鑰。完成還原後刪除它。
+
+## 還原並保留所有人的身分
+
+有資料存放區備份時，使用這個方式。使用者會保留原本的身分與通行密鑰。
+
+<Steps>
+
+<Step>
+
+### 在啟動前隔離還原環境
+
+快照會將 Zeabur Identity 還原到備份時的狀態。如果備份時服務正在執行，它會隨叢集啟動，並帶回舊工作階段。
+
+啟動還原後的叢集前，先確保沒有人能連到 Issuer 的公開位址。你可以使用獨立網路，或在防火牆、負載平衡器封鎖該位址。上游登入回呼也不能連到還原環境。
+
+使用管理員 kubeconfig 操作，不要依賴 Zeabur Identity 登入。
+
+</Step>
+
+<Step>
+
+### 還原資料存放區
+
+依 Kubernetes 發行版的程序還原資料存放區，包含解密所需的權杖或金鑰。
+
+使用與備份時相同版本的 Zeabur Identity。
+
+</Step>
+
+<Step>
+
+### 停止 Zeabur Identity 並比對 UID
+
+API 開始回應後，立即停止 Zeabur Identity，並保持停止狀態：
+
+```sh
+kubectl -n zeabur-identity scale deploy/zeabur-identity --replicas=0
+```
+
+依前面建立備份的流程取得的快照，副本數已經是 0。
+
+將還原後的使用者 UID 與匯出檔 `users.json` 比對。如果不同，代表還原程序重新建立了物件，改用下方的「重建資源還原」流程。
+
+</Step>
+
+<Step>
+
+### 重新檢查存取權限
+
+重新套用備份後的權限變更，包括停用使用者、撤銷管理員權限、通行密鑰或用戶端密鑰。完成後才能開放登入。
+
+如果你無法確認某人是否仍應保有存取權限，先維持停用，等負責人決定。通行密鑰仍能使用，不代表持有人仍應保有權限。
+
+</Step>
+
+<Step>
+
+### 刪除工作階段與一次性連結
+
+保持 Zeabur Identity 停止，刪除工作階段、邀請與設定連結：
+
+```sh
+NS=zeabur-identity
+kubectl -n "$NS" delete grants.identity.zeabur.com --all
+kubectl -n "$NS" delete invitations.identity.zeabur.com --all
+kubectl -n "$NS" delete secret zeabur-identity-setup --ignore-not-found
+```
+
+所有人都會登出。已簽發的權杖包含自行驗證所需的資訊，因此到期前仍然有效。如果你沒有調整期限，一般帳號預設為 10 分鐘，管理員帳號為 5 分鐘。
+
+</Step>
+
+<Step>
+
+### 還原其餘設定
+
+還原設定 Secret、應用程式的用戶端密鑰、公開 TLS、路由，以及 kube-apiserver 的驗證檔案。
+
+使用原本的 Issuer 執行 `zeabur-identityctl kube-config`。它會讓 cert-manager 使用還原的 CA，為 `zeabur-identity` Service 的位址簽發內部憑證。
+
+如果輸出與驗證檔案不同，依下方「簽署金鑰或內部憑證遺失」區段處理。
+
+</Step>
+
+<Step>
+
+### 啟動服務並確認存取
+
+使用相同的映像檔與 Issuer，將 Zeabur Identity 恢復到平常的副本數，再恢復 GitOps。
+
+讓管理員重新登入，確認一般與管理員存取權限。測試一把備份前的通行密鑰，以及一個機密用戶端。全部確認後，再開放其他人登入。
+
+</Step>
+
+</Steps>
+
+## 重建資源還原
+
+只有在沒有資料存放區備份時，才使用這個方式。還原後：
+
+- 使用者會取得新 UID，各應用程式收到的 `sub` 值也會改變。
+- 所有人都要註冊新的通行密鑰。
+- 所有人都要重新登入。
+
+還原到空的 Namespace 或叢集。不要為了騰出空間，刪除仍正常運作的正式環境 Namespace。
+
+<Steps>
+
+<Step>
+
+### 安裝基礎資源並保持服務停止
+
+使用與備份時相同版本的 Zeabur Identity，安裝 CRD、Namespace、RBAC 與 Service。將 Deployment 的副本數維持在 0，並隔離 Issuer，避免使用者連入。
+
+不要直接套用 `crds.json`、`deployment.json` 或 `service.json`。這些檔案含有舊叢集設定的欄位，例如 Service IP，新叢集不一定接受這些值。
+
+此時不要啟動 Zeabur Identity，否則它會建立新的簽署金鑰。
+
+</Step>
+
+<Step>
+
+### 檢查並建立使用者與用戶端
+
+檢查 `users.json` 與 `oauthclients.json`，移除不該還原的使用者與用戶端。編輯工作副本，保留原始封存檔不變。
+
+以下腳本會移除舊叢集的中繼資料，並以停用狀態建立每位使用者，避免有人意外取得存取權限：
+
+```sh
+NS=zeabur-identity   # the namespace you are restoring into
+for resource in users oauthclients; do
+  jq --arg ns "$NS" '
+    {apiVersion:"v1", kind:"List", items:[.items[] |
+      {apiVersion, kind,
+       metadata: ({name:.metadata.name, namespace:$ns,
+                   labels:(.metadata.labels // {}),
+                   annotations:((.metadata.annotations // {}) |
+                     del(."kubectl.kubernetes.io/last-applied-configuration"))}),
+       spec:(if .kind == "User" then .spec + {disabled:true} else .spec end)}]}
+  ' "$resource.json" > "$resource.restore.json"
+  kubectl create -f "$resource.restore.json"
+done
+```
+
+如果 `create` 失敗，停止操作並查明原因。不要改成強制套用，也不要刪除擋住操作的既有物件。
+
+</Step>
+
+<Step>
+
+### 還原金鑰、CA 與 Secret
+
+啟動 Zeabur Identity 前，先還原簽署金鑰、內部 CA、公開 TLS 與設定 Secret：
+
+```sh
+for file in identity-secrets.json mounted-secret-*.json public-tls.json; do
+  [ -e "$file" ] || continue
+  jq --arg ns "$NS" '
+    {apiVersion:"v1", kind:"List", items:[(if .kind == "List" then .items[] else . end) |
+      {apiVersion, kind, type, data,
+       metadata:{name:.metadata.name, namespace:$ns,
+         labels:(.metadata.labels // {}),
+         annotations:((.metadata.annotations // {}) |
+           del(."kubectl.kubernetes.io/last-applied-configuration"))}}]}
+  ' "$file" > "${file%.json}.restore.json"
+  kubectl apply --server-side -f "${file%.json}.restore.json"
+done
+```
+
+`identity-secrets.json` 包含清單，其他檔案各包含一份 Secret。這個篩選器能處理兩種格式。
+
+這裡使用 `apply`，因為安裝程式已建立空的簽署金鑰 Secret。如果套用時回報衝突，先查明欄位擁有者，再決定是否加入 `--force-conflicts`。
+
+</Step>
+
+<Step>
+
+### 排除舊憑證、工作階段與連結
+
+不要從 `credentials.json`、`grants.json` 或 `invitations.json` 建立任何物件。
+
+舊通行密鑰無法搭配新 UID。舊工作階段依使用者名稱指向帳號，因此舊更新權杖能替目前使用該名稱的人取得權杖。
+
+使用者重新註冊時，再自行連結 GitHub 或 Google 帳號。
+
+</Step>
+
+<Step>
+
+### 恢復一位管理員
+
+依下方內部憑證的處理方式，讓內部憑證與 kube-apiserver 設定一致。還原路由，並在仍隔離一般使用者的狀態下啟動 Zeabur Identity。
+
+從還原的使用者中選一位既有管理員，確認身分後，啟用帳號並產生設定連結：
+
+```sh
+ZEABUR_IDENTITY_ISSUER=https://identity.example.test   # the original issuer
+RECOVERY_USER=alice                         # the admin you are bringing back
+kubectl -n "$NS" get users.identity.zeabur.com "$RECOVERY_USER" -o yaml
+kubectl -n "$NS" patch users.identity.zeabur.com "$RECOVERY_USER" \
+  --type=merge -p '{"spec":{"disabled":false}}'
+zeabur-identityctl setup-link --namespace "$NS" --issuer "$ZEABUR_IDENTITY_ISSUER" \
+  --username "$RECOVERY_USER" --reset
+```
+
+繼續前，確認 `get` 顯示的帳號符合預期。如果名稱不存在，`setup-link` 會建立新的管理員帳號。
+
+持有設定連結的人能接管該帳號。只當面交付，或使用你信任的管道傳送。
+
+</Step>
+
+<Step>
+
+### 恢復其他使用者與應用程式
+
+逐一啟用審核通過的使用者，並傳送邀請，例如 `zeabur-identityctl invite --username alice`。不要只因為某人出現在備份中，就重新啟用帳號。
+
+請各個使用 Zeabur Identity 登入的應用程式，將帳號對應遷移到新的 `sub` 值，並讓所有人登出那些應用程式。
+
+完成後，恢復 GitOps 與使用者佈建。
+
+</Step>
+
+</Steps>
+
+## 簽署金鑰或內部憑證遺失
+
+### 簽署金鑰
+
+公開 JWKS、用戶端密鑰雜湊值與通行密鑰都無法重建私密簽署金鑰。金鑰遺失且沒有備份時，Zeabur Identity 必須使用新金鑰啟動。這會重設簽署金鑰，無法還原舊金鑰。
+
+- 舊金鑰簽署的權杖會失效。部分應用程式會繼續接受它們，直到更新金鑰快取或權杖到期。
+- 刪除所有授權與邀請，讓所有人重新登入。
+- 使用者與通行密鑰不受影響。
+
+如果 Secret `zeabur-identity-signing-keys` 是空的，Zeabur Identity 會在啟動時建立新金鑰。如果 Secret 已不存在，Zeabur Identity 無法自行建立。檢查所有備份後，再以叢集管理員身分使用安裝程式，重建空的 Secret。
+
+如果金鑰有遭竊疑慮，還原舊金鑰無法排除風險。應視為金鑰外洩，改用新金鑰。
+
+### 內部憑證
+
+cert-manager 簽發 `zeabur-identity-internal-tls`。kube-apiserver 從內部位址取得 Zeabur Identity 的金鑰時，會驗證這張憑證。
+
+cert-manager 使用 `zeabur-identity-internal-ca` 中的根 CA 簽署憑證，kube-apiserver 也只信任這個 CA。使用 `kubectl -n zeabur-identity get certificate` 檢查兩者。
+
+| 狀況 | 處理方式 |
+|---|---|
+| 服務憑證遺失或過期 | cert-manager 會自動重新簽發。控制平面機器上的設定不需變更。 |
+| 根 CA 遺失、CA 私密金鑰外洩，或 CA 接近 10 年期限 | 更換根 CA。從下方步驟 2 開始，到 kube-apiserver 套用新設定前，登入會失敗。 |
+
+更換根 CA：
+
+<Steps>
+
+<Step>
+
+### 刪除 CA Secret
+
+cert-manager 會使用新金鑰簽發新的根 CA：
+
+```sh
+kubectl -n zeabur-identity delete secret zeabur-identity-internal-ca
+kubectl -n zeabur-identity wait certificate/zeabur-identity-internal-ca --for=condition=Ready --timeout=2m
+```
+
+</Step>
+
+<Step>
+
+### 刪除服務憑證的 Secret
+
+cert-manager 會使用新 CA 簽發服務憑證：
+
+```sh
+kubectl -n zeabur-identity delete secret zeabur-identity-internal-tls
+kubectl -n zeabur-identity wait certificate/zeabur-identity-internal-tls --for=condition=Ready --timeout=2m
+```
+
+</Step>
+
+<Step>
+
+### 更新每台控制平面機器的設定
+
+使用原本的 Issuer，針對你的 Kubernetes 發行版執行 `zeabur-identityctl kube-config`。
+
+依[在 k3s 上安裝並登入](../get-started/quickstart.mdx)或[安裝到既有叢集](../get-started/existing-cluster.mdx)，將輸出的設定安裝到每台控制平面機器。
+
+如果你使用 Zeabur 安裝程式，改在第一台伺服器執行 `zeabur-installer apply`。
+
+</Step>
+
+</Steps>
+
+<Callout type="warn">
+
+能讀取 `zeabur-identity` Namespace 中 Secret 的人，也能讀取 CA 私密金鑰，並為內部位址簽發憑證。如果對方還能在 Service 的 ClusterIP 回應請求，就能將自己的簽署金鑰交給 kube-apiserver。
+
+這個 Namespace 的 Secret 讀取權限只能授予叢集管理員。Zeabur Identity 自己的 ServiceAccount 只能讀取 `zeabur-identity-internal-tls`。
+
+</Callout>
+
+不要為了繞過憑證遺失，改成信任純 HTTP 或略過憑證檢查。如果遺失的是公開憑證，為相同主機名稱取得新憑證。
+
+## 單機 k3s 的備份與還原
+
+這個流程適用於使用預設 SQLite 資料存放區的單台 k3s 伺服器，並還原到同一台機器。
+
+如果你使用內嵌 etcd、外部資料庫、不同 Kubernetes 版本，或要還原到新機器，改依 [k3s 備份與還原指南](https://docs.k3s.io/datastore/backup-restore)或 [etcd 快照文件](https://docs.k3s.io/cli/etcd-snapshot)操作。
+
+### 建立備份
+
+複製資料時要停止 k3s，確保資料庫檔案一致。先依前面的建立備份流程，暫停其他寫入來源並停止 Zeabur Identity。
+
+```sh
+SNAPSHOT=/var/backups/zeabur-identity-k3s/$(date -u +%Y%m%dT%H%M%SZ)
+sudo install -d -m 0700 "$SNAPSHOT"
+sudo systemctl stop k3s
+sudo tar -C /var/lib/rancher/k3s/server -czf "$SNAPSHOT/db-and-token.tar.gz" db token
+sudo chmod 0600 "$SNAPSHOT/db-and-token.tar.gz"
+sudo systemctl start k3s
+```
+
+解密資料庫需要 `token` 檔案，因此資料庫與權杖必須一起保存。也要保存 `/etc/rancher/k3s`。
+
+接著加密封存檔，並複製到其他機器。不要只將備份留在需要復原的機器上。
+
+### 還原備份
+
+還原會讓整個叢集回到備份時的狀態，範圍不限於 Zeabur Identity。先與所有在叢集執行工作負載的人協調。
+
+保留故障時的資料，供後續調查，不要直接刪除：
+
+```sh
+RECOVERY_ARCHIVE=/path/to/db-and-token.tar.gz   # the decrypted archive
+FAILED_STATE=/var/backups/zeabur-identity-k3s/failed-$(date -u +%Y%m%dT%H%M%SZ)
+sudo install -d -m 0700 "$FAILED_STATE"
+sudo systemctl stop k3s
+sudo mv /var/lib/rancher/k3s/server/db "$FAILED_STATE/db"
+sudo cp -a /var/lib/rancher/k3s/server/token "$FAILED_STATE/token"
+sudo tar -C /var/lib/rancher/k3s/server -xzf "$RECOVERY_ARCHIVE"
+sudo systemctl start k3s
+sudo k3s kubectl get --raw=/readyz
+```
+
+不要混用不同備份的資料庫與權杖。如果你在備份後修改過驗證檔案，啟動 k3s 前要先放回相符的版本。
+
+依前面的流程，在 Zeabur Identity 停止時取得快照，還原後服務也會保持停止。若快照中的服務仍在執行，它就會隨 k3s 啟動。這時必須在啟動 k3s 前封鎖 Issuer 的公開位址，並在 `/readyz` 開始回應後，立即將 Zeabur Identity 的副本數降為 0。
+
+重新增加副本數前，完成「還原並保留所有人的身分」中的步驟 3 到 5：停止服務並比對 UID、重新檢查存取權限，以及刪除工作階段與一次性連結。
+
+資料存放區還原會帶回你已撤銷的工作階段。刪除授權才能停止這些工作階段。
+
+## 事前演練
+
+在可丟棄的叢集演練還原流程，只使用測試帳號。例如，使用能在每次演練之間還原快照的虛擬機器。
+
+每個情境都從乾淨安裝與新註冊的通行密鑰開始。每次演練結束時，重新登入，並檢查一般與管理員存取權限。
+
+| 情境 | 操作 | 預期結果 |
+|---|---|---|
+| Zeabur Identity 停機 | 將 Zeabur Identity 的副本數降為 0，使用管理員 kubeconfig，再恢復副本數。 | 管理員 kubeconfig 全程可用。服務恢復後，通行密鑰登入恢復正常。 |
+| Ingress 停機 | 停止 Ingress 控制器，使用管理員 kubeconfig，再啟動控制器。 | 停機期間無法存取 Zeabur Identity 的公開 URL，管理員 kubeconfig 不受影響。控制器恢復後，一切正常。 |
+| kube-apiserver 無法啟動 | 安裝損壞的驗證檔案，再到機器上還原設定。 | 還原設定後，管理員 kubeconfig 可用。移除 Zeabur Identity 驗證設定期間，kube-apiserver 拒絕 Zeabur Identity 權杖。 |
+| 還原資料存放區 | 備份、刪除一位使用者，再還原。 | UID 相同，舊通行密鑰仍可使用。備份後撤銷的工作階段會恢復，直到你刪除授權。已簽發的權杖在到期前仍然有效。 |
+| 從匯出檔重建 | 刪除一位使用者，再從匯出檔重建。 | 使用者取得新 UID。即使修正 `Credential`，舊通行密鑰仍無法使用。使用者可以重新註冊。 |
+| 簽署金鑰遺失 | 刪除簽署金鑰 Secret，再重建為空的 Secret。 | 舊權杖與工作階段遭拒。使用者與通行密鑰仍可使用。 |
+| 內部憑證遺失 | 刪除 `zeabur-identity-internal-tls`。 | cert-manager 使用相同 CA 重新簽發憑證。登入持續可用，驗證檔案不變。 |
+| 更換內部 CA | 依前面的內部憑證流程操作。 | 取得新 CA。kube-apiserver 套用新設定後，登入恢復正常。 |
+| 升級失敗 | 部署不存在的映像檔，再回復到舊版。 | 使用者、通行密鑰與工作階段不變。 |
+
+可丟棄的叢集無法驗證下列項目。你也需要在自己的環境測試：
+
+- 實際使用的驗證器與瀏覽器。
+- 公開憑證與 Ingress。
+- 加密備份與密碼的存放位置，以及叢集消失後能否取得。
+- 使用 Zeabur Identity 登入的應用程式。
+- 多台機器組成的控制平面與資料存放區。
+- 你即將執行的確切升級。

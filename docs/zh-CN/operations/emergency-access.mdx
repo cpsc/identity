@@ -1,0 +1,255 @@
+---
+title: 保留不经过 Zeabur Identity 的入口
+description: 准备好管理员 kubeconfig 和控制平面主机的访问方式，在 Zeabur Identity 或 kube-apiserver 故障时恢复集群访问。
+source: "549eb2754155"
+---
+
+先记录 kube-apiserver 的现有配置，并确认使用客户端证书的管理员 kubeconfig 可用。保留这份 kubeconfig，以及每台控制平面主机的 SSH 或控制台入口。Zeabur Identity 或登录页故障时，你仍能访问集群；kube-apiserver 无法启动时，你也能直接在主机上修复配置。
+
+## 开始前
+
+- 准备好使用客户端证书的管理员 kubeconfig，不依赖 Zeabur Identity 登录。
+- 确认你能通过 SSH 或控制台访问每台控制平面主机。管理员 kubeconfig 只有在 kube-apiserver 运行时才有用。
+- 以下示例使用 `zeabur-identity` Namespace。如果你安装在其他位置，请换成实际的 Namespace 和路径。
+- 所有命令块都在同一个终端执行，后面的命令块会沿用前面设置的变量。遇到命令失败就停下来，修好后再继续。
+- 标有 K3s 和 RKE2 的命令，只执行与你的发行版对应的那一行。
+
+<Callout type="warn">
+
+通行密钥可以替代日常工作使用的管理员 kubeconfig，但紧急恢复仍需要这份 kubeconfig。保留离线副本，并实际演练如何重新访问集群。完成演练前，不要删除唯一的集群入口。
+
+</Callout>
+
+## 先准备好入口
+
+<Steps>
+
+<Step>
+
+### 记录 kube-apiserver 的现状
+
+更改认证配置前，记录每台控制平面主机的发行版、Kubernetes 版本、kube-apiserver 读取的配置文件，以及现有的 `--oidc-*`、`--authentication-config` 和 `--anonymous-auth` 配置。未配置的项目也要记录，恢复时会用到。
+
+查看服务单元，确认配置来源：
+
+```sh
+sudo systemctl cat k3s              # K3s
+sudo systemctl cat rke2-server      # RKE2
+```
+
+在每台主机上，把当前配置复制到只有 root 能访问、且 kube-apiserver 和 kubelet 不会监视的目录：
+
+```sh
+RECOVERY=/var/backups/zeabur-identity-control-plane/$(date -u +%Y%m%dT%H%M%SZ)
+sudo install -d -m 0700 "$RECOVERY"
+# Run the line for your distribution.
+sudo cp -a /etc/rancher/k3s "$RECOVERY/k3s"           # K3s
+sudo cp -a /etc/rancher/rke2 "$RECOVERY/rke2"         # RKE2
+```
+
+这些副本会包含私钥。另存一份加密副本到主机以外的位置。
+
+如果集群现有的认证配置文件已包含其他 Issuer，保留原文件，将 Zeabur Identity 的 `jwt` 项加入其中。不要直接用 Zeabur Identity 生成的文件覆盖。
+
+</Step>
+
+<Step>
+
+### 确认管理员 kubeconfig 可独立使用
+
+各发行版的管理员 kubeconfig 路径如下：
+
+| 发行版 | 管理员 kubeconfig |
+| --- | --- |
+| K3s | `/etc/rancher/k3s/k3s.yaml` |
+| RKE2 | `/etc/rancher/rke2/rke2.yaml` |
+
+更改 kube-apiserver 的认证配置前，使用管理员 kubeconfig 确认身份和就绪状态：
+
+```sh
+# Run the line for your distribution.
+KUBECTL="k3s kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml"                         # K3s
+KUBECTL="/var/lib/rancher/rke2/bin/kubectl --kubeconfig=/etc/rancher/rke2/rke2.yaml"  # RKE2
+sudo $KUBECTL auth whoami
+sudo $KUBECTL get --raw=/readyz
+```
+
+</Step>
+
+<Step>
+
+### 保管紧急凭证
+
+- 不要把管理员 kubeconfig 放在日常使用的电脑上。它具有 `cluster-admin` 权限。
+- 将加密副本离线保存到集群以外的位置，解密密钥分开存放。只留在服务器上的副本会随服务器一起丢失。
+- 留意证书到期日，并按发行版的流程更新证书。安装当天能用的 kubeconfig 仍会到期。
+
+</Step>
+
+</Steps>
+
+### 一起保留认证和匿名访问配置
+
+恢复配置时，必须同时恢复原有的认证和匿名访问配置。kube-apiserver 有以下限制：
+
+- `--authentication-config` 不能与 `--oidc-*` 参数同时使用。
+- 如果认证配置文件包含 `anonymous` 部分，就不能再传入 `--anonymous-auth` 参数。
+
+Zeabur Identity 生成的配置因发行版而异：
+
+- K3s／RKE2 的认证配置文件会设置 `anonymous.enabled: false`。使用认证配置文件后，K3s／RKE2 会移除自身添加的 `--anonymous-auth=false`。
+- `generic` 模式不配置匿名访问，由你自行处理。
+
+运行中的 kube-apiserver 会自动重新加载有效的认证配置文件。不要通过删除或破坏文件来停用 Zeabur Identity，这会让 kube-apiserver 处于不明状态。
+
+## Zeabur Identity 故障时
+
+使用管理员 kubeconfig 直接连接 kube-apiserver。不要依赖缓存的 Zeabur Identity 令牌或已打开的浏览器会话。已签发的令牌在到期前仍然有效，有效期以分钟计；Zeabur Identity 停止运行期间，用户无法登录或刷新令牌。
+
+<Steps>
+
+<Step>
+
+### 检查 kube-apiserver 和 Zeabur Identity
+
+在 K3s 服务器上执行：
+
+```sh
+sudo k3s kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get --raw=/readyz
+sudo k3s kubectl -n zeabur-identity get deploy,pods,svc,endpointslices
+sudo k3s kubectl -n zeabur-identity logs deploy/zeabur-identity --tail=100
+```
+
+如果 `/readyz` 失败，先按下方“kube-apiserver 无法启动”一节检查。
+
+</Step>
+
+<Step>
+
+### 修复故障组件
+
+如果 Zeabur Identity 的副本数降为零，将它调回平常的副本数。标准安装使用 1 个副本：
+
+```sh
+sudo k3s kubectl -n zeabur-identity scale deploy/zeabur-identity --replicas=1
+sudo k3s kubectl -n zeabur-identity rollout status deploy/zeabur-identity --timeout=5m
+```
+
+其他情况按下表处理：
+
+| 界面或结果 | 后续操作 |
+| --- | --- |
+| Zeabur Identity 已启动，但持续报错 | 查看日志，修正镜像、配置或资源问题。反复重启通常无法解决根本原因。 |
+| Zeabur Identity 正常，但公开网址无法访问 | 检查 Ingress 控制器、路由、DNS 和公开证书。Kubernetes 使用内部地址获取 Zeabur Identity 的密钥，浏览器和 `kubectl` 登录则使用公开地址。 |
+
+</Step>
+
+</Steps>
+
+修复期间，避免以下操作：
+
+- 不要更改 Issuer 的主机名来绕过故障。令牌和通行密钥都绑定该主机名，更改后两者都会失效。
+- 不要执行 `zeabur-identityctl setup-link --reset`。这会删除用户的通行密钥和会话，无法修复 Pod、Ingress 或 kube-apiserver。
+- 不要把令牌、链接、请求头或 Secret 内容贴到聊天或问题报告中。
+
+## kube-apiserver 无法启动
+
+先确认 kube-apiserver 确实无法启动。如果只有 Zeabur Identity 故障，kube-apiserver 仍能响应，就使用管理员 kubeconfig 修复 Zeabur Identity，不必移除认证配置。
+
+只有在 kube-apiserver 无法启动，或你决定停止信任 Zeabur Identity 时，才在主机上撤销认证配置更改。
+
+### 多台控制平面主机的处理顺序
+
+逐台修复，每修好一台就检查，再处理下一台。不要更改正常运行的主机。
+
+如果所有控制平面主机都已停止运行，而且使用内嵌 etcd，必须有足够的主机恢复，第一台才会就绪。这时依次修正每台主机的配置，不必等待前一台就绪。不要用 `cluster-reset` 处理认证错误。
+
+使用管理员 kubeconfig，直接连接每台主机自己的地址。负载均衡器会把请求转发到其他主机，无法确认你刚修好的主机状态。不要使用 `--insecure-skip-tls-verify`。
+
+### K3s／RKE2
+
+<Steps>
+
+<Step>
+
+### 找出认证配置的来源
+
+Zeabur Identity 的配置流程会添加以下文件。K3s 使用路径中的 `k3s`，RKE2 则使用 `rke2`：
+
+- 认证配置文件：`/etc/rancher/k3s/zeabur-identity/authn.yaml`。
+- 指向认证配置文件的 drop-in：`/etc/rancher/k3s/config.yaml.d/50-zeabur-identity.yaml`。
+
+在 RKE2 上，drop-in 还会将 `/etc/rancher/rke2/zeabur-identity` 挂载到 kube-apiserver Pod。Zeabur 安装程序会在 RKE2 上配置这些文件。
+
+K3s／RKE2 按字母顺序读取 drop-in。除非键名以 `+` 结尾，否则后读取的文件会替换之前的列表。因此，`50-zeabur-identity.yaml` 会覆盖较早文件中的 `kube-apiserver-arg` 配置。移除前，先确认哪些配置会重新生效。
+
+</Step>
+
+<Step>
+
+### 恢复原有配置并重启
+
+只有在 `50-zeabur-identity.yaml` 专供 Zeabur Identity 使用，且其他位置都没有配置 `--authentication-config` 时，才执行以下命令移走 drop-in：
+
+```sh
+# Run the line for your distribution.
+DIR=/etc/rancher/k3s; UNIT=k3s; KUBECTL="k3s kubectl --kubeconfig=$DIR/k3s.yaml"                                   # K3s
+DIR=/etc/rancher/rke2; UNIT=rke2-server; KUBECTL="/var/lib/rancher/rke2/bin/kubectl --kubeconfig=$DIR/rke2.yaml"  # RKE2
+RECOVERY=/var/backups/zeabur-identity-emergency/$(date -u +%Y%m%dT%H%M%SZ)
+sudo install -d -m 0700 "$RECOVERY"
+if sudo test -f "$DIR/zeabur-identity/authn.yaml"; then
+  sudo cp -a "$DIR/zeabur-identity/authn.yaml" "$RECOVERY/authn.failed.yaml"
+fi
+sudo mv "$DIR/config.yaml.d/50-zeabur-identity.yaml" "$RECOVERY/50-zeabur-identity.failed.yaml"
+sudo systemctl restart "$UNIT"
+sudo journalctl -u "$UNIT" --since '5 minutes ago' --no-pager
+sudo $KUBECTL get --raw=/readyz
+```
+
+如果这个 drop-in 在安装 Zeabur Identity 前就已存在，恢复原来的内容，不要移走整个文件。
+
+如果你把参数加在 `config.yaml`、其他 drop-in 或 systemd 服务单元中，请在原处撤销更改，并保留其他参数。认证和匿名访问配置必须一起恢复。
+
+保留原位置的 `authn.yaml`。移除参数后，kube-apiserver 会忽略它，你仍能用它对比故障配置。
+
+下次配置时，将 Zeabur Identity 的参数合并到现有列表，不要替换整个列表。
+
+</Step>
+
+</Steps>
+
+### 其他发行版
+
+`--distro generic` 只会写入认证配置文件。使用前，记录集群启动 kube-apiserver 的方式，以及无法使用 API 时撤销更改的方法。
+
+如果托管 Kubernetes 提供认证配置方式，请使用供应商支持的方法。
+
+## 确认已修好
+
+### 确认 Zeabur Identity 可重新登录
+
+Pod 就绪还不够。清除缓存的令牌，再用通行密钥重新登录，确认新的登录请求也能成功。
+
+在你的电脑上，使用[在 k3s 上安装并登录](../get-started/quickstart.mdx)时配置的 kubeconfig：
+
+```sh
+export KUBECONFIG=~/.kube/zeabur-identity-k3s.yaml
+rm -rf ~/.kube/cache/oidc-login   # forget cached tokens
+kubectl auth whoami
+kubectl auth can-i '*' '*' --all-namespaces   # yes for an admin account
+```
+
+确认用户名为 `zeabur:<username>`。管理员账号执行权限检查时，应返回 `yes`。
+
+kube-apiserver 刚重启时，登录会短暂出现 `oidc: authenticator not initialized`，因为它尚未获取 Zeabur Identity 的密钥。等几分钟后再试。如果错误持续，检查 kube-apiserver 日志、`zeabur-identity` Service 的端点和内部证书。不要关闭证书检查。
+
+### 确认 kube-apiserver 已恢复
+
+在每台修复过的主机上，使用管理员 kubeconfig 检查：
+
+- `/readyz`、节点状态和认证配置。
+- 匿名访问和健康检查是否与更改前一致。
+
+如果你决定停止信任 Zeabur Identity，另用只包含 Zeabur Identity 令牌的 kubeconfig，确认该令牌已无法使用。不要用管理员 kubeconfig 测试这件事，它的客户端证书会独立完成认证，掩盖令牌的检查结果。
+
+保留 Zeabur Identity 的 Namespace、对象和 Secret。删除它们无法撤销 kube-apiserver 的认证配置，只会丢失数据。

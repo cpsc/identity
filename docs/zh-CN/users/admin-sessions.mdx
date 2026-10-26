@@ -1,0 +1,172 @@
+---
+title: 管理员账号与会话
+description: 创建和切换管理员账号、调整会话时长，并配置全站团队模式与 AAL3 通行密钥限制。
+source: "988f25d63345"
+---
+
+管理员账号只能用通行密钥登录，访问令牌有效期为 5 分钟；普通账号的访问令牌有效期为 10 分钟。你可以调整会话时长，并要求管理员使用设备绑定的通行密钥。每个会话最晚在登录后 12 小时结束。
+
+## 创建和切换管理员
+
+`User` 默认为普通账号。设置 `spec.accountType: Admin` 后，账号就成为管理员账号。
+
+只有管理员账号的令牌带有 `admins` 组，Kubernetes 将这个组识别为 `zeabur:admins`。安装程序会通过 ClusterRoleBinding `zeabur-identity-cluster-admins`，将 `zeabur:admins` 绑定到 `cluster-admin`。管理员登录后立即拥有完整的集群权限，无需再次登录。
+
+普通账号只有你绑定到其组的权限，默认没有任何权限绑定。
+
+<Callout type="warn">
+
+每位管理员都应另有一个普通账号，用于日常工作。管理员账号只用于更改集群。管理员账号无法使用 GitHub 或 Google 登录，也无法关联这两种账号。登录页面会显示 **Use a passkey for this account**。
+
+</Callout>
+
+### 创建第一位管理员
+
+运行以下命令，创建第一个用户。这个用户是管理员账号，不属于任何组。命令会输出一次性的通行密钥设置链接。
+
+```sh
+zeabur-identityctl setup-link --username admin
+```
+
+管理员丢失所有通行密钥时，可以在同一条命令后加上 `--reset` 来恢复账号，详见[退出登录、恢复和移除用户](./offboarding.mdx)。
+
+### 邀请管理员或切换账号类型
+
+邀请新用户成为管理员：
+
+```sh
+zeabur-identityctl invite --username alice --admin
+```
+
+切换现有用户的账号类型：
+
+```sh
+zeabur-identityctl account-type alice admin     # or: regular
+```
+
+也可以用 `kubectl` 将现有用户设为管理员，并查看账号类型：
+
+```sh
+kubectl -n zeabur-identity patch zbuser alice --type merge -p '{"spec":{"accountType":"Admin"}}'
+kubectl -n zeabur-identity get zbuser            # the Type column shows the account type
+```
+
+更改会在用户下次登录或刷新令牌时生效。已签发的访问令牌在到期前仍然有效，最长为 5 分钟或 10 分钟。账号改为管理员后，原有的 GitHub 和 Google 会话会在下次刷新令牌时结束。
+
+目录同步不会更改账号的管理员身份，详见[从目录同步用户](./provisioning.mdx)。
+
+## 调整会话时长
+
+每次登录都会创建一个会话。应用会获取短期访问令牌和刷新令牌，并在会话结束前使用刷新令牌获取新的访问令牌，无需再次使用通行密钥。
+
+会话会在空闲超时或达到最长时限时结束。默认限制遵循 NIST SP 800-63B-4 的重新验证指南：
+
+| 账号 | 访问令牌有效期 | 空闲多久后结束会话 | 会话最晚结束时间 |
+|---|---|---|---|
+| 普通账号 | 10 分钟 | 1 小时 | 登录后 12 小时 |
+| 管理员，单个团队 | 5 分钟 | 1 小时 | 登录后 12 小时 |
+| 管理员，多个团队或启用 AAL3 | 5 分钟 | 15 分钟 | 登录后 12 小时 |
+
+12 小时从使用通行密钥、GitHub 或 Google 登录时开始计算，刷新令牌不会重置这个时限。
+
+Zeabur Identity 不保留单点登录会话，因此每次授权请求都会显示登录页面。令牌响应中的 `refresh_expires_in` 表示刷新令牌距离空闲超时还剩多少秒。
+
+将以下选项传给 `zeabur-identity`，即可调整限制。生成安装清单时，使用 `--serve-arg` 传入。
+
+| 选项 | 默认值 | 限制范围 |
+|---|---|---|
+| `--token-lifetime` | `10m` | 普通账号的访问令牌与 ID 令牌有效期 |
+| `--admin-token-lifetime` | `5m` | 管理员账号的访问令牌与 ID 令牌有效期 |
+| `--refresh-idle` | `1h` | 会话的空闲时限 |
+| `--admin-refresh-idle` | `15m` | 多个团队或启用 AAL3 时，管理员会话的空闲时限 |
+| `--refresh-absolute` | `12h` | 从登录开始计算的会话最长时限 |
+
+令牌有效期必须介于 1 分钟与 1 小时之间。空闲时限不得超过 `--refresh-absolute`。
+
+kube-apiserver 也会拒绝有效期超过 `zeabur-identityctl kube-config --max-token-lifetime` 所设上限的令牌。这个上限默认为 `1h`。
+
+## 全站配置
+
+Zeabur Identity 所在 Namespace 中的 ConfigMap `zeabur-identity-settings` 存储以下配置：
+
+| 键 | 可用值 | 默认值 | 用途 |
+|---|---|---|---|
+| `teams` | `single`、`multiple` | `single` | 设为 `multiple` 时，管理员会话默认在空闲 15 分钟后结束。 |
+| `admin-aal3` | `false`、`true` | `false` | 设为 `true` 时，管理员账号必须使用设备绑定的通行密钥。 |
+
+安装程序无法判断团队数量，因此每次安装都以单团队模式开始。单个团队的集群通常只有管理员一人，管理员与普通账号使用相同的空闲时限。
+
+多个团队共用集群时，创建以下配置：
+
+```sh
+kubectl -n zeabur-identity create configmap zeabur-identity-settings --from-literal=teams=multiple
+```
+
+以后要改回单团队模式，可以更新配置：
+
+```sh
+kubectl -n zeabur-identity patch configmap zeabur-identity-settings --type merge -p '{"data":{"teams":"single"}}'
+```
+
+Zeabur 的 **Settings** 页面也会写入同一个 ConfigMap。Zeabur Identity 在每次登录和刷新令牌时读取配置，无需重启。
+
+ConfigMap 或配置键不存在时，Zeabur Identity 会使用默认值。遇到无法识别的值时，Zeabur Identity 会采用更严格的配置，即 `multiple` 或 `true`，并在日志中记录警告。
+
+## 限制管理员使用设备绑定的通行密钥（AAL3）
+
+将 `admin-aal3` 设为 `"true"` 后，管理员账号只能使用设备绑定的通行密钥，例如安全密钥，或仅保存在单个设备上的通行密钥。
+
+Zeabur Identity 会在登录、添加通行密钥及刷新令牌时，拒绝 iCloud Keychain、Google Password Manager 等同步通行密钥。使用同步通行密钥创建的会话，会在下次刷新令牌时结束。拒绝消息为：
+
+> This passkey syncs to other devices. Admin accounts here need a security key, or a passkey that stays on one device.
+
+启用后，无论 `teams` 如何配置，管理员会话默认都会在空闲 15 分钟后结束。普通账号不受影响。
+
+NIST SP 800-63B-4 允许同步通行密钥达到的最高等级为 AAL2。设备绑定的通行密钥可符合 AAL3。
+
+<Callout type="warn">
+
+验证器会通过 WebAuthn 备份资格标志 `BE` 报告通行密钥是否可同步。Zeabur Identity 不要求验证器证明（attestation），因此不会验证这项报告。这里的 AAL3 限制会排除同步通行密钥，但无法证明密钥存放在哪种硬件上。
+
+</Callout>
+
+<Steps>
+
+<Step>
+
+### 确认每位管理员都有设备绑定的通行密钥
+
+启用前，查看通行密钥的 `BE` 值：
+
+```sh
+kubectl -n zeabur-identity get zbcred \
+  -o custom-columns=NAME:.metadata.name,USER:.spec.user,BE:.spec.passkey.backupEligible
+```
+
+每位管理员都必须至少有一把 `BE` 为 `false` 的通行密钥。
+
+没有这类通行密钥的管理员将无法登录，直到你运行以下命令，并由管理员使用新的设置链接注册安全密钥：
+
+```sh
+zeabur-identityctl setup-link --username <admin> --reset
+```
+
+Zeabur 的 **Settings** 页面会先检查当前操作的管理员是否有设备绑定的通行密钥。如果没有，页面会拒绝启用 AAL3。
+
+</Step>
+
+<Step>
+
+### 启用管理员 AAL3 限制
+
+更新全站配置：
+
+```sh
+kubectl -n zeabur-identity patch configmap zeabur-identity-settings --type merge -p '{"data":{"admin-aal3":"true"}}'
+```
+
+Zeabur Identity 会在下次登录或刷新令牌时应用限制，无需重启。
+
+</Step>
+
+</Steps>

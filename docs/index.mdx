@@ -1,0 +1,27 @@
+---
+title: Get started with Zeabur Identity
+description: Use a passkey to sign in to your self-managed Kubernetes cluster and replace an admin.conf that never expires.
+---
+
+Zeabur Identity issues sign-in tokens inside your cluster. `kubectl` opens a browser, you verify your identity with a passkey, and the token you receive is valid for only a few minutes. The cluster no longer needs an admin kubeconfig copied to every laptop.
+
+The current release is v0.1.0 alpha. Releases may include breaking changes, and there are no upgrade or rollback guarantees. Try it on a disposable cluster first. See the [security and support policy](reference/security.mdx).
+
+## Start with an Ubuntu server
+
+Prepare an Ubuntu server and your computer. Follow the guide to install k3s and Zeabur Identity, create the first admin's passkey, and sign in with `kubectl` on your computer.
+
+[Install on k3s on Ubuntu and sign in to kubectl with a passkey](get-started/quickstart.mdx)
+
+## Install on an existing cluster
+
+Prepare a cluster admin kubeconfig and an Issuer URL that's accessible over HTTPS. Use `zeabur-identityctl` to install the CRD and manifests, then configure kube-apiserver to trust Zeabur Identity.
+
+[Install Zeabur Identity on an existing cluster](get-started/existing-cluster.mdx)
+
+## After installation
+
+- [Add and manage users](users/manage-users.mdx): Invite teammates, adjust groups, and add a second passkey.
+- [Sign in with GitHub](users/github-sign-in.mdx) or [sign in with Google](users/google-sign-in.mdx): Link an existing account for everyday use.
+- [Register clients](users/clients.mdx): Use Zeabur Identity to sign in to Grafana and Argo CD, too.
+- [Back up and restore](operations/backup-restore.mdx) and [keep an access path that bypasses Zeabur Identity](operations/emergency-access.mdx): Retain access to the cluster when something goes wrong.

@@ -12,7 +12,7 @@ timeline. Upgrade to the latest alpha when a fix is published.
 
 Breaking changes, including changes to Kubernetes resources, can occur between alpha releases.
 There are no schema-migration, upgrade or rollback guarantees. Keep an independent cluster-admin
-credential and a tested backup; see [operations](docs/operations.md).
+credential and a tested backup; see [operations](docs/operations/emergency-access.mdx).
 
 Maintainers must enable GitHub private vulnerability reporting and confirm that the reporting
 link is available before making an alpha release public.

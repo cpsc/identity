@@ -1,0 +1,130 @@
+---
+title: Zeabur Identity architecture
+description: Learn how Zeabur Identity works in a Kubernetes cluster, its security properties, how its components interact, and how its crates divide responsibilities.
+---
+
+Zeabur Identity is an OpenID Connect Issuer that runs in a self-managed Kubernetes cluster and uses passkeys as its primary sign-in method. kube-apiserver uses [Structured Authentication Configuration][kep-3331] to verify tokens issued by Zeabur Identity itself. You can sign in with a passkey without holding a long-lived admin kubeconfig that can't be revoked. Other OpenID Connect clients, such as Argo CD, Grafana, and Headlamp, can use the same Issuer.
+
+CI tests cover k3s. RKE2 uses the same configuration, but its release installation process hasn't been verified.
+
+## Security properties
+
+- **No passwords.** Passkeys are the primary credentials. They use WebAuthn and require user verification. For regular access, users can also link a GitHub or Google account as an alternative sign-in method.
+- **Only admin accounts receive admin privileges.** Only a `User` with `accountType: Admin` receives the `zeabur:admins` group, which is bound to `cluster-admin`. Admin accounts can only sign in with passkeys. Their tokens expire after five minutes by default, and inactivity can end their sessions earlier. If the installation configuration enables AAL3, admin accounts must also use device-bound passkeys. Regular accounts receive only the permissions bound to their groups. All sessions end 12 hours after sign-in, and the kube-apiserver configuration independently limits each token's lifetime.
+- **The Issuer holds no long-lived secrets.** Tokens are short-lived and bound to an audience. The Issuer stores only hashes of authorization codes, refresh tokens, and links, and rotates signing keys regularly. Its service account has no permission to create Secrets, permission bindings, or users.
+- **Self-service actions don't increase privileges.** The account page operates only on the signed-in user's own objects and matches them by UID. Adding or removing a passkey, or linking or unlinking a GitHub or Google account, requires the user to authenticate again with a passkey. Users can't remove their last passkey or unlink their last sign-in method.
+- **Kubernetes stores the state.** Custom resources store users, credentials, clients, sessions, and invitations. No database is required. For the order of access revocation and data deletion, see [Sign out, recover access, and remove users](../users/offboarding.mdx).
+- **Small footprint.** The image contains a single static executable and is otherwise empty. End-to-end tests require the Pod's working set to stay at or below 30 MiB after sign-in. The server renders the sign-in pages, and each page's scripts are at most 3 KB after brotli compression.
+
+[Specification conformance](./conformance.mdx) lists the specification requirements Zeabur Identity implements, along with the corresponding code and verification tests.
+
+## How the components work together
+
+```text
+browser ──passkey──▶ zeabur-identity (in the cluster) ──tokens──▶ kubectl / OIDC clients
+                        │  ▲                                     │
+                 custom resources                       bearer token
+                        ▼  │                                     ▼
+                  kube-apiserver ◀──discovery + keys (internal TLS)── verifies tokens itself
+```
+
+A `kubectl` request follows these steps.
+
+<Steps>
+
+<Step>
+
+### Open the sign-in page
+
+kubelogin opens the browser to the Zeabur Identity sign-in page.
+
+</Step>
+
+<Step>
+
+### Sign in with a passkey
+
+The user signs in with a passkey. kubelogin receives a short-lived access token and a refresh token, and Zeabur Identity records the session in a `Grant` object.
+
+</Step>
+
+<Step>
+
+### Send the token
+
+`kubectl` sends the token to kube-apiserver.
+
+</Step>
+
+<Step>
+
+### Verify the token
+
+kube-apiserver verifies the token's signature with the keys Zeabur Identity publishes. It retrieves the keys over an internal TLS connection. Zeabur Identity doesn't participate in the request itself.
+
+</Step>
+
+<Step>
+
+### Refresh an expired token
+
+When the token expires, kubelogin uses the refresh token to obtain a new token without opening the browser.
+
+</Step>
+
+</Steps>
+
+The admin tool `zeabur-identityctl` runs on the administrator's computer with the administrator's own kubeconfig. It outputs installation manifests, generates a kube-apiserver `AuthenticationConfiguration` for the Kubernetes distribution, and issues one-time links for users to register passkeys.
+
+`deploy/crds.json` and `deploy/rbac.json` are the outputs of `zeabur-identityctl crds` and `zeabur-identityctl rbac`, respectively. These files are committed to the repository for pull request review.
+
+## Crate responsibilities
+
+The code is split into small crates, all at the same level in the `crates/` directory:
+
+- **Dependencies point downward and form no cycles.** See [Kladov][matklad-workspaces], as well as Lakos and Martin in the references below.
+- **Each crate encapsulates one design decision behind a narrow interface.** See [Parnas][parnas].
+- **A set of traits defines the storage layer.** Separate in-memory and Kubernetes implementations mean most tests don't need a cluster. This follows the ports and adapters architecture; see [Cockburn][cockburn].
+- **The server and admin CLI use separate executables.** Kanidm (`kanidmd`/`kanidm`), etcd (`etcd`/`etcdctl`), and cert-manager (`cmctl`) use the same division of responsibilities. Code that only administrators need to run stays out of the server image.
+
+Each crate has a README that also serves as its crate-level documentation. Open it with `cargo doc --open`.
+
+| Crate | What it holds | Depends on |
+|---|---|---|
+| [`zeabur-identity-core`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-core) | time, cryptographic helpers, validated config values, protocol names | — |
+| [`zeabur-identity-keys`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-keys) | signing keys, JWK publication, JWS signing and verification, rotation | core |
+| [`zeabur-identity-store`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-store) | storage ports (traits, records) and in-memory adapters | core, keys |
+| [`zeabur-identity-tls`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-tls) | trust roots, certificate issuance, a reloadable TLS listener | core |
+| [`zeabur-identity-ui`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-ui) | server-rendered pages, embedded assets, translations, security headers | core |
+| [`zeabur-identity-oauth`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-oauth) | the OAuth 2.0 / OpenID Connect authorization server | core, keys, store, ui |
+| [`zeabur-identity-signin`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-signin) | passkey enrollment and sign-in, upstream providers, page routes | core, keys, store, oauth, ui |
+| [`zeabur-identity-k8s`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-k8s) | custom resources, Kubernetes adapters, GC, manifests, kube-apiserver config | core, keys, store, tls |
+| [`zeabur-identity`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity) | **binary**: the in-cluster server | all of the above |
+| [`zeabur-identityctl`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identityctl) | **binary**: the administrator's CLI | core, k8s |
+| [`zeabur-identity-test-support`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-test-support), [`zeabur-identity-e2e`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-e2e) | test helpers; end-to-end tests on a cluster | — |
+
+The sign-in page's TypeScript and Tailwind source lives in [`ui/`](https://github.com/zeabur-oss/identity/tree/main/ui) and uses the Zeabur design system as a package. Build output and the design system's style classes are committed to `crates/zeabur-identity-ui` and embedded in the executable. The style classes are stored as askama macros in `templates/ds.html`, so building Zeabur Identity requires only Cargo.
+
+## Development
+
+See [CONTRIBUTING.md](https://github.com/zeabur-oss/identity/blob/main/CONTRIBUTING.md) for development environment setup, checks, dependency policies, and cluster tests.
+
+## References
+
+- The Kubernetes Authors, "KEP-3331: Structured Authentication Configuration."
+  [https://github.com/kubernetes/enhancements/tree/master/keps/sig-auth/3331-structured-authentication-configuration](https://github.com/kubernetes/enhancements/tree/master/keps/sig-auth/3331-structured-authentication-configuration)
+- A. Kladov, "Large Rust Workspaces," Aug. 22, 2021.
+  [https://matklad.github.io/2021/08/22/large-rust-workspaces.html](https://matklad.github.io/2021/08/22/large-rust-workspaces.html)
+- D. L. Parnas, "On the criteria to be used in decomposing systems into modules," *Commun.
+  ACM*, vol. 15, no. 12, pp. 1053–1058, Dec. 1972, doi:
+  [10.1145/361598.361623](https://doi.org/10.1145/361598.361623).
+- J. Lakos, *Large-Scale C++ Software Design*. Addison-Wesley, 1996.
+- R. C. Martin, *Agile Software Development, Principles, Patterns, and Practices*. Prentice
+  Hall, 2002 (the Acyclic and Stable Dependencies Principles).
+- A. Cockburn, "The Hexagonal (Ports & Adapters) Architecture," 2005.
+  [https://alistair.cockburn.us/hexagonal-architecture/](https://alistair.cockburn.us/hexagonal-architecture/)
+
+[kep-3331]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-auth/3331-structured-authentication-configuration
+[matklad-workspaces]: https://matklad.github.io/2021/08/22/large-rust-workspaces.html
+[parnas]: https://doi.org/10.1145/361598.361623
+[cockburn]: https://alistair.cockburn.us/hexagonal-architecture/

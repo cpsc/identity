@@ -1,73 +1,5 @@
-# Releases
+# Releasing
 
-Use [GitHub Releases](https://github.com/zeabur-oss/identity/releases) to download Zeabur Identity.
-While Zeabur Identity is in alpha, releases are marked as prereleases.
-
-## Choose your platform
-
-| Platform | CLI archive | Container image |
-|---|---|---|
-| Linux amd64 / x86_64 | `zeabur-identityctl-v<VERSION>-linux-amd64.tar.gz` | `ghcr.io/zeabur-oss/identity:v<VERSION>` |
-| Linux arm64 / aarch64 | `zeabur-identityctl-v<VERSION>-linux-arm64.tar.gz` | Same image tag; Docker selects your architecture |
-
-The CLI and server are statically linked. For macOS, Windows or other architectures, build
-the CLI from source.
-
-Each release includes checksums, signatures and SBOMs. An SBOM is a list of the dependencies
-included in an artifact; the downloadable SBOM files end in `.cdx.json`.
-
-## Download and verify
-
-You need GitHub CLI (`gh`), `cosign` 3.x and GNU `sha256sum`. Pulling the image also needs Docker.
-These command-line tools, apart from Docker, are available in the repository's `nix develop` shell.
-
-Choose a release version and your architecture, then download its files:
-
-```sh
-version=v0.1.0
-arch=arm64 # use amd64 for x86_64
-identity="https://github.com/zeabur-oss/identity/.github/workflows/release.yml@refs/tags/$version"
-gh release download "$version" --repo zeabur-oss/identity --dir downloaded
-```
-
-Verify the signature on `SHA256SUMS`, then use it to check the downloaded files. The identity
-ties the signature to Zeabur Identity's release workflow and the version you chose.
-
-```sh
-(
-  set -e
-  cd downloaded
-  cosign verify-blob --bundle SHA256SUMS.sigstore.json \
-    --certificate-identity "$identity" \
-    --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
-  sha256sum --check --strict SHA256SUMS
-)
-```
-
-After both checks pass, extract and try the CLI:
-
-```sh
-tar -xzf "downloaded/zeabur-identityctl-$version-linux-$arch.tar.gz"
-./zeabur-identityctl --help
-```
-
-To verify and pull the container, read its digest from the checked `image-digests.txt`.
-A digest identifies the exact image bytes.
-
-```sh
-image=$(awk '$1 == "index" {print $2}' downloaded/image-digests.txt)
-cosign verify --certificate-identity "$identity" \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com "$image"
-cosign verify-attestation --type cyclonedx --certificate-identity "$identity" \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com "$image"
-docker pull --platform "linux/$arch" "$image"
-```
-
-The image and its platform variants are signed, with server SBOMs attached. The signed
-checksums also cover the CLI archives, downloadable SBOMs, image digests and `provenance.json`,
-which records the source commit and build run.
-
-## Publish a release
 
 1. Update the workspace version in `Cargo.toml` and update `Cargo.lock`. For the first release,
    use `0.1.0`. Add a `## v<VERSION>` section to `CHANGELOG.md` with the alpha status,
@@ -99,11 +31,11 @@ which records the source commit and build run.
    ```
 
    Draft assets are not anonymously downloadable. For the download step in
-   [Get started](get-started.md), transfer these exact assets to the clean test server and
+   [Get started](../get-started/quickstart.mdx), transfer these exact assets to the clean test server and
    perform the same signature and checksum verification; do not rebuild the CLI or image.
-   Complete the [installation checklist](release-installation.md) on Linux amd64 and arm64.
+   Complete the [installation checklist](release-check.md) on Linux amd64 and arm64.
    Record the release commit, CLI checksums, image digests, cluster versions and observed
-   outcomes in [#43](https://github.com/zeabur-oss/identity/issues/43). Keep acceptance failures
+   outcomes in the release tracking issue. Keep acceptance failures
    visible; a green release workflow is not a substitute for this checklist.
 7. Only after the workflow and installation acceptance pass, make the prerelease public:
 
@@ -164,5 +96,5 @@ cluster when finished. It needs access to GHCR, Sigstore, the k3s image and Nix 
 
 For a local build, follow [Building from source](https://github.com/zeabur-oss/identity/blob/main/CONTRIBUTING.md#building-from-source).
 
-Before publishing a new version, follow the [installation checklist](release-installation.md)
+Before publishing a new version, follow the [installation checklist](release-check.md)
 to check the guide, browser sign-in and account recovery with the release artifacts.

@@ -1,0 +1,138 @@
+---
+title: 将 Zeabur Identity 安装到现有集群
+description: 在现有 Kubernetes 集群安装 Zeabur Identity，配置 kube-apiserver 认证，并用第一位管理员的通行密钥登录。
+source: "0420b9ba1429"
+---
+
+使用集群管理员的 kubeconfig 安装 Zeabur Identity，再将认证配置交给 kube-apiserver。完成后，你就能用通行密钥登录，让 `kubectl` 获取短期令牌。
+
+## 开始前
+
+- 准备具有 `cluster-admin` 权限的 kubeconfig。
+- 准备可访问的 HTTPS Issuer 地址。浏览器必须信任这个地址的 HTTPS 证书，才能创建通行密钥。
+- 确认你保留了[不经过 Zeabur Identity 的入口](../operations/emergency-access.mdx)：使用客户端证书的管理员 kubeconfig，以及每台控制平面节点的 SSH 或控制台访问权限。
+- 记录 kube-apiserver 当前的启动方式和认证配置，并备份配置文件。使用 `generic` 时，还要先确认如何在无法访问 Kubernetes API 的情况下恢复配置。
+
+<Callout type="warn">
+
+保留管理员 kubeconfig，并将加密副本存放在集群外。即使通行密钥登录正常，也不要删除唯一的应急入口。
+
+</Callout>
+
+<Steps>
+
+<Step>
+
+### 下载并验证发行文件
+
+按照[发行文件与验证](../reference/releases.mdx)下载并验证 Zeabur Identity，准备 `zeabur-identityctl`，并设置该页使用的 `ZEABUR_IDENTITY_IMAGE`。
+
+</Step>
+
+<Step>
+
+### 安装 CRD 和清单
+
+使用具有 `cluster-admin` 权限的 kubeconfig 执行：
+
+```sh
+export ZEABUR_IDENTITY_ISSUER=https://login.example.com
+zeabur-identityctl crds | kubectl apply --server-side -f -
+zeabur-identityctl manifests --image "$ZEABUR_IDENTITY_IMAGE" --serve-arg=--invitations | kubectl apply --server-side -f -
+```
+
+将 `https://login.example.com` 换成你的 HTTPS Issuer 地址，并确认该地址可访问。
+
+`--serve-arg=--invitations` 会启用邀请功能。未启用时，用户无法兑换 `invite` 生成的邀请链接。
+
+</Step>
+
+<Step>
+
+### 将认证配置装入 kube-apiserver
+
+根据集群选择 `--distro k3s` 或 `--distro generic`。
+
+#### k3s 和 RKE2
+
+生成配置文件：
+
+```sh
+zeabur-identityctl kube-config --distro k3s > authn.yaml
+```
+
+命令会输出安装步骤。按输出的说明安装配置，并重启一次 `k3s` 或 `rke2-server`。之后修改有效的 `authn.yaml` 时，kube-apiserver 会在约一分钟内重新加载。
+
+RKE2 使用相同配置，但安装流程尚未验证。
+
+#### 其他集群
+
+生成配置文件：
+
+```sh
+zeabur-identityctl kube-config --distro generic > authn.yaml
+```
+
+`generic` 只输出认证配置文件。你需要根据集群启动 kube-apiserver 的方式，将配置文件交给 `--authentication-config`。托管 Kubernetes 集群需使用供应商支持的认证配置方式。
+
+#### 应用前检查
+
+- 集群已有其他 Issuer 的认证配置时，将 Zeabur Identity 的 `jwt` 条目合并到现有文件中，不要覆盖整份配置。
+- `--authentication-config` 不能与 `--oidc-*` 标志同时使用。
+- 认证配置文件包含 `anonymous` 部分时，kube-apiserver 不能同时使用 `--anonymous-auth` 标志。`k3s` 输出会设置 `anonymous.enabled: false`；`generic` 的匿名访问配置由你处理。
+- `--discovery internal` 是默认值。如果改用 `--discovery public`，控制平面节点必须能连接公开 Issuer，并信任其 HTTPS 证书。
+- `--audience` 默认为 `kubernetes`，`--max-token-lifetime` 默认为 `1h`。
+
+</Step>
+
+<Step>
+
+### 创建第一位管理员
+
+生成一次性设置链接：
+
+```sh
+zeabur-identityctl setup-link --username admin
+```
+
+在浏览器中打开链接，创建通行密钥。
+
+`--username` 默认为 `admin`，`--valid-for` 默认为 `60m`。
+
+<Callout type="warn">
+
+`--reset` 会删除用户的通行密钥和会话。不要用它处理 Pod、Ingress 或 kube-apiserver 的故障。
+
+</Callout>
+
+</Step>
+
+<Step>
+
+### 注册 kubectl 客户端并配置 kubeconfig
+
+接着按照[在 k3s 上安装并登录](./quickstart.mdx)的步骤 6 到 8，注册 `kubectl` 客户端、配置电脑上的 kubeconfig，并用刚创建的管理员账号登录。
+
+</Step>
+
+</Steps>
+
+## 确认结果
+
+使用刚配置的 kubeconfig 执行：
+
+```sh
+kubectl auth whoami
+kubectl auth can-i '*' '*' --all-namespaces
+```
+
+用户名应显示为 `zeabur:admin`，权限检查应返回 `yes`。
+
+## 遇到问题
+
+| 界面或结果 | 后续处理 |
+|---|---|
+| 浏览器无法创建通行密钥 | 确认 Issuer 地址可访问，且浏览器信任它的 HTTPS 证书。 |
+| kube-apiserver 刚重启，登录时出现 `oidc: authenticator not initialized` | 等待几分钟，让 kube-apiserver 获取 Zeabur Identity 的密钥。如果持续失败，检查 kube-apiserver 日志、`zeabur-identity` Service 的端点和内部证书。不要关闭证书验证。 |
+| kube-apiserver 无法启动 | 使用[不经过 Zeabur Identity 的入口](../operations/emergency-access.mdx)，在控制平面节点恢复之前的认证和匿名访问配置。 |
+| 邀请链接无法兑换 | 确认服务器启动时已添加 `--invitations`。 |

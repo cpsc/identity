@@ -1,0 +1,195 @@
+---
+title: 添加和管理用户
+description: 邀请用户设置通行密钥、调整群组和显示名称，并管理通行密钥和已关联的账号。
+source: "a454bb8a5dc5"
+---
+
+使用 `zeabur-identityctl` 邀请用户设置通行密钥，再用 `kubectl` 管理群组和账号。用户登录后，可以在账号页面自行添加或移除通行密钥、关联账号，以及结束会话。
+
+![设置页面：通过一次性链接创建通行密钥](../../images/setup-light.avif)
+
+## 开始前
+
+- 准备 `zeabur-identityctl`，用于创建一次性设置链接。
+- 准备 `kubectl` 或 GitOps 工具，用于管理群组、管理员账号、退出登录和移除用户。
+- 在持有集群管理员 kubeconfig 的环境中执行命令。
+
+以下示例沿用[在 k3s 上安装并登录](../get-started/quickstart.mdx)的环境，使用 Namespace `zeabur-identity` 和 Issuer `https://identity.example.test`。将环境变量设为你自己的 Issuer：
+
+```sh
+export ZEABUR_IDENTITY_ISSUER=https://identity.example.test
+```
+
+`zeabur-identityctl` 会读取 `ZEABUR_IDENTITY_ISSUER`，后面的命令不需要重复指定。
+
+### 用户相关对象
+
+Zeabur Identity 将用户、通行密钥和会话存储为 Kubernetes 对象，放在自己的 Namespace 中。
+
+| 对象 | 短名称 | 用途 | 创建者 |
+|---|---|---|---|
+| `User` | `zbuser` | 一位用户，包含用户名、显示名称、群组和账号类型 | 你 |
+| `Credential` | `zbcred` | 一组通行密钥，或一个已关联的 GitHub 或 Google 账号 | Zeabur Identity，在用户使用链接时创建 |
+| `Invitation` | `zbinvite` | 一个尚未使用的一次性链接 | `zeabur-identityctl invite`；Zeabur Identity 会在链接使用后或到期时删除 |
+| `Grant` | `zbgrant` | 一个已登录的会话：应用使用 `g-…`，账号页面使用 `s-…` | Zeabur Identity，在每次登录时创建 |
+
+`Credential`、`Invitation` 和 `Grant` 都带有标签 `identity.zeabur.com/user=<username>`。使用 `-l identity.zeabur.com/user=alice`，就能选出属于 `alice` 的这些对象。
+
+普通账号的令牌默认有效期为 10 分钟，管理员账号则为 5 分钟。会话配置请参阅[管理员账号与会话](./admin-sessions.mdx)。
+
+## 邀请新用户
+
+<Steps>
+
+<Step>
+
+### 创建用户和设置链接
+
+```sh
+zeabur-identityctl invite --username alice --display-name "Alice Chen" --group dev
+```
+
+这个命令会创建用户 `alice`，将她加入 `dev` 群组，并输出一次性设置链接。要加入多个群组，重复指定 `--group`。
+
+链接有效期为 7 天，不能延长。要缩短有效期，可以指定 `--valid-for 24h`。
+
+`--group`、`--admin` 和 `--display-name` 只会设置新用户。向现有用户发出邀请，只会添加通行密钥或关联 GitHub、Google 账号，不会修改群组或显示名称。
+
+如果用户已有通行密钥或已关联的账号，`invite` 会报错并停止。`--reset` 会先删除这些登录凭据；账号恢复方式请参阅[退出登录、恢复账号与移除用户](./offboarding.mdx)。
+
+</Step>
+
+<Step>
+
+### 将链接交给用户
+
+通过你信任的渠道，将链接交给 Alice。她打开链接后，可以创建通行密钥。如果你已启用[使用 GitHub 登录](./github-sign-in.mdx)或[使用 Google 登录](./google-sign-in.mdx)，她也可以关联对应账号。
+
+<Callout type="warn">
+
+在链接使用或到期之前，任何持有链接的人都能成为 Alice。只将链接交给她本人。
+
+</Callout>
+
+Zeabur Identity 不会发送邮件。命令会将链接输出到 stdout，其他信息输出到 stderr。你可以用脚本发送链接：
+
+```sh
+link=$(zeabur-identityctl invite --username alice --group dev)
+mail -s "Set up your passkey" alice@example.com <<EOF
+Open this link on the device that will keep your passkey:
+
+$link
+EOF
+```
+
+发出和使用邀请时，Zeabur Identity 都会在 `User` 上记录事件，分别为 `InvitationIssued` 和 `InvitationRedeemed`。查看事件，就能确认链接何时、从哪里使用：
+
+```sh
+kubectl -n zeabur-identity get events --field-selector involvedObject.name=alice
+```
+
+</Step>
+
+<Step>
+
+### 授予群组权限
+
+Kubernetes 会将 Alice 识别为用户 `zeabur:alice`，所属群组为 `zeabur:dev`。将权限授予群组，不要逐一授予用户。
+
+以下示例允许 `dev` 群组编辑 `dev` Namespace 内的所有资源：
+
+```sh
+kubectl create namespace dev            # if it does not exist yet
+kubectl create rolebinding dev-edit --clusterrole=edit --group=zeabur:dev -n dev
+```
+
+</Step>
+
+</Steps>
+
+## 链接失效时
+
+### 确认服务器已启用邀请
+
+邀请链接需要服务器启用 `--invitations`。[在 k3s 上安装并登录](../get-started/quickstart.mdx)已启用这个选项。如果你的安装没有启用，添加选项并重新生成部署配置：
+
+```sh
+ZEABUR_IDENTITY_IMAGE=$(kubectl -n zeabur-identity get deployment zeabur-identity -o jsonpath='{.spec.template.spec.containers[0].image}')
+zeabur-identityctl manifests --image "$ZEABUR_IDENTITY_IMAGE" \
+  --serve-arg=--invitations | kubectl apply --server-side -f -
+kubectl -n zeabur-identity rollout status deploy/zeabur-identity
+```
+
+<Callout type="warn">
+
+`zeabur-identityctl manifests` 不会记住之前的选项。执行前，补上安装时使用的镜像、Namespace、`--config-secret` 和所有 `--serve-arg` 选项，再添加 `--serve-arg=--invitations`。
+
+</Callout>
+
+### 确认用户未停用
+
+用户停用期间，邀请链接无法使用。重新启用用户后，只要链接尚未到期，同一个链接就能继续使用：
+
+```sh
+kubectl -n zeabur-identity patch zbuser alice --type=merge -p '{"spec":{"disabled":false}}'
+```
+
+## 修改群组和显示名称
+
+编辑用户的 `User` 对象。以下命令将 `alice` 的群组改为 `dev` 和 `oncall`：
+
+```sh
+kubectl -n zeabur-identity patch zbuser alice --type=merge -p '{"spec":{"groups":["dev","oncall"]}}'
+```
+
+群组变更会出现在 Zeabur Identity 下一次签发的令牌中。已签发的令牌会保留旧群组，直到到期；`kubectl` 使用的令牌会在 10 分钟内到期。
+
+先读取群组，再请用户在下次登录后，用自己的 kubeconfig 确认 kube-apiserver 看到的身份：
+
+```sh
+kubectl -n zeabur-identity get zbuser alice -o jsonpath='{.spec.groups}'
+kubectl auth whoami          # Groups lists zeabur:dev and zeabur:oncall
+```
+
+如果用户带有 `identity.zeabur.com/source=directory` 标签，说明目录同步正在管理这个账号。请到目录中修改显示名称和群组，详见[从目录同步用户](./provisioning.mdx)。
+
+`groups` 不接受 `admins` 群组。这个群组只由账号类型决定，详见[管理员账号与会话](./admin-sessions.mdx)。
+
+用户名无法修改，因为 RBAC 绑定和审计记录都会引用它。要更换用户名，创建新用户后，再[移除旧用户](./offboarding.mdx)。
+
+## 用户自行管理账号
+
+用户可以打开 `https://<issuer>/account`，管理自己的通行密钥和会话：
+
+- 添加、重命名或移除通行密钥。
+- 查看和结束会话。
+- 启用 GitHub 或 Google 登录后，普通账号也能关联或取消关联这些账号。
+
+添加通行密钥、关联账号或执行移除操作，都需要先用通行密钥确认身份。用户无法在账号页面移除最后一组通行密钥，也无法取消关联最后一个可用于登录的账号。
+
+在账号页面移除通行密钥或取消关联账号时，Zeabur Identity 也会结束所有使用该凭据登录的会话。每次变更都会留下日志，并在 `User` 上记录事件：
+
+```sh
+kubectl -n zeabur-identity get events --field-selector involvedObject.name=alice
+```
+
+账号页面的会话有效期为 1 小时。密码管理工具会通过 `/.well-known/passkey-endpoints` 找到账号页面。
+
+### 添加通行密钥或设备
+
+大多数通行密钥会随平台账号同步，例如 iCloud Keychain 或 Google Password Manager，因此换新手机通常不需要额外设置。要使用独立的安全密钥，用户可以到账号页面添加。
+
+普通账号也能在账号页面关联 GitHub 或 Google 账号。同一个外部账号不能同时关联到不同用户；要改为关联到其他用户，先在原来的账号页面取消关联。管理员账号不能关联外部账号。
+
+不要用 `invite` 为已能登录的用户添加通行密钥或关联账号。如果链接交到错误的人手上，持有者就能以该用户的身份登录。用户已无法登录时，请按照[退出登录、恢复账号与移除用户](./offboarding.mdx)中的账号恢复流程处理。
+
+### 由管理员移除通行密钥或已关联的账号
+
+管理员也可以直接列出并删除 `Credential`：
+
+```sh
+kubectl -n zeabur-identity get zbcred -l identity.zeabur.com/user=alice
+kubectl -n zeabur-identity delete zbcred <name>
+```
+
+删除后，该凭据无法再次用于登录。直接删除 `Credential` 不会结束它之前创建的会话，这些会话仍可继续使用；请按照[退出登录、恢复账号与移除用户](./offboarding.mdx)中的说明让用户退出登录。在账号页面移除凭据则会一并结束相关会话。

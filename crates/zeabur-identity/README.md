@@ -171,4 +171,4 @@ retention. There are no request IDs, event UUIDs, hash chains or acknowledgement
 [RFC 8414]: https://www.rfc-editor.org/rfc/rfc8414
 [RFC 6750]: https://www.rfc-editor.org/rfc/rfc6750
 
-[the deployment guide]: ../../docs/get-started.md#before-going-public-rate-limit-sign-in
+[the deployment guide]: ../../docs/get-started/quickstart.mdx

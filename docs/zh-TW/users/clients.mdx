@@ -1,0 +1,200 @@
+---
+title: 註冊用戶端
+description: 註冊公開或機密用戶端，讓 Grafana、Argo CD 這類應用程式用 Zeabur Identity 登入。
+source: "af09d2c67dec"
+---
+
+將應用程式註冊為 Zeabur Identity 用戶端後，就能用 Zeabur Identity 登入。每個用戶端都是 Zeabur Identity 所在 Namespace 中的 `OAuthClient` 物件，物件名稱就是應用程式的 `client_id`。
+
+`kubectl` 也是用戶端。[在 k3s 上安裝並登入](../get-started/quickstart.mdx)的步驟已註冊這個用戶端。
+
+## 開始前
+
+- 以下指令沿用[在 k3s 上安裝並登入](../get-started/quickstart.mdx)的叢集，Namespace 為 `zeabur-identity`。
+- 使用叢集管理員的 kubeconfig 執行指令。
+- 依應用程式的執行方式，選擇用戶端類型：
+
+| 類型 | 適用情境 | 驗證方式 |
+|---|---|---|
+| `public` | `kubectl`、桌面應用程式、純瀏覽器應用程式等在使用者裝置上執行的程式 | `client_id` 與 PKCE |
+| `confidential` | Grafana、Argo CD、Headlamp 等有伺服器端的網頁應用程式 | 密鑰與 PKCE |
+
+## 註冊公開用戶端
+
+<Steps>
+
+<Step>
+
+### 準備 Redirect URI 與選項
+
+Redirect URI 是瀏覽器在登入後返回的位址。每個位址各用一次 `--redirect-uri` 指定。
+
+Zeabur Identity 接受以下位址：
+
+- 使用主機名稱的 `https://` 位址，例如 `https://app.example.com/callback`。
+- `http://127.0.0.1/…` 或 `http://[::1]/…`，供應用程式在使用者自己的裝置上接收登入結果。這類位址允許任意連接埠，所以 `kubectl` 改用其他連接埠監聽時仍能登入。
+
+Zeabur Identity 會逐字比對 Redirect URI。`zeabur-identityctl` 只接受瀏覽器實際送出的格式：
+
+- 通訊協定與主機名稱使用小寫，不含預設連接埠 `:443`。
+- 路徑至少包含 `/`，例如 `https://app.example.com/`，不能寫成 `https://app.example.com`。
+- 非 ASCII 主機名稱使用 `xn--` 格式，非 ASCII 路徑使用百分比編碼。
+
+`zeabur-identityctl` 會拒絕片段識別碼（`#…`）、含使用者名稱的 URI、其他主機的純 `http` 位址，以及瀏覽器不接受的位址，例如 999.1.1.1 或連接埠 99999。
+
+依需求加入其他選項：
+
+| 選項 | 用途 |
+|---|---|
+| `--audience kubernetes` | 讓用戶端取得 kube-apiserver 接受的權杖。只有應用程式需要以登入者身分呼叫 Kubernetes API 時才加入。 |
+| `--home-url` | 指定使用者開啟應用程式的位址，例如 `https://zeabur.example.com/`。只接受 `https://`，格式規則與 Redirect URI 相同。 |
+
+設定 `--home-url` 後，使用者直接開啟登入頁、沒有要登入的應用程式時，或完成通行密鑰設定後，登入頁會提供開啟應用程式的入口，並顯示其名稱。任何能開啟登入頁的人都能看到這些名稱與位址。
+
+</Step>
+
+<Step>
+
+### 建立並套用用戶端
+
+`zeabur-identityctl client create` 會檢查輸入並輸出物件。將輸出交給 `kubectl apply`，即可套用到叢集。
+
+以下是入門步驟使用的 `kubectl` 用戶端：
+
+```sh
+zeabur-identityctl client create kubectl --type public \
+  --redirect-uri http://127.0.0.1:8000/ --audience kubernetes | kubectl apply -f -
+```
+
+<Callout type="warn">
+
+對已存在的名稱執行 `client create` 會取代原有用戶端，每次都要帶上完整選項。例如，省略這裡的 `--audience kubernetes` 後，`kubectl` 就無法取得 kube-apiserver 接受的權杖。
+
+</Callout>
+
+</Step>
+
+</Steps>
+
+## 註冊機密用戶端
+
+<Steps>
+
+<Step>
+
+### 建立用戶端並取得密鑰
+
+以下指令會建立 Grafana 用戶端，並產生密鑰：
+
+```sh
+zeabur-identityctl client create grafana --type confidential --display-name Grafana \
+  --redirect-uri https://grafana.example.com/login/generic_oauth | kubectl apply -f -
+```
+
+指令會將密鑰輸出到終端機的 stderr，與物件輸出分開。密鑰不會出現在物件、`kubectl` 的輸入或 Git 中。
+
+<Callout type="warn">
+
+密鑰只會顯示一次。叢集只保留它的 SHA-256 雜湊值，請立即將密鑰交給應用程式。
+
+</Callout>
+
+</Step>
+
+<Step>
+
+### 將密鑰存入應用程式的 Secret
+
+可以將密鑰存入應用程式所在 Namespace 的 Secret。以下範例使用 Grafana 所在的 `monitoring` Namespace。
+
+執行後貼上密鑰，再按 Enter。不要將密鑰直接當作指令參數，因為同一台機器上的其他使用者能從程序清單看到參數。
+
+```sh
+read -rs CLIENT_SECRET     # paste the secret, then Enter
+# monitoring: the namespace Grafana runs in.
+printf %s "$CLIENT_SECRET" | kubectl -n monitoring create secret generic grafana-oidc \
+  --from-file=client-secret=/dev/stdin
+unset CLIENT_SECRET
+```
+
+</Step>
+
+<Step>
+
+### 設定應用程式
+
+在應用程式中填入：
+
+- Issuer URL。
+- `client_id`，此例為 `grafana`。
+- 剛才取得的密鑰。
+
+應用程式會從 `<issuer>/.well-known/openid-configuration` 取得其餘設定。Zeabur Identity 接受 HTTP Basic（`client_secret_basic`）與表單欄位（`client_secret_post`）這兩種密鑰傳送方式。
+
+</Step>
+
+</Steps>
+
+### 使用隨機產生的密鑰
+
+使用 `zeabur-identityctl client create` 產生密鑰，不要自行挑選密碼作為密鑰。
+
+任何能讀取 `OAuthClient` 物件或 Git 儲存庫的人都能看到密鑰的雜湊值。雜湊值沒有加鹽，適合搭配長隨機密鑰。自行挑選的密碼則容易遭到離線猜測，Zeabur Identity 也無法察覺。
+
+若不使用 `zeabur-identityctl`，自行產生 32 個隨機位元組並計算雜湊值：
+
+```sh
+CLIENT_SECRET=$(openssl rand -hex 32)
+printf 'sha256:%s\n' "$(printf %s "$CLIENT_SECRET" | sha256sum | cut -d' ' -f1)"   # secretHash
+```
+
+## 更換密鑰
+
+再次執行相同的 `zeabur-identityctl client create` 指令，並套用輸出。新的雜湊值會取代舊值，舊密鑰立即失效。更換時一併更新應用程式的 Secret。
+
+## 修改或移除用戶端
+
+使用 `kubectl -n zeabur-identity edit oauthclient grafana` 編輯物件，或用新的選項執行 `zeabur-identityctl client create` 後套用輸出。對機密用戶端重新執行 `client create` 也會更換密鑰。
+
+列出用戶端或移除 Grafana 用戶端：
+
+```sh
+kubectl -n zeabur-identity get oauthclients                  # short name: zbclient
+kubectl -n zeabur-identity delete oauthclient grafana        # nobody can sign in to it any more
+```
+
+移除後，使用者就無法再登入該用戶端。
+
+## 用 GitOps 管理用戶端
+
+<Steps>
+
+<Step>
+
+### 產生可提交的 YAML
+
+指令輸出的物件不含密鑰，可以提交到 Git。若要轉成 YAML，執行：
+
+```sh
+zeabur-identityctl client create grafana --type confidential --display-name Grafana \
+  --redirect-uri https://grafana.example.com/login/generic_oauth \
+  | kubectl create --dry-run=client -o yaml -f - > grafana-client.yaml
+```
+
+使用 `kubectl create --dry-run=client`，不要改成 `kubectl apply --dry-run=client`。`apply` 會加入 `last-applied-configuration` 註解；若用戶端已存在，還會加入 `resourceVersion`，導致檔案之後無法套用。
+
+</Step>
+
+<Step>
+
+### 先更新應用程式密鑰，再套用檔案
+
+每次執行指令都會產生新密鑰。套用檔案前，先將該次輸出的密鑰交給應用程式。
+
+若手動編輯物件，叢集會在套用時檢查內容。純 `http` Redirect URI、含片段識別碼的 Redirect URI，或格式錯誤的 `secretHash`，都會在 `kubectl apply` 時失敗，不會等到登入時才出錯。
+
+叢集的 URL 檢查比 `zeabur-identityctl` 寬鬆。新增 Redirect URI 時，先用 `zeabur-identityctl client create` 檢查，才能找出其餘格式問題。
+
+</Step>
+
+</Steps>

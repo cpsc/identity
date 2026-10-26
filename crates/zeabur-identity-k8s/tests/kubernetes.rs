@@ -1731,7 +1731,7 @@ mod tests {
         )
     }
 
-    /// The RBAC and admission policy in `docs/provisioning-users.md`, applied as written (with
+    /// The RBAC and admission policy in `docs/users/provisioning.mdx`, applied as written (with
     /// this test's namespace), bound a sync tool that writes with server-side apply and merge
     /// patches: PATCH reaches admission as CREATE or UPDATE.
     #[tokio::test]
@@ -1744,7 +1744,7 @@ mod tests {
         let env = Env::new().await;
         let ns = env.namespace.clone();
         let policy = format!("zeabur-identity-user-sync-{ns}");
-        let guide = include_str!("../../../docs/provisioning-users.md");
+        let guide = include_str!("../../../docs/users/provisioning.mdx");
         let manifests = guide
             .split("```yaml\n")
             .skip(1)

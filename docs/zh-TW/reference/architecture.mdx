@@ -1,0 +1,131 @@
+---
+title: Zeabur Identity 的架構
+description: 了解 Zeabur Identity 在 Kubernetes 叢集中的運作方式、安全性質、元件關係與 crate 分工。
+source: "e8a7ef88ae42"
+---
+
+Zeabur Identity 是以通行密鑰為主要登入方式的 OpenID Connect Issuer，在自管 Kubernetes 叢集中執行。kube-apiserver 使用 [Structured Authentication Configuration][kep-3331]，自行驗證 Zeabur Identity 簽發的權杖。你可以用通行密鑰登入，不必持有無法撤銷的長效管理員 kubeconfig。其他 OpenID Connect 用戶端，例如 Argo CD、Grafana 和 Headlamp，也能使用同一個 Issuer。
+
+k3s 已納入 CI 測試。RKE2 使用相同設定，但尚未驗證發行版本的安裝流程。
+
+## 安全性質
+
+- **不使用密碼。** 通行密鑰是主要憑證，使用 WebAuthn，且必須完成使用者驗證。一般存取也能連結 GitHub 或 Google 帳號，作為替代登入方式。
+- **管理員權限只授予管理員帳號。** 只有 `accountType: Admin` 的 `User` 會取得 `zeabur:admins` 群組，該群組綁定 `cluster-admin`。管理員帳號只能用通行密鑰登入，權杖預設有效期限為五分鐘，工作階段也能因閒置而提早結束。安裝設定若啟用 AAL3，管理員帳號還必須使用綁定裝置的通行密鑰。一般帳號只會取得所屬群組綁定的權限。所有工作階段都會在登入 12 小時後結束，kube-apiserver 的設定也會獨立限制每個權杖的有效期限。
+- **Issuer 不持有長效機密。** 權杖有效期限短，且綁定目標對象（audience）。授權碼、更新權杖和連結只儲存雜湊值，簽章金鑰會定期輪替。服務帳號無權建立 Secret、權限綁定或使用者。
+- **自助操作不增加權限。** 帳號頁面只會操作登入者自己的物件，並以 UID 比對。新增或移除通行密鑰、連結或解除連結 GitHub 或 Google 帳號，都需要重新使用通行密鑰完成驗證。使用者無法移除最後一把通行密鑰，也無法解除連結最後一種登入方式。
+- **狀態儲存在 Kubernetes。** 自訂資源儲存使用者、憑證、用戶端、工作階段與邀請，不需要資料庫。撤銷存取權與刪除資料的順序，見[登出、救援與移除使用者](../users/offboarding.mdx)。
+- **體積小。** 映像檔只包含一個靜態執行檔，其餘內容為空。端對端測試要求登入後 Pod 的 working set 不超過 30 MiB。登入頁面由伺服器產生，每頁的指令碼壓縮後（brotli）不超過 3 KB。
+
+[規格符合度](./conformance.mdx)列出 Zeabur Identity 實作的各項規格要求，以及對應的程式碼和驗證測試。
+
+## 元件如何協作
+
+```text
+browser ──passkey──▶ zeabur-identity (in the cluster) ──tokens──▶ kubectl / OIDC clients
+                        │  ▲                                     │
+                 custom resources                       bearer token
+                        ▼  │                                     ▼
+                  kube-apiserver ◀──discovery + keys (internal TLS)── verifies tokens itself
+```
+
+一次 `kubectl` 請求的流程如下。
+
+<Steps>
+
+<Step>
+
+### 開啟登入頁面
+
+kubelogin 開啟瀏覽器，前往 Zeabur Identity 的登入頁面。
+
+</Step>
+
+<Step>
+
+### 使用通行密鑰登入
+
+使用者以通行密鑰登入。kubelogin 取得短效存取權杖和更新權杖，Zeabur Identity 則以 `Grant` 物件記錄工作階段。
+
+</Step>
+
+<Step>
+
+### 傳送權杖
+
+`kubectl` 將權杖傳送給 kube-apiserver。
+
+</Step>
+
+<Step>
+
+### 驗證權杖
+
+kube-apiserver 使用 Zeabur Identity 公開的金鑰，驗證權杖簽章。它經由內部 TLS 連線取得金鑰，Zeabur Identity 不參與這次請求本身。
+
+</Step>
+
+<Step>
+
+### 更新過期權杖
+
+權杖到期後，kubelogin 使用更新權杖取得新權杖，不需要開啟瀏覽器。
+
+</Step>
+
+</Steps>
+
+管理工具 `zeabur-identityctl` 在管理員的電腦上執行，使用管理員自己的 kubeconfig。它會輸出安裝清單、產生適用於該 Kubernetes 發行版的 kube-apiserver `AuthenticationConfiguration`，並簽發一次性連結，供使用者註冊通行密鑰。
+
+`deploy/crds.json` 和 `deploy/rbac.json` 分別是 `zeabur-identityctl crds` 與 `zeabur-identityctl rbac` 的輸出。這些檔案會提交至版本庫，供 pull request 審查。
+
+## Crate 分工
+
+程式碼分成多個小型 crate，全部放在同一層的 `crates/` 目錄：
+
+- **相依關係只向下，不形成循環。** 參考 [Kladov][matklad-workspaces]，以及下方參考文獻中的 Lakos 和 Martin。
+- **每個 crate 以窄介面封裝一項設計決策。** 參考 [Parnas][parnas]。
+- **儲存層由一組 trait 定義。** 記憶體與 Kubernetes 各有實作，因此多數測試不需要叢集。這採用 ports and adapters 架構，參考 [Cockburn][cockburn]。
+- **伺服器與管理 CLI 使用不同的執行檔。** Kanidm（`kanidmd`／`kanidm`）、etcd（`etcd`／`etcdctl`）和 cert-manager（`cmctl`）也採用這種分工。只有管理員需要執行的程式碼，不會放進伺服器映像檔。
+
+每個 crate 都有 README，也會將它用作 crate 層級文件，可用 `cargo doc --open` 開啟。
+
+| Crate | What it holds | Depends on |
+|---|---|---|
+| [`zeabur-identity-core`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-core) | time, cryptographic helpers, validated config values, protocol names | — |
+| [`zeabur-identity-keys`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-keys) | signing keys, JWK publication, JWS signing and verification, rotation | core |
+| [`zeabur-identity-store`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-store) | storage ports (traits, records) and in-memory adapters | core, keys |
+| [`zeabur-identity-tls`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-tls) | trust roots, certificate issuance, a reloadable TLS listener | core |
+| [`zeabur-identity-ui`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-ui) | server-rendered pages, embedded assets, translations, security headers | core |
+| [`zeabur-identity-oauth`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-oauth) | the OAuth 2.0 / OpenID Connect authorization server | core, keys, store, ui |
+| [`zeabur-identity-signin`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-signin) | passkey enrolment and sign-in, upstream providers, page routes | core, keys, store, oauth, ui |
+| [`zeabur-identity-k8s`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-k8s) | custom resources, Kubernetes adapters, GC, manifests, kube-apiserver config | core, keys, store, tls |
+| [`zeabur-identity`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity) | **binary**: the in-cluster server | all of the above |
+| [`zeabur-identityctl`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identityctl) | **binary**: the administrator's CLI | core, k8s |
+| [`zeabur-identity-test-support`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-test-support), [`zeabur-identity-e2e`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-e2e) | test helpers; end-to-end tests on a cluster | — |
+
+登入頁面的 TypeScript 與 Tailwind 原始碼放在 [`ui/`](https://github.com/zeabur-oss/identity/tree/main/ui)，並以套件形式使用 Zeabur 設計系統。建置產物與設計系統的樣式類別都會提交至 `crates/zeabur-identity-ui`，並嵌入執行檔。樣式類別以 askama 巨集儲存在 `templates/ds.html`，因此建置 Zeabur Identity 只需要 Cargo。
+
+## 開發
+
+開發環境設定、檢查、相依套件政策與叢集測試，見 [CONTRIBUTING.md](https://github.com/zeabur-oss/identity/blob/main/CONTRIBUTING.md)。
+
+## 參考文獻
+
+- The Kubernetes Authors, "KEP-3331: Structured Authentication Configuration."
+  [https://github.com/kubernetes/enhancements/tree/master/keps/sig-auth/3331-structured-authentication-configuration](https://github.com/kubernetes/enhancements/tree/master/keps/sig-auth/3331-structured-authentication-configuration)
+- A. Kladov, "Large Rust Workspaces," Aug. 22, 2021.
+  [https://matklad.github.io/2021/08/22/large-rust-workspaces.html](https://matklad.github.io/2021/08/22/large-rust-workspaces.html)
+- D. L. Parnas, "On the criteria to be used in decomposing systems into modules," *Commun.
+  ACM*, vol. 15, no. 12, pp. 1053–1058, Dec. 1972, doi:
+  [10.1145/361598.361623](https://doi.org/10.1145/361598.361623).
+- J. Lakos, *Large-Scale C++ Software Design*. Addison-Wesley, 1996.
+- R. C. Martin, *Agile Software Development, Principles, Patterns, and Practices*. Prentice
+  Hall, 2002 (the Acyclic and Stable Dependencies Principles).
+- A. Cockburn, "The Hexagonal (Ports & Adapters) Architecture," 2005.
+  [https://alistair.cockburn.us/hexagonal-architecture/](https://alistair.cockburn.us/hexagonal-architecture/)
+
+[kep-3331]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-auth/3331-structured-authentication-configuration
+[matklad-workspaces]: https://matklad.github.io/2021/08/22/large-rust-workspaces.html
+[parnas]: https://doi.org/10.1145/361598.361623
+[cockburn]: https://alistair.cockburn.us/hexagonal-architecture/

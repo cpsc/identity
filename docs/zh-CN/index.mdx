@@ -1,0 +1,28 @@
+---
+title: 开始使用 Zeabur Identity
+description: 用通行密钥登录自己管理的 Kubernetes 集群，取代永不过期的 admin.conf。
+source: "785dfd1813ea"
+---
+
+Zeabur Identity 在你的集群里签发登录令牌。`kubectl` 打开浏览器，你用通行密钥验证身份，拿到的令牌只有几分钟有效期。集群不再需要一份复制到每台笔记本电脑的管理员 kubeconfig。
+
+目前是 v0.1.0 alpha，版本之间可能有破坏性变更，也不保证能升级或回滚。请先在可随时丢弃的集群上试用，参见[安全与支持政策](reference/security.mdx)。
+
+## 从一台 Ubuntu 服务器开始
+
+准备一台 Ubuntu 服务器和你的电脑。跟着页面装好 k3s 和 Zeabur Identity，创建第一位管理员的通行密钥，最后在电脑上用 `kubectl` 登录。
+
+[在 Ubuntu 的 k3s 上安装，用通行密钥登录 kubectl](get-started/quickstart.mdx)
+
+## 安装到现有集群
+
+准备集群管理员的 kubeconfig 和一个能通过 HTTPS 打开的 Issuer 网址。用 `zeabur-identityctl` 安装 CRD 和清单，再让 kube-apiserver 信任 Zeabur Identity。
+
+[把 Zeabur Identity 安装到现有集群](get-started/existing-cluster.mdx)
+
+## 安装后
+
+- [添加和管理用户](users/manage-users.mdx)：邀请同事、调整群组、添加第二把通行密钥。
+- [用 GitHub 登录](users/github-sign-in.mdx)或[用 Google 登录](users/google-sign-in.mdx)：日常使用可以关联已有账号。
+- [注册客户端](users/clients.mdx)：让 Grafana、Argo CD 也通过 Zeabur Identity 登录。
+- [备份与恢复](operations/backup-restore.mdx)和[保留不经过 Zeabur Identity 的入口](operations/emergency-access.mdx)：出问题时还能进入集群。

@@ -1,0 +1,276 @@
+---
+title: 从目录同步用户
+description: 配置同步工具的权限与准入策略，用小型脚本将外部目录同步为 Zeabur Identity 的 User 对象。
+source: "7bd49306e269"
+---
+
+运行小型同步程序，将 Okta、Entra ID、Google Workspace、LDAP 或人事系统中的用户同步为 Zeabur Identity 的 `User` 对象。同步工具只能读写用户，不能删除用户、创建登录凭证或邀请，也不能授予或移除管理员权限。
+
+Zeabur Identity 没有内置目录连接器，也不支持 SCIM。你需要自行运行同步程序，读取目录，再通过 Kubernetes API 写入 `User` 对象。日常管理操作见[管理用户](./manage-users.mdx)。
+
+| 目录事件 | 写入 Kubernetes 的内容 |
+|---|---|
+| 新增人员 | 创建 `User`，并加上同步工具管理的标签 |
+| 名称或群组变更 | 更新 `spec.displayName`／`spec.groups` |
+| 停用账号 | 设置 `spec.disabled: true` |
+| 移除人员 | 设置 `spec.disabled: true`，由管理员稍后删除 |
+
+同步工具不负责以下操作：
+
+- **创建 `Credential`。** 用户必须打开一次性链接，才能关联通行密钥或上游账号。同步工具不能决定谁能用哪个账号登录。
+- **创建 `Invitation`。** 邀请链接能为现有用户注册通行密钥，因此拥有创建邀请权限的人能接管任何账号。这项权限应留给管理员，由管理员运行 `zeabur-identityctl invite --username <name>`，或交给另一个拥有管理员同等权限的任务。
+- **设置管理员账号。** 管理员可以手动将同步的用户设为管理员账号。同步工具后续更新时会保留账号类型。
+- **删除用户。** 安全移除用户前，必须先删除其凭证与会话，详见[退出登录、救援与移除用户](./offboarding.mdx)。停用账号就能阻止登录，之后也能重新启用。
+
+使用目录本身的永久 ID 匹配人员，并将 ID 存在 `User` 的 annotation 中。不要用电子邮件地址匹配，人员离职后，其他人会沿用相同地址。
+
+## 开始前
+
+- 使用 Kubernetes 1.30 或更新版本，才能应用下方的 `ValidatingAdmissionPolicy`。
+- 准备自己的 `directory-export` 命令。每行输出一个 JSON 对象，包含 `id`、`username`、`name`、`groups` 和 `active`。无法完整列出所有人员时，命令必须以错误状态退出。
+- 如果使用下方的 shell 示例，运行环境需要 Bash、`jq` 和 `kubectl`。
+
+<Steps>
+
+<Step>
+
+### 创建只能读写用户的 ServiceAccount
+
+将以下内容保存为 `user-sync-rbac.yaml`，再运行 `kubectl apply -f user-sync-rbac.yaml`：
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: user-sync
+  namespace: zeabur-identity
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: user-sync
+  namespace: zeabur-identity
+rules:
+- apiGroups: [identity.zeabur.com]
+  resources: [users]
+  verbs: [get, list, watch, create, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: user-sync
+  namespace: zeabur-identity
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: user-sync
+subjects:
+- kind: ServiceAccount
+  name: user-sync
+  namespace: zeabur-identity
+```
+
+这个 Role 没有 `delete` 权限，也无法访问凭证、邀请、授权或 Secret。
+
+</Step>
+
+<Step>
+
+### 用准入策略限制同步工具
+
+RBAC 能允许工具写入用户，但无法限制它只能写入哪些用户、指定哪些群组。`ValidatingAdmissionPolicy` 补上这些限制。策略只应用于 `user-sync` 账号；无法评估策略时，API 会拒绝写入。
+
+策略要求同步工具：
+
+- 只能修改自己创建的用户，以 `identity.zeabur.com/source=directory` 标签识别。
+- 不能授予或移除管理员权限。
+- 只能指定允许列表内的群组。请将下方的 `['dev', 'ops']` 改成你的群组。
+- 必须让对象名称与用户名相同。
+
+将以下内容保存为 `user-sync-policy.yaml`，再运行 `kubectl apply -f user-sync-policy.yaml`：
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: zeabur-identity-user-sync
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [identity.zeabur.com]
+      apiVersions: ["*"]
+      operations: [CREATE, UPDATE]
+      resources: [users]
+  matchConditions:
+  - name: user-sync
+    expression: request.userInfo.username == 'system:serviceaccount:zeabur-identity:user-sync'
+  variables:
+  - name: managed
+    expression: >-
+      has(object.metadata.labels) &&
+      'identity.zeabur.com/source' in object.metadata.labels &&
+      object.metadata.labels['identity.zeabur.com/source'] == 'directory'
+  - name: wasManaged
+    expression: >-
+      request.operation == 'CREATE' || (has(oldObject.metadata.labels) &&
+      'identity.zeabur.com/source' in oldObject.metadata.labels &&
+      oldObject.metadata.labels['identity.zeabur.com/source'] == 'directory')
+  - name: admin
+    expression: "has(object.spec.accountType) && object.spec.accountType == 'Admin'"
+  - name: wasAdmin
+    expression: >-
+      request.operation == 'UPDATE' && has(oldObject.spec.accountType) &&
+      oldObject.spec.accountType == 'Admin'
+  validations:
+  - expression: variables.wasManaged
+    message: user-sync may only change users it created
+  - expression: variables.managed
+    message: users written by user-sync must keep the label identity.zeabur.com/source=directory
+  - expression: object.spec.username == object.metadata.name
+    message: the object name must equal the username, so a username cannot be taken twice
+  - expression: "!has(object.spec.groups) || object.spec.groups.all(g, g in ['dev', 'ops'])"
+    message: user-sync may only assign allowlisted groups
+  - expression: variables.admin == variables.wasAdmin
+    message: user-sync never makes or unmakes admin accounts
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: zeabur-identity-user-sync
+spec:
+  policyName: zeabur-identity-user-sync
+  validationActions: [Deny]
+```
+
+管理员仍可手动将同步的用户设为管理员账号。同步程序没有写入账号类型，server-side apply 会保留这个字段。
+
+#### 对象名称必须等于用户名
+
+Kubernetes 以 `zeabur:<username>` 识别每个 `User`。如果两个对象的用户名相同，RBAC 就会将它们视为同一人。对象名称具有唯一性，因此要求对象名称等于用户名，就能阻止同步程序创建另一个 `admin`。
+
+#### 用户名规则
+
+`metadata.name` 和 `spec.username` 必须使用相同的值。`User` 的 Schema 接受最多 63 个字符的小写 DNS 子域名，只能包含小写英文字母、数字、`-` 和 `.`。每个以 `.` 分隔的标签都必须以英文字母或数字开头和结尾，不能包含 `@`、`+` 或 `_`。完整规则如下：
+
+```text
+^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+```
+
+`zeabur-identityctl invite` 和 `zeabur-identityctl setup-link` 也会检查相同规则。
+
+如果目录以电子邮件地址识别人员，请从地址生成符合规则的短名称，例如将 `alice.chen@example.com` 转成 `alice.chen`。不同人员会生成相同的短名称，因此同步程序更新用户前，仍须检查目录 ID。
+
+#### 测试策略
+
+使用策略前，先确认它会拒绝不允许的写入。以下两个命令都必须失败：
+
+```sh
+as=(--as=system:serviceaccount:zeabur-identity:user-sync)
+# Refused: touches a user the tool did not create.
+kubectl -n zeabur-identity patch zbuser admin "${as[@]}" --type=merge -p '{"spec":{"disabled":true}}'
+# Refused: admin account.
+kubectl -n zeabur-identity apply "${as[@]}" -f - <<'EOF'
+apiVersion: identity.zeabur.com/v1alpha1
+kind: User
+metadata:
+  name: mallory
+  namespace: zeabur-identity
+  labels: {identity.zeabur.com/source: directory}
+spec: {username: mallory, accountType: Admin}
+EOF
+```
+
+</Step>
+
+<Step>
+
+### 编写同步程序
+
+使用有 Kubernetes 客户端的语言编写程序，并以 `user-sync` ServiceAccount 运行。你可以将程序放在集群内的 `CronJob` 中，或在集群外使用 `kubectl -n zeabur-identity create token user-sync` 获取的令牌。
+
+下方是 shell 示例。`directory-export` 代表你自己的目录导出命令。
+
+```sh
+#!/usr/bin/env bash
+set -euo pipefail
+ns=zeabur-identity
+failed=0
+
+# Read the whole export before writing anything: a failing exporter stops the job here.
+people=$(directory-export)
+if [[ -z "$people" ]]; then
+  echo "the export is empty; refusing to sync" >&2
+  exit 1
+fi
+
+while read -r person; do
+  username=$(jq -r .username <<<"$person")
+  jq -n --arg ns "$ns" --argjson p "$person" '{
+    apiVersion: "identity.zeabur.com/v1alpha1",
+    kind: "User",
+    metadata: {
+      name: $p.username,
+      namespace: $ns,
+      labels: {"identity.zeabur.com/source": "directory"},
+      annotations: {"example.com/directory-id": $p.id}
+    },
+    spec: {
+      username: $p.username,
+      displayName: $p.name,
+      groups: $p.groups,
+      disabled: ($p.active | not)
+    }
+  }' | kubectl apply --server-side --field-manager=user-sync -f - ||
+    { echo "failed: $username" >&2; failed=1; continue; }
+  echo "synced $username"
+done <<<"$people"
+exit "$failed"
+```
+
+这个示例采用以下处理方式：
+
+- **读完完整导出内容后才写入。** 导出中途失败时，程序会在修改任何用户前停止，避免遗漏后续人员及其停用状态。请在 `directory-export` 内使用目录提供的完整性检查，例如总条数或列表结束标记。
+- **拒绝空的导出结果。** 加上“停用导出列表外的用户”逻辑后，空的导出结果会导致所有用户停用。
+- **单个用户失败不会中止其余同步。** 列表后方的停用状态仍须写入。循环会报告每条失败，并在结束时以错误状态退出，让任务显示为失败。
+
+同步程序管理用户的 `displayName`、`groups` 和 `disabled`。请在目录中修改这些字段，不要用 `kubectl` 手动修改，否则下次同步该用户时会发生字段冲突。账号类型不受这项限制，因为程序从未写入这个字段。
+
+<Callout type="warn">
+
+上方示例尚未包含目录 ID 匹配、停用导出列表外的用户，以及用户名检查。实际使用前，请补上以下处理。
+
+</Callout>
+
+写入前，同步工具还需要：
+
+- 拒绝更改现有用户的目录 ID annotation，避免目录中重命名或重新使用的账号接管别人的 `User`。
+- 停用不再出现在导出列表中的受管理用户。使用 `kubectl get zbuser -l identity.zeabur.com/source=directory` 获取受管理用户。
+- 将用户名转成小写，并按前述规则检查。
+
+</Step>
+
+<Step>
+
+### 向新用户发送一次性链接
+
+同步程序会创建用户，但用户仍需要一次性链接才能设置通行密钥。管理员负责创建并发送链接，操作见[管理用户](./manage-users.mdx)。
+
+Zeabur Identity 服务器必须启用 `--invitations`，链接才有效。
+
+```sh
+export ZEABUR_IDENTITY_ISSUER=https://identity.example.test     # your issuer
+zeabur-identityctl invite --username <name>
+```
+
+</Step>
+
+</Steps>
+
+## 遇到问题
+
+| 界面或结果 | 下一步处理 |
+|---|---|
+| 同步用户时发生字段冲突 | 检查是否有人用 `kubectl` 手动修改 `displayName`、`groups` 或 `disabled`。这些字段应由目录管理。 |
+| 程序报告导出结果为空并停止 | 检查 `directory-export` 的导出结果。程序会拒绝同步空列表。 |
+| 邀请链接无法使用 | 确认 Zeabur Identity 服务器已启用 `--invitations`，并参考[管理用户](./manage-users.mdx)。 |

@@ -50,7 +50,7 @@ production-readiness or OpenID Foundation certification claim.
 
 ### Installation and platform scope
 
-Follow [Get started](https://github.com/zeabur-oss/identity/blob/main/docs/get-started.md) for
+Follow [Get started](https://github.com/zeabur-oss/identity/blob/main/docs/get-started/quickstart.mdx) for
 installation and signature verification. Pin the image by the digest in the release's
 `image-digests.txt` asset.
 
@@ -65,7 +65,7 @@ installation and signature verification. Pin the image by the digest in the rele
 CI coverage does not establish successful installation of these release artifacts. Before
 making the draft public, maintainers must record clean-install, browser sign-in, permission,
 expiry and account-recovery results using the
-[release installation checklist](https://github.com/zeabur-oss/identity/blob/main/docs/release-installation.md)
+[release installation checklist](https://github.com/zeabur-oss/identity/blob/main/docs/internal/release-check.md)
 in [issue #43](https://github.com/zeabur-oss/identity/issues/43).
 
 ### Known limitations and security boundaries
@@ -79,6 +79,6 @@ in [issue #43](https://github.com/zeabur-oss/identity/issues/43).
 - Disabling a user, resetting passkeys or revoking a grant prevents session renewal; an already
   issued access token remains usable until expiry, up to ten minutes with default settings.
 - Keep SSH/console access, an independent cluster-admin credential and tested backups. See
-  [operations](https://github.com/zeabur-oss/identity/blob/main/docs/operations.md).
+  [operations](https://github.com/zeabur-oss/identity/blob/main/docs/operations/emergency-access.mdx).
 - Only the latest published alpha is eligible for security fixes; older alphas receive no
   backports. See the [security policy](https://github.com/zeabur-oss/identity/blob/main/SECURITY.md).

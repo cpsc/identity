@@ -1,0 +1,224 @@
+---
+title: 升级与回滚 Zeabur Identity
+description: 备份并记录当前部署，检查版本差异后升级 Zeabur Identity，并根据数据兼容性回滚到旧版或恢复备份。
+source: "59a539cb61a1"
+---
+
+先备份并记录当前部署，再检查版本差异、应用新版配置并验证登录与权限。需要回滚到旧版时，根据数据兼容性选择切回旧镜像或恢复升级前的备份。
+
+### 目前不保证的事项
+
+Zeabur Identity 目前处于 alpha 阶段，不保证升级与回滚能成功。资源版本仍是 `v1alpha1`，版本之间没有转换机制。在发行说明明确承诺前，不要假设任何方向的版本切换都能成功。记录实际运行的完整 commit 与镜像，不要只记录会重复使用的标签，例如 `zeabur-identity:dev`。
+
+`kubectl rollout undo` 只会回滚 Pod 模板，不会回滚 CRD、用户、签名密钥、Secret、RBAC、Service、Ingress 或 kube-apiserver 的文件。新版 Zeabur Identity 写入数据后，不保证旧版能读取。
+
+Zeabur Identity 运行单个副本，更新时会替换副本，不采用滚动更新。升级会短暂中断服务，当时正在登录的用户必须重新登录。不要增加副本来掩盖中断。
+
+## 升级前
+
+<Steps>
+
+<Step>
+
+### 确认紧急入口并备份
+
+确认[绕过 Zeabur Identity 的入口](./emergency-access.mdx)能正常使用，再按[备份与恢复](./backup-restore.mdx)创建完整备份。
+
+记录备份时间。恢复这份备份时，你会丢失备份之后的数据。
+
+</Step>
+
+<Step>
+
+### 记录当前部署
+
+记录源代码 commit、`zeabur-identityctl` 版本，以及安装时使用的所有选项，包括 Issuer、Namespace、镜像、每个 `--serve-arg`、`--config-secret` 和所有 overlay。确保每个节点都保留可用的旧镜像。
+
+执行以下命令，保存当前部署信息。这些文件必须保密。
+
+```sh
+umask 077
+NS=zeabur-identity
+mkdir -m 0700 upgrade-record
+kubectl -n "$NS" get deployment zeabur-identity -o yaml > upgrade-record/deployment.before.yaml
+kubectl -n "$NS" get pods -l app.kubernetes.io/name=zeabur-identity \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.containerStatuses[*]}{.name}{"\t"}{.image}{"\t"}{.imageID}{"\n"}{end}{end}' \
+  > upgrade-record/image-identities.before.txt
+kubectl -n "$NS" rollout history deployment/zeabur-identity > upgrade-record/rollout-history.before.txt
+```
+
+这些文件只是部署记录，不能代替备份。
+
+</Step>
+
+<Step>
+
+### 准备新版镜像
+
+使用 digest，或指向已知 commit 且不会重复使用的标签。将镜像加载到所有能运行 Zeabur Identity 的节点。
+
+</Step>
+
+<Step>
+
+### 准备新版资源清单
+
+使用新版 `zeabur-identityctl`，搭配原来的安装选项，将新版资源清单生成到文件，再与当前部署比较。不要将使用新版默认值生成的资源清单直接通过管道传入集群。
+
+</Step>
+
+<Step>
+
+### 检查版本差异并试升级
+
+阅读两个版本之间的变更，包括 CRD schema、存储格式、选项与令牌声明。
+
+先在恢复的副本上测试完全相同的升级流程，也要使用现有通行密钥登录。
+
+</Step>
+
+<Step>
+
+### 决定回滚方式
+
+如果无法确认旧版能读取新版数据，就必须恢复之前的备份，并接受备份之后的数据损失。
+
+如果数据需要迁移，但没有迁移方法，就不要升级。
+
+</Step>
+
+</Steps>
+
+## 升级
+
+<Steps>
+
+<Step>
+
+### 生成升级文件
+
+将前四行换成你的配置值。以下 `manifests` 命令与[在 k3s 上安装并登录](../get-started/quickstart.mdx)相同，会启用邀请功能。补上安装时使用的所有选项；如果原来没有启用邀请功能，移除 `--serve-arg=--invitations`。
+
+```sh
+NS=zeabur-identity
+NEXT_ZEABUR_IDENTITYCTL=/path/to/new/zeabur-identityctl
+NEXT_IMAGE=registry.example.test/zeabur-identity@sha256:...   # the new image, by digest
+ZEABUR_IDENTITY_ISSUER=https://identity.example.test
+"$NEXT_ZEABUR_IDENTITYCTL" crds > upgrade-record/crds.next.json
+"$NEXT_ZEABUR_IDENTITYCTL" manifests --issuer "$ZEABUR_IDENTITY_ISSUER" --namespace "$NS" --image "$NEXT_IMAGE" \
+  --serve-arg=--invitations > upgrade-record/manifests.next.json
+# Leave out the empty signing-key Secret: it's only for new installs.
+jq '.items |= map(select(.kind != "Secret"))' upgrade-record/manifests.next.json \
+  > upgrade-record/manifests.upgrade.json
+```
+
+</Step>
+
+<Step>
+
+### 检查并应用资源清单
+
+应用前，阅读 `upgrade-record/crds.next.json` 与 `upgrade-record/manifests.upgrade.json`。
+
+如果应用时出现冲突，先找出原因，不要加上 `--force-conflicts`。不要为了排除错误而删除并重建 CRD，这会删除该类型的所有对象。
+
+```sh
+kubectl apply --server-side -f upgrade-record/crds.next.json
+kubectl apply --server-side -f upgrade-record/manifests.upgrade.json
+kubectl -n "$NS" rollout status deployment/zeabur-identity --timeout=5m
+kubectl -n "$NS" logs deployment/zeabur-identity --tail=200
+```
+
+保留 `zeabur-identity` Service、`zeabur-identity-internal-ca` 与 `zeabur-identity-signing-keys`，不要替换。新 Service 不保证沿用原来的 IP，而每个 kube-apiserver 的认证文件都固定使用旧 IP。
+
+不要在升级时替换根 CA、更改 Issuer 或删除会话。如果新版确实需要不同的 kube-apiserver 配置，将它作为独立变更，一次处理一台机器。
+
+</Step>
+
+<Step>
+
+### 确认升级结果
+
+检查实际运行的镜像、就绪状态与日志，再完成以下验证：
+
+- 使用现有通行密钥重新登录。
+- 尝试一项有权限的操作与一项没有权限的操作。
+- 确认管理员访问正常。
+
+Pod 就绪不代表登录功能正常。
+
+</Step>
+
+</Steps>
+
+## 回滚
+
+<Steps>
+
+<Step>
+
+### 停止不确定的数据写入
+
+如果无法确认新版写入了哪些数据，先停止 Zeabur Identity，避免它继续写入：
+
+```sh
+kubectl -n zeabur-identity scale deployment/zeabur-identity --replicas=0
+```
+
+</Step>
+
+<Step>
+
+### 根据数据兼容性选择回滚方式
+
+#### 旧版能读取当前数据
+
+只有在确认旧版能读取当前数据时，才切回旧镜像。
+
+如果只更改镜像，执行：
+
+```sh
+kubectl -n zeabur-identity set image deployment/zeabur-identity zeabur-identity="$PREVIOUS_IMAGE"
+```
+
+如果还有其他 Pod 模板变更，先检查修订记录：
+
+```sh
+kubectl rollout history deployment/zeabur-identity --revision=N
+```
+
+再回滚到指定修订版本：
+
+```sh
+kubectl rollout undo deployment/zeabur-identity --to-revision=N
+```
+
+手动回滚其他变更，再恢复副本数。
+
+#### 无法确认旧版能读取当前数据
+
+按[备份与恢复](./backup-restore.mdx)的恢复流程，恢复升级前的备份，搭配旧镜像、资源清单、CRD 与 Secret。恢复期间保持 Zeabur Identity 停止。
+
+你会丢失备份之后的所有变更，包括新增的通行密钥、群组变更、客户端更新与密钥轮换。
+
+<Callout type="warn">
+
+恢复备份会带回备份中已撤销的会话与已使用的邀请。重新开放服务前，先删除这些会话与邀请。
+
+</Callout>
+
+不要为了启动旧版而安装空的签名密钥 Secret、删除证书或发出新的配置链接。
+
+</Step>
+
+<Step>
+
+### 确认回滚结果并记录损失
+
+检查镜像、就绪状态与日志，再重新登录。确认普通访问、管理员访问与紧急入口都正常。
+
+记录恢复了哪些内容，以及丢失了哪些数据。
+
+</Step>
+
+</Steps>

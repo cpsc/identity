@@ -1,0 +1,102 @@
+---
+title: Sign out users, recover accounts, and remove users
+description: Sign out users, reset accounts with lost passkeys, disable or remove users, and manage user configuration with Git.
+---
+
+Delete sessions to sign out users; reset accounts to restore access. To stop a user's access, disable the account first, then remove it when you no longer need it. You can also store `User` configuration in Git and manage it with GitOps.
+
+## Sign out users
+
+```sh
+kubectl -n zeabur-identity get zbgrant -l identity.zeabur.com/user=alice
+kubectl -n zeabur-identity delete zbgrant -l identity.zeabur.com/user=alice
+```
+
+Each signed-in session is a `Grant`. These commands list and delete all sessions for `alice`.
+
+After deletion, these sessions can no longer refresh tokens. Tokens the user already has remain valid until they expire, for up to 10 minutes.
+
+## Recover an account with a lost passkey
+
+```sh
+zeabur-identityctl setup-link --username alice --reset
+```
+
+This command deletes all credentials, sessions, and pending invitations for `alice`. Credentials include passkeys and linked GitHub or Google accounts.
+
+The command outputs a new single-use setup link that expires in 1 hour.
+
+<Callout type="warn">
+
+Anyone who opens the setup link can assume the identity of `alice`. Verify that the recipient owns the account before you send the link.
+
+</Callout>
+
+When the command issues the link, it adds a `SetupLinkIssued` event to the `User`. When someone uses the link, a `SetupLinkRedeemed` event is added.
+
+For regular accounts, you can use an invitation instead:
+
+```sh
+zeabur-identityctl invite --username alice --reset
+```
+
+This command performs the same reset and outputs an invitation. The user can also use the invitation to link a GitHub or Google account.
+
+## Disable a user
+
+```sh
+kubectl -n zeabur-identity patch zbuser alice --type=merge -p '{"spec":{"disabled":true}}'
+```
+
+Disable the account before you remove the user. Once disabled, the user can't sign in, sessions can no longer refresh tokens, and setup links and invitations become invalid.
+
+Disabling an account doesn't delete any data. Set `disabled` back to `false` to restore the account.
+
+Run this command to check the status:
+
+```sh
+kubectl -n zeabur-identity get zbuser alice
+```
+
+The **Disabled** column in the output shows `true`.
+
+## Permanently remove a user
+
+```sh
+kubectl -n zeabur-identity delete zbuser alice
+```
+
+After you delete the `User`, the user's passkeys, linked GitHub or Google accounts, sessions, and invitation links become invalid.
+
+These objects are all tied to the original `User`'s UID. Even if you create a `User` with the same name, the new object gets a new UID.
+
+Tokens the user already has remain valid until they expire, for up to 10 minutes.
+
+Kubernetes garbage collection deletes the related objects later. To delete them immediately, run this command before or after you delete the `User`:
+
+```sh
+for kind in zbcred zbgrant zbinvite; do
+  kubectl -n zeabur-identity delete "$kind" -l identity.zeabur.com/user=alice
+done
+```
+
+## Manage users with Git
+
+```yaml
+apiVersion: identity.zeabur.com/v1alpha1
+kind: User
+metadata:
+  name: alice
+  namespace: zeabur-identity
+spec:
+  username: alice
+  displayName: Alice Chen
+  groups: [dev]
+  # accountType: Admin   # for an admin account
+```
+
+`User` is a standard Kubernetes manifest that you can store in a GitOps repository.
+
+Don't store `Credential`, `Grant`, or `Invitation` objects in Git. Zeabur Identity creates and deletes these objects. If a sync tool prunes them, it removes users' passkeys or signs users out.
+
+To keep user data in sync with your company directory, see [Sync users from a directory](./provisioning.mdx).

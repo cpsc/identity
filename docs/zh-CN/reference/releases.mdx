@@ -1,0 +1,92 @@
+---
+title: 发行文件与验证
+description: 选择适合平台的 Zeabur Identity 发行文件，下载并验证签名与 checksum 后再运行。
+source: "2d2a26346b77"
+---
+
+到 [GitHub Releases](https://github.com/zeabur-oss/identity/releases) 下载 Zeabur Identity，先验证签名与 checksum 再运行。Zeabur Identity 在 alpha 阶段的发行版本均标记为预发行版。
+
+## 文件与平台
+
+| 平台 | CLI 压缩包 | 容器镜像 |
+|---|---|---|
+| Linux amd64 / x86_64 | `zeabur-identityctl-v<VERSION>-linux-amd64.tar.gz` | `ghcr.io/zeabur-oss/identity:v<VERSION>` |
+| Linux arm64 / aarch64 | `zeabur-identityctl-v<VERSION>-linux-arm64.tar.gz` | 使用相同的镜像标签，Docker 会选择你的架构 |
+
+CLI 和服务器均采用静态链接。macOS、Windows 或其他架构需要从源码构建 CLI。
+
+每个发行版本都包含 checksum、签名和 SBOM。SBOM 列出发行文件包含的依赖包，可下载的 SBOM 文件名以 `.cdx.json` 结尾。
+
+## 下载并验证
+
+你需要 GitHub CLI（`gh`）、`cosign` `3.x` 和 GNU `sha256sum`。拉取镜像还需要 Docker。除 Docker 外，这些命令行工具都可以在仓库的 `nix develop` shell 中使用。
+
+<Steps>
+
+<Step>
+
+### 选择版本与架构并下载
+
+设置发行版本与架构，再下载该版本的文件：
+
+```sh
+version=v0.1.0
+arch=arm64 # use amd64 for x86_64
+identity="https://github.com/zeabur-oss/identity/.github/workflows/release.yml@refs/tags/$version"
+gh release download "$version" --repo zeabur-oss/identity --dir downloaded
+```
+
+</Step>
+
+<Step>
+
+### 验证签名与 checksum
+
+先验证 `SHA256SUMS` 的签名，再用它检查下载的文件。`identity` 将签名关联到 Zeabur Identity 的发行工作流和你选择的版本。
+
+```sh
+(
+  set -e
+  cd downloaded
+  cosign verify-blob --bundle SHA256SUMS.sigstore.json \
+    --certificate-identity "$identity" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+  sha256sum --check --strict SHA256SUMS
+)
+```
+
+</Step>
+
+<Step>
+
+### 解压并运行 CLI
+
+两项检查都通过后，再解压并试用 CLI：
+
+```sh
+tar -xzf "downloaded/zeabur-identityctl-$version-linux-$arch.tar.gz"
+./zeabur-identityctl --help
+```
+
+</Step>
+
+<Step>
+
+### 验证并拉取容器镜像
+
+从已通过检查的 `image-digests.txt` 读取镜像 digest。digest 可标识镜像的确切字节内容。
+
+```sh
+image=$(awk '$1 == "index" {print $2}' downloaded/image-digests.txt)
+cosign verify --certificate-identity "$identity" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com "$image"
+cosign verify-attestation --type cyclonedx --certificate-identity "$identity" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com "$image"
+docker pull --platform "linux/$arch" "$image"
+```
+
+镜像及其各平台版本都有签名，并附带服务器的 SBOM。已签名的 checksum 也涵盖 CLI 压缩包、可下载的 SBOM、镜像 digest 和 `provenance.json`。`provenance.json` 记录源码提交和构建运行记录。
+
+</Step>
+
+</Steps>

@@ -48,7 +48,7 @@ Iterate per crate with `-p <crate>` to keep builds short. Cluster tests: see the
 - Rationale goes in rustdoc next to the code: state the decision and why, cite the
   specification section, paper or prior art (see `zeabur-identity-spec-work`). Each crate's README is its
   crate-level doc (`#![doc = include_str!("../README.md")]`).
-- Implementing a MUST/SHOULD updates `docs/conformance.md`.
+- Implementing a MUST/SHOULD updates `docs/reference/conformance.mdx`.
 
 ## Commits
 - Conventional Commits (`feat:`, `fix:`, `refactor:`, `docs:`, `chore(scope):`, `!` for breaking

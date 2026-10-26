@@ -870,9 +870,9 @@ mod tests {
             configuration
         );
 
-        // Replace the CA by hand, as docs/operations.md says: delete the CA Secret, then the
-        // leaf Secret, then install the new configuration. kube-apiserver then trusts only the
-        // new CA and accepts tokens again.
+        // Replace the CA by hand, as docs/operations/backup-restore.mdx says: delete the CA
+        // Secret, then the leaf Secret, then install the new configuration. kube-apiserver then
+        // trusts only the new CA and accepts tokens again.
         for name in [internal_tls::CA_SECRET, internal_tls::SECRET] {
             let old = leaf(&secrets.get(name).await.unwrap());
             secrets

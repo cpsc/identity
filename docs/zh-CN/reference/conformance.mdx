@@ -1,18 +1,29 @@
-# Conformance
+---
+title: 规范符合度
+description: 查看 Zeabur Identity 各项规范要求对应的代码、测试和符合状态。
+source: "68fa10d97426"
+---
 
-This file maps every MUST and SHOULD that Zeabur Identity implements to the code that implements it and
-the test that proves it. Normative words follow RFC 2119 and RFC 8174. The design reasons and the
-full citations are in each crate's documentation (`cargo doc --workspace --open`).
+你可以在这里查看 Zeabur Identity 实现的每项 MUST 和 SHOULD 要求，以及对应的代码和测试。这份对照表不代表 Zeabur Identity 已获得 OpenID 认证。项目尚未运行 OpenID Foundation 符合度测试套件：套件的浏览器自动化无法完成通行密钥验证流程，Zeabur Identity 也没有密码登录供套件使用。
 
-Status values: **Met** (code and test), **Partial** (explained in the row), **Not implemented**,
-**N/A** (with the reason).
+规范用语遵循 RFC 2119 和 RFC 8174。各 crate 的文档包含设计理由和完整引用来源，你可以用以下命令打开：
 
-Code paths are relative to `crates/`. Tests are given as `crate: module::tests::name` for unit
-tests and `crate/tests/file.rs: name` for integration tests. Tests marked *(cluster)* run against
-k3s v1.36.5 (`--run-ignored only`); *(e2e)* is `zeabur-identity-e2e/tests/e2e.rs`, which runs Zeabur Identity from
-its container image.
+```sh
+cargo doc --workspace --open
+```
 
-## Summary by specification
+表格保留来源的要求和状态文字。状态定义如下：
+
+- **Met**：已有实现代码和测试。
+- **Partial**：部分符合，限制写在该行。
+- **Not implemented**：尚未实现。
+- **N/A**：不适用，原因写在该行。
+
+代码路径以 `crates/` 为基准。单元测试格式为 `crate: module::tests::name`，集成测试格式为 `crate/tests/file.rs: name`。
+
+标记为 *(cluster)* 的测试使用 k3s `v1.36.5`，运行时使用 `--run-ignored only`。标记为 *(e2e)* 的测试位于 `zeabur-identity-e2e/tests/e2e.rs`，使用 Zeabur Identity 容器镜像运行。
+
+## 各项规范摘要
 
 | Specification | Version / status (2026-10) | Status |
 |---|---|---|
@@ -46,7 +57,7 @@ its container image.
 | OAuth 2.1 (draft-ietf-oauth-v2-1) | Draft | Followed where it tightens OAuth 2.0 (PKCE always, S256 only) |
 | OpenID Foundation conformance suite, `oidcc-basic-certification-test-plan` | — | Not run: the suite's browser automation cannot perform a passkey ceremony, and Zeabur Identity has no password login to give it |
 
-## Repository requirements
+## 仓库要求
 
 | Requirement | Code | Check | Status |
 |---|---|---|---|
@@ -58,11 +69,11 @@ its container image.
 | DCO sign-off | `CONTRIBUTING.md`, `scripts/check-dco.sh` | CI `dco` | Met |
 | One pinned Rust toolchain | `flake.nix`, `flake.lock` | CI `clippy`, `format` in `nix develop` | Met |
 | Image: static binary, non-root, no shell | `Containerfile`, `zeabur-identity-k8s/src/deployment.rs` | `zeabur-identity-k8s: deployment::tests::deployment_is_locked_down`; *(e2e)* | Met |
-| Image size and idle memory measured in CI | `scripts/build-image.sh`, e2e measurement | CI `kubernetes` job summary | Met (about 20 MB; pod working set within the 30 MiB budget) |
-| Image signing (Sigstore) and SBOM | `.github/workflows/release.yml`, `scripts/release-{build,publish,verify}.sh` | Exact-digest signature/SBOM verification and public pull in both native release rehearsal jobs | Partial: pipeline implemented; public OIDC publication evidence requires a successful tag-triggered run ([release procedure](releases.md)) |
-| Versioned CLI archives, checksums, signed provenance and SBOMs | Same workflow; `scripts/release-smoke.sh` | Signed checksum manifest; downloaded archive execution and Kubernetes-backed container startup on Linux amd64/arm64 while release stays draft; separate maintainer publication after installation acceptance | Partial: pipeline implemented; local smoke is not evidence of a published release; [#43](https://github.com/zeabur-oss/identity/issues/43) remains unverified |
+| Image size and idle memory measured in CI | `scripts/build-image.sh`, e2e measurement | CI `kubernetes` job summary | 已达成（登录后 Pod 的 working set 在 30 MiB 预算内；镜像大小只在 CI 摘要中报告，没有上限） |
+| Image signing (Sigstore) and SBOM | `.github/workflows/release.yml`, `scripts/release-{build,publish,verify}.sh` | Exact-digest signature/SBOM verification and public pull in both native release rehearsal jobs | Partial: pipeline implemented; public OIDC publication evidence requires a successful tag-triggered run ([发布流程](./releases.mdx)) |
+| Versioned CLI archives, checksums, signed provenance and SBOMs | Same workflow; `scripts/release-smoke.sh` | Signed checksum manifest; downloaded archive execution and Kubernetes-backed container startup on Linux amd64/arm64 while release stays draft; separate maintainer publication after installation acceptance | Partial: pipeline implemented; local smoke is not evidence of a published release |
 
-## OpenID Connect Discovery 1.0 and RFC 8414
+## OpenID Connect Discovery 1.0 和 RFC 8414
 
 | § | Requirement | Level | Code | Test | Status |
 |---|---|---|---|---|---|
@@ -75,7 +86,7 @@ its container image.
 | 8414 §3, §3.3 | Well-known location; identical `issuer`; RFC 9068 §4 consistency | MUST | one document at both paths | same | Met |
 | Disc. 7.1 | TLS for discovery | MUST | TLS at the ingress; the internal listener for kube-apiserver uses a private CA that cert-manager keeps | `zeabur-identity: internal::tests::serves_metadata_with_the_issued_certificate_and_renews_in_place` | Met |
 
-## JOSE: RFC 7515, 7517, 7518, 7638, 8725
+## JOSE：RFC 7515、7517、7518、7638、8725
 
 | § | Requirement | Level | Code | Test | Status |
 |---|---|---|---|---|---|
@@ -88,7 +99,7 @@ its container image.
 | 8725 §3.10, §3.11 | No `jku`/`x5u`/`jwk` headers; explicit `typ` | — / RECOMMENDED | `jws.rs` (`at+jwt`, `JWT`) | `zeabur-identity-oauth/tests/oauth.rs: code_flow_issues_tokens_kubernetes_can_use` | Met |
 | OIDC Core §10.1.1 | Keep decommissioned keys published for a while | SHOULD | `zeabur-identity-keys/src/rotation.rs` | `zeabur-identity-keys: rotation::tests::*` | Met |
 
-## kube-apiserver integration (KEP-3331)
+## kube-apiserver 集成（KEP-3331）
 
 | Source | Requirement | Code | Test | Status |
 |---|---|---|---|---|
@@ -100,7 +111,7 @@ its container image.
 | Distributions | `anonymous` per distribution; install steps for K3s/RKE2 | `kube_config.rs` | `zeabur-identity-k8s: kube_config::tests::*` | Partial: configuration generation tested; cluster E2E covers k3s only, RKE2 release installation unverified |
 | Project requirement | `kubectl auth whoami` on k3s | — | *(e2e)* | Met |
 
-## Kubernetes storage
+## Kubernetes 存储
 
 | Source | Requirement | Code | Test | Status |
 |---|---|---|---|---|
@@ -113,22 +124,17 @@ its container image.
 | Project requirement | Signing keys in a Secret, rotation with overlap | `zeabur-identity-k8s/src/keys.rs` | `signing_keys_persist_and_only_one_writer_wins` *(cluster)* | Met |
 | WebAuthn Level 3 §7.1 | A known credential ID fails registration | `zeabur-identity-store` `passkey_credential_name`, create-once | `zeabur-identity-signin/tests/signin.rs`; `setup_link_is_single_use_and_replaceable` *(cluster)* | Met |
 | RFC 9700 §4.14.2 | Refresh rotation with reuse detection | `zeabur-identity-k8s/src/grants.rs`, `zeabur-identity-store` `classify` | `grant_rotation_is_linearizable` *(cluster: 1 of 64 rotates)* | Met |
-| Project account-recovery policy; RFC 9700 §4.14.2 (security-event revocation, MAY) | Reset deletes pending invitations, then credentials, then refresh-token families before writing a setup link, including zero-credential retries after partial failure | `zeabur-identity-k8s/src/setup.rs` | [Account-recovery tests](#account-recovery-tests) | Met |
+| Project account-recovery policy; RFC 9700 §4.14.2 (security-event revocation, MAY) | Reset deletes pending invitations, then credentials, then refresh-token families before writing a setup link, including zero-credential retries after partial failure | `zeabur-identity-k8s/src/setup.rs` | Account-recovery tests | Met |
 
-### Account-recovery tests
+### 账号恢复测试
 
-- `zeabur-identity-k8s/tests/setup_reset.rs`: `reset_revokes_invitations_before_anything_else`,
-  `reset_retries_grant_deletion_after_credentials_are_gone` and
-  `reset_revokes_old_grants_without_credentials` exercise partial-failure recovery using a mock
-  Kubernetes HTTP API and the real OAuth router.
-- `zeabur-identity-k8s/tests/kubernetes.rs`: `setup_link_is_single_use_and_replaceable` checks on a cluster
-  that reset revokes only the target user's invitation.
-- `zeabur-identity-e2e/tests/e2e.rs`: `passkey_sign_in_then_kubectl_auth_whoami` checks on a cluster that
-  refresh succeeds before reset and fails afterward.
+- `zeabur-identity-k8s/tests/setup_reset.rs`：`reset_revokes_invitations_before_anything_else`、`reset_retries_grant_deletion_after_credentials_are_gone` 和 `reset_revokes_old_grants_without_credentials` 使用模拟的 Kubernetes HTTP API 和实际的 OAuth 路由器，测试部分失败后的恢复流程。
+- `zeabur-identity-k8s/tests/kubernetes.rs`：`setup_link_is_single_use_and_replaceable` 在集群上确认重置只会撤销目标用户的邀请。
+- `zeabur-identity-e2e/tests/e2e.rs`：`passkey_sign_in_then_kubectl_auth_whoami` 在集群上确认刷新令牌在重置前可用，重置后失效。
 
-## OAuth 2.0 and OpenID Connect
+## OAuth 2.0 和 OpenID Connect
 
-Tests are in `zeabur-identity-oauth/tests/oauth.rs` unless noted.
+除非另有说明，测试都位于 `zeabur-identity-oauth/tests/oauth.rs`。
 
 | Spec § | Requirement | Level | Code (`zeabur-identity-oauth/src/`) | Test | Status |
 |---|---|---|---|---|---|
@@ -160,9 +166,9 @@ Tests are in `zeabur-identity-oauth/tests/oauth.rs` unless noted.
 | OIDC Core §12.2 | Refreshed ID token keeps `auth_time`, no nonce | MUST | `endpoints.rs` | `refresh_rotates_and_reuse_revokes_the_family` | Met |
 | OIDC Core §15.1 | `max_age`, `prompt=login` | MUST | every sign-in is a fresh ceremony (no sessions) | `zeabur-identity-signin/tests/signin.rs: setup_link_then_passkey_sign_in_issues_tokens`; `auth_time_is_the_sign_in_and_survives_refresh` (a request with `max_age` shows the sign-in page) | Met while there are no sessions |
 
-## Account types and sessions
+## 账号类型和会话
 
-OAuth tests are in `zeabur-identity-oauth/tests/oauth.rs` unless noted.
+除非另有说明，OAuth 测试都位于 `zeabur-identity-oauth/tests/oauth.rs`。
 
 | Requirement | Code | Test | Status |
 |---|---|---|---|
@@ -176,9 +182,9 @@ OAuth tests are in `zeabur-identity-oauth/tests/oauth.rs` unless noted.
 | Settings come from the ConfigMap `zeabur-identity-settings`, read at every sign-in and refresh; missing means default, a value not understood means the stricter setting | `zeabur-identity-core/src/account.rs` `Settings::from_data`, `zeabur-identity-k8s/src/directory.rs` | `zeabur-identity-core: account::tests::settings_from_a_config_map` | Met |
 | First admin: `setup-link` creates an admin account; `zeabur:admins` is bound to `cluster-admin`, so the admin has full rights without a second sign-in; a refresh needs no passkey and follows the account type (a regular account loses the rights) | `zeabur-identity-k8s/src/rbac.rs`, `setup.rs` | *(e2e)* `passkey_sign_in_then_kubectl_auth_whoami` | Met |
 
-## Sign-in: passkeys, enrolment links, invitations
+## 登录：通行密钥、注册链接和邀请
 
-Tests are in `zeabur-identity-signin/tests/signin.rs` unless noted.
+除非另有说明，测试都位于 `zeabur-identity-signin/tests/signin.rs`。
 
 | Source | Requirement | Level | Code (`zeabur-identity-signin/src/`) | Test | Status |
 |---|---|---|---|---|---|
@@ -191,10 +197,9 @@ Tests are in `zeabur-identity-signin/tests/signin.rs` unless noted.
 | Fetch Metadata | Cross-site state-changing requests refused | — | `lib.rs` `check_request` | `requests_from_other_sites_are_refused`, `zeabur-identity-signin: tests::same_origin_checks` | Met |
 | RFC 6265bis | `__Host-` cookies: Secure, `Path=/`, no Domain | MUST | `lib.rs`, `upstream.rs` | `code_flow_issues_tokens_kubernetes_can_use` | Met |
 
-## Account page
+## 账号页面
 
-`/account`, where a user manages their own passkeys and sessions. Tests are in
-`zeabur-identity-signin/tests/signin.rs` (`tests::account::*`) unless noted.
+用户可以在 `/account` 管理自己的通行密钥和会话。除非另有说明，测试都位于 `zeabur-identity-signin/tests/signin.rs` 的 `tests::account::*`。
 
 | Source | Requirement | Level | Code | Test | Status |
 |---|---|---|---|---|---|
@@ -210,9 +215,9 @@ Tests are in `zeabur-identity-signin/tests/signin.rs` unless noted.
 | Project requirement | Add, rename, remove and session revocation leave a `zeabur_identity::audit` log line and an `Event` on the `User` (actor, credential, AAGUID, client IP, user agent) | MUST | `account.rs` `log_outcome`, `record`; `zeabur-identity-k8s/src/credentials.rs` `record` | `adding_and_removing_need_a_recent_verified_passkey`, `rename_needs_the_csrf_token_and_same_origin`; `zeabur-identity-k8s/tests/account.rs: only_the_users_own_passkeys_are_listed_or_changed` | Met |
 | Project requirement | A passkey's label is the one the user typed; without one, the account page names it by its creation date | — | `lib.rs` `new_passkey`; `zeabur-identity-ui/templates/account.html` | `a_passkey_without_a_label_shows_its_creation_date` | Met |
 
-## Upstream sign-in (GitHub, Google)
+## 上游登录（GitHub、Google）
 
-Tests are in `zeabur-identity-signin/tests/upstream.rs`.
+测试位于 `zeabur-identity-signin/tests/upstream.rs`。
 
 | Source | Requirement | Code (`zeabur-identity-signin/src/`) | Test | Status |
 |---|---|---|---|---|
@@ -226,10 +231,9 @@ Tests are in `zeabur-identity-signin/tests/upstream.rs`.
 | Kubernetes Object Names and IDs | A linked account signs in only as the `User` whose UID its owner reference names, never as a new `User` with the same name | `upstream.rs` `callback`; `zeabur-identity-k8s/src/credentials.rs` `linked_account`, `link` | `a_link_left_from_a_removed_user_does_not_sign_in_as_a_new_user_of_that_name`; `zeabur-identity-k8s/tests/account.rs: a_linked_account_signs_in_only_as_the_user_that_owns_it` | Met |
 | Kubernetes Object Names and IDs | An invitation or setup link enrols a passkey or links an account only for the `User` whose UID its owner reference names | `lib.rs` `valid_setup_token`; `zeabur-identity-k8s/src/setup.rs` `load_setup`, `load_invitation` | `signin.rs: a_link_left_from_a_removed_user_does_not_enrol_a_new_user_of_that_name`; `zeabur-identity-k8s/tests/account.rs: an_invitation_enrols_only_the_user_that_owns_it` | Met |
 
-## Sign-in pages
+## 登录页面
 
-Tests are in `zeabur-identity-signin/tests/pages.rs`; every page test checks headers and that the markup
-needs nothing the CSP forbids.
+测试位于 `zeabur-identity-signin/tests/pages.rs`。每个页面测试都会检查响应头，并确认页面标记不需要任何 CSP 禁止的功能。
 
 | Source | Requirement | Level | Code | Test | Status |
 |---|---|---|---|---|---|

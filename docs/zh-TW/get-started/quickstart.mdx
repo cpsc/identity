@@ -1,0 +1,531 @@
+---
+title: 在 Ubuntu 的 k3s 上安裝，用通行密鑰登入 kubectl
+description: 在 Ubuntu 伺服器安裝 Zeabur Identity、設定 HTTPS 與管理員帳號，並從你的電腦用通行密鑰登入 k3s 叢集。
+source: "78634ead1114"
+---
+
+在 Ubuntu 伺服器安裝 Zeabur Identity，設定 HTTPS 和第一個管理員帳號後，你就能從自己的電腦用通行密鑰登入 k3s 叢集，執行 `kubectl`。伺服器使用 k3s 內建的 Traefik 處理 Ingress。
+
+叢集的管理員 kubeconfig 留在伺服器上，供你安裝元件，或在 Zeabur Identity 無法運作時救援。另存一份加密副本，離線保管。你的電腦只取得叢集的 CA 憑證，以及使用 Zeabur Identity 登入的 kubeconfig。電腦送出的每個請求都帶有幾分鐘內到期的權杖。
+
+```text
+Your computer                               server (k3s)
+ browser ──https://identity.example.test──▶ Traefik :443 ──▶ zeabur-identity (zeabur-identity)
+ kubectl ──https://identity.example.test:6443──▶ kube-apiserver
+                                              │ verifies tokens itself; discovery and keys
+                                              └─▶ https://<zeabur-identity ClusterIP> (internal TLS)
+```
+
+## 開始前
+
+準備兩台機器：
+
+- **你的電腦**：執行瀏覽器和 `kubectl`，可使用 macOS、Linux 或 Windows。指令使用 POSIX shell；Windows 請使用 WSL。
+- **伺服器**：執行 k3s 和 Zeabur Identity。只要你的電腦能從網路連到這台 Ubuntu 機器，就能使用 VPS、家用實驗室主機、備用電腦或本機 VM。
+
+在你的電腦準備：
+
+- `kubectl`。
+- [kubelogin](https://github.com/int128/kubelogin)：開啟瀏覽器登入的 `kubectl` 外掛。可用 Homebrew 的 `brew install int128/kubelogin/kubelogin`、Nix 的 `nixpkgs#kubelogin-oidc`，或先安裝 [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/)，再執行 `kubectl krew install oidc-login`。
+- [mkcert](https://github.com/FiloSottile/mkcert)：在執行瀏覽器的環境執行一次 `mkcert -install`，信任本機 CA。指令會視需要要求輸入密碼。Firefox 另需 NSS 的 `certutil`，詳見 mkcert 的 README。使用 WSL 時，瀏覽器在 Windows 執行，因此要安裝 Windows 版，例如 `winget install FiloSottile.mkcert`。這裡和步驟 4 都要從 WSL 呼叫 `mkcert.exe`。
+- 能以 `ssh` 連到伺服器。
+
+伺服器需要：
+
+- Ubuntu 24.04 或更新版本，架構為 `amd64` 或 `arm64`。
+- 4 個 CPU、8 GiB 記憶體及 30 GiB 可用磁碟空間。
+- `curl` 和 [cosign 3.x](https://docs.sigstore.dev/cosign/system_config/installation/)。
+- 允許你的電腦連到 TCP 連接埠 443（登入）和 6443（Kubernetes API）。
+
+使用備用機器或 VM。以下操作會安裝 k3s 並修改設定。
+
+範例使用下列名稱，操作時換成你的值：
+
+| 名稱 | 範例值 |
+|---|---|
+| 伺服器主機名稱 | `identity.example.test` |
+| Issuer（Zeabur Identity 的公開網址） | `https://identity.example.test` |
+| 伺服器 SSH 登入帳號 | `ubuntu@identity.example.test`，使用者需有 `sudo` 權限 |
+
+主機名稱必須能讓你的電腦連到伺服器。使用自己的網域時，新增 DNS 記錄。`.test` 名稱無法在網際網路上解析，需改在 hosts 檔案新增記錄：Linux 和 macOS 使用 `/etc/hosts`，Windows 使用 `C:\Windows\System32\drivers\etc\hosts`。
+
+WSL 啟動時會複製 Windows 的 hosts 檔案。修改後，在 Windows 執行 `wsl --shutdown`，再開啟新的 WSL 終端機。
+
+保持兩個終端機開啟：一個在你的電腦，另一個登入伺服器。各步驟會標明在哪裡操作。在你電腦的終端機設定 SSH 登入帳號，供後續指令使用：
+
+```sh
+SERVER=ubuntu@identity.example.test
+```
+
+<Steps>
+
+<Step>
+
+### 下載並驗證 Zeabur Identity
+
+從你的電腦登入伺服器：
+
+```sh
+ssh "$SERVER"
+```
+
+從 [GitHub Releases](https://github.com/zeabur-oss/identity/releases) 選擇版本。範例使用 `v0.1.0`。x86_64 的 `arch` 設為 `amd64`，aarch64 設為 `arm64`：
+
+```sh
+version=v0.1.0
+arch=arm64
+mkdir -p ~/zeabur-identity-download
+```
+
+下載 CLI、附有簽章的校驗碼及映像檔摘要。以下指令會先驗證檔案，再安裝 `zeabur-identityctl`：
+
+```sh
+(
+  set -eu
+  cd ~/zeabur-identity-download
+  url="https://github.com/zeabur-oss/identity/releases/download/$version"
+  archive="zeabur-identityctl-$version-linux-$arch.tar.gz"
+  for file in "$archive" SHA256SUMS SHA256SUMS.sigstore.json image-digests.txt; do
+    curl --fail --location "$url/$file" --output "$file"
+  done
+  identity="https://github.com/zeabur-oss/identity/.github/workflows/release.yml@refs/tags/$version"
+  cosign verify-blob --bundle SHA256SUMS.sigstore.json \
+    --certificate-identity "$identity" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+  sha256sum --check --strict --ignore-missing SHA256SUMS
+  tar -xzf "$archive"
+  sudo install -m 0755 zeabur-identityctl /usr/local/bin/zeabur-identityctl
+  zeabur-identityctl --version
+)
+```
+
+接著驗證映像檔和 SBOM，也就是映像檔內的相依套件清單。`ZEABUR_IDENTITY_IMAGE` 會保存這個版本的確切映像檔摘要，安裝時會用到：
+
+```sh
+ZEABUR_IDENTITY_IMAGE=$(awk '$1 == "index" {print $2}' ~/zeabur-identity-download/image-digests.txt)
+export ZEABUR_IDENTITY_IMAGE
+identity="https://github.com/zeabur-oss/identity/.github/workflows/release.yml@refs/tags/$version"
+cosign verify --certificate-identity "$identity" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com "$ZEABUR_IDENTITY_IMAGE"
+cosign verify-attestation --type cyclonedx --certificate-identity "$identity" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com "$ZEABUR_IDENTITY_IMAGE"
+```
+
+兩個驗證指令都成功後再繼續。支援的平台與其他發行檔見[發行檔與驗證](../reference/releases.mdx)。
+
+</Step>
+
+<Step>
+
+### 安裝 k3s
+
+<Callout type="warn">
+
+步驟 5 會修改 kube-apiserver 驗證身分的方式。保留下方的管理員 kubeconfig 和 SSH 存取權限，供救援使用。執行該步驟前，先閱讀[備份與還原](../operations/backup-restore.mdx)及[保留不經過 Zeabur Identity 的入口](../operations/emergency-access.mdx)。
+
+</Callout>
+
+在伺服器執行以下指令，把主機名稱加入 API 伺服器憑證，並建立空的驗證設定檔。步驟 5 會填入 Zeabur Identity 的設定。
+
+```sh
+sudo mkdir -p /etc/rancher/k3s/zeabur-identity /etc/rancher/k3s/config.yaml.d
+sudo tee /etc/rancher/k3s/zeabur-identity/authn.yaml >/dev/null <<'EOF'
+apiVersion: apiserver.config.k8s.io/v1
+kind: AuthenticationConfiguration
+anonymous:
+  enabled: false
+jwt: []
+EOF
+sudo tee /etc/rancher/k3s/config.yaml >/dev/null <<'EOF'
+# The name your computer uses for the API server.
+tls-san: [identity.example.test]
+EOF
+sudo tee /etc/rancher/k3s/config.yaml.d/50-zeabur-identity.yaml >/dev/null <<'EOF'
+kube-apiserver-arg:
+  - "authentication-config=/etc/rancher/k3s/zeabur-identity/authn.yaml"
+EOF
+curl -sfL https://get.k3s.io | sudo INSTALL_K3S_VERSION=v1.36.5+k3s1 sh -
+
+install -d -m 700 ~/.kube
+sudo install -o "$USER" -m 600 /etc/rancher/k3s/k3s.yaml ~/.kube/config
+export KUBECONFIG="$HOME/.kube/config"
+```
+
+`~/.kube/config` 是具備 `cluster-admin` 權限的憑證。只用它安裝元件，或在 Zeabur Identity 停止服務時救援，不用於日常操作。將它留在伺服器，並依[保留不經過 Zeabur Identity 的入口](../operations/emergency-access.mdx)另存加密副本，離線保管。
+
+確認節點和 k3s 內建的 Ingress 已就緒：
+
+```sh
+kubectl wait --for=condition=Ready node --all --timeout=180s
+kubectl -n kube-system wait --for=create deployment/traefik --timeout=180s
+kubectl -n kube-system rollout status deployment/traefik --timeout=180s
+```
+
+安裝 [cert-manager](https://cert-manager.io/docs/installation/kubectl/)。步驟 5 會由它簽發及更新 kube-apiserver 連到 Zeabur Identity 時使用的憑證：
+
+```sh
+kubectl apply --server-side -f https://github.com/cert-manager/cert-manager/releases/download/v1.21.3/cert-manager.yaml
+kubectl -n cert-manager wait deployment --all --for=condition=Available --timeout=300s
+```
+
+</Step>
+
+<Step>
+
+### 安裝 Zeabur Identity
+
+在同一個伺服器 shell 執行：
+
+```sh
+export ZEABUR_IDENTITY_ISSUER=https://identity.example.test
+zeabur-identityctl crds | kubectl apply --server-side -f -
+kubectl wait --for=condition=Established --timeout=90s \
+  crd/users.identity.zeabur.com crd/credentials.identity.zeabur.com \
+  crd/oauthclients.identity.zeabur.com crd/grants.identity.zeabur.com \
+  crd/invitations.identity.zeabur.com
+zeabur-identityctl manifests --image "$ZEABUR_IDENTITY_IMAGE" \
+  --serve-arg=--invitations | kubectl apply --server-side -f -
+kubectl -n zeabur-identity rollout status deploy/zeabur-identity --timeout=180s
+```
+
+產生的資源清單包含 RBAC、Service 和 Deployment。Zeabur Identity 管理的資源都放在 `zeabur-identity` Namespace。`--invitations` 會啟用[邀請使用者](../users/manage-users.mdx)的連結。
+
+繼續使用這個伺服器 shell。如果開啟新的 shell，先還原以下設定：
+
+```sh
+export KUBECONFIG="$HOME/.kube/config"
+export ZEABUR_IDENTITY_ISSUER=https://identity.example.test
+ZEABUR_IDENTITY_IMAGE=$(kubectl -n zeabur-identity get deployment zeabur-identity -o jsonpath='{.spec.template.spec.containers[0].image}')
+export ZEABUR_IDENTITY_IMAGE
+```
+
+</Step>
+
+<Step>
+
+### 用 HTTPS 公開登入頁面
+
+瀏覽器需要受信任的 HTTPS 連線才能建立通行密鑰。這裡使用 mkcert，供你的測試電腦使用。公開服務應改用公開 CA 簽發的憑證，例如使用 [cert-manager](https://cert-manager.io/docs/)。
+
+在你的電腦為 Issuer 的主機名稱簽發憑證，再複製到伺服器。只複製憑證和它的私鑰，CA 私鑰留在你的電腦。使用 WSL 時，將 `mkcert` 改成 `mkcert.exe`。
+
+```sh
+mkcert -cert-file zeabur-identity.crt -key-file zeabur-identity.key identity.example.test
+ssh "$SERVER" 'install -d -m 700 ~/zeabur-identity-tls'
+scp zeabur-identity.crt zeabur-identity.key "$SERVER":zeabur-identity-tls/
+rm zeabur-identity.key
+```
+
+在伺服器把憑證存成 Secret，並建立 Ingress。k3s 的 Traefik 會在連接埠 443 接收 HTTPS，再把請求轉送到 Zeabur Identity：
+
+```sh
+kubectl -n zeabur-identity create secret tls zeabur-identity-tls \
+  --cert=$HOME/zeabur-identity-tls/zeabur-identity.crt --key=$HOME/zeabur-identity-tls/zeabur-identity.key
+kubectl apply -f - <<'EOF'
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: zeabur-identity
+  namespace: zeabur-identity
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+  - hosts: [identity.example.test]
+    secretName: zeabur-identity-tls
+  rules:
+  - host: identity.example.test
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: zeabur-identity
+            port: {number: 80}
+EOF
+```
+
+等幾秒，讓 Traefik 載入路由與憑證，再從你的電腦檢查。回傳的 JSON 文件中，`issuer` 應為 `https://identity.example.test`：
+
+```sh
+curl --cacert "$(mkcert -CAROOT)/rootCA.pem" \
+  https://identity.example.test/.well-known/openid-configuration
+```
+
+在 WSL 使用 Windows 版 mkcert 時，`mkcert -CAROOT` 會輸出 Windows 路徑，需先轉換：
+
+```sh
+curl --cacert "$(wslpath "$(mkcert.exe -CAROOT | tr -d '\r')")/rootCA.pem" \
+  https://identity.example.test/.well-known/openid-configuration
+```
+
+#### 公開服務前，限制登入請求頻率
+
+公開伺服器應依用戶端 IP 位址限制登入端點的請求頻率。只有你能連到的伺服器可略過這個小節。
+
+在伺服器把 Traefik 的 `externalTrafficPolicy` 設為 `Local`，讓 k3s 的負載平衡器保留訪客位址。這樣每個位址會有獨立的限流計數：
+
+```sh
+kubectl apply -f - <<'EOF'
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata: {name: traefik, namespace: kube-system}
+spec:
+  valuesContent: |-
+    service:
+      spec:
+        externalTrafficPolicy: Local
+EOF
+```
+
+這裡使用 k3s 的 [Traefik 設定方式](https://docs.k3s.io/helm/#customizing-packaged-components-with-helmchartconfig)。多節點叢集使用 `Local` 時，只有執行 Traefik Pod 的節點會接收流量。
+
+接著替登入路由加入限流設定：
+
+```sh
+kubectl apply -f - <<'EOF'
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: {name: zeabur-identity-rate-limit, namespace: zeabur-identity}
+spec:
+  rateLimit:
+    average: 10
+    period: 1s
+    burst: 20
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: zeabur-identity-rate-limited
+  namespace: zeabur-identity
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: zeabur-identity-zeabur-identity-rate-limit@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+  - hosts: [identity.example.test]
+    secretName: zeabur-identity-tls
+  rules:
+  - host: identity.example.test
+    http:
+      paths:
+      - {path: /authorize, pathType: Exact, backend: {service: {name: zeabur-identity, port: {number: 80}}}}
+      - {path: /token, pathType: Exact, backend: {service: {name: zeabur-identity, port: {number: 80}}}}
+      - {path: /par, pathType: Exact, backend: {service: {name: zeabur-identity, port: {number: 80}}}}
+      - {path: /revoke, pathType: Exact, backend: {service: {name: zeabur-identity, port: {number: 80}}}}
+      - {path: /login, pathType: Prefix, backend: {service: {name: zeabur-identity, port: {number: 80}}}}
+      - {path: /setup, pathType: Prefix, backend: {service: {name: zeabur-identity, port: {number: 80}}}}
+      - {path: /upstream, pathType: Prefix, backend: {service: {name: zeabur-identity, port: {number: 80}}}}
+EOF
+```
+
+列出的路徑會優先使用這條路由，再套用接收所有路徑的路由。探索文件與金鑰端點不設限，因為 kube-apiserver 和所有用戶端都會讀取它們。
+
+從你的電腦同時送出 60 個請求，檢查限流結果。預期約 20 個回傳 200，其餘回傳 `429 Too Many Requests`：
+
+```sh
+ca="$(mkcert -CAROOT)/rootCA.pem"
+for i in $(seq 1 60); do
+  curl -s -o /dev/null -w '%{http_code}\n' --cacert "$ca" https://identity.example.test/login &
+done | sort | uniq -c
+```
+
+這些數值是起始設定，需依使用情境調整：
+
+- 同一個 NAT 後方的使用者共用 IP 位址，也共用限額。如果辦公室成員每天早上同時登入，調高限額。
+- 如果 Traefik 前方還有其他代理伺服器，只信任該代理伺服器送來的轉送標頭。否則所有人會共用同一個限額，或有人能偽造標頭繞過限制。
+- 除非設定分散式限流，否則每個 Traefik 副本各自計數。
+
+詳細設定見 Traefik 的 [RateLimit 選項](https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/ratelimit/)。
+
+</Step>
+
+<Step>
+
+### 設定 kube-apiserver 信任 Zeabur Identity
+
+先確認你能不經過 Zeabur Identity 存取叢集。在伺服器檢查步驟 2 的管理員 kubeconfig：
+
+```sh
+sudo k3s kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml auth whoami
+sudo k3s kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get --raw=/readyz
+```
+
+任一指令失敗就先停止，修好後再繼續。如果還沒另存離線加密副本，現在先完成備份。
+
+kube-apiserver 會自行驗證 Zeabur Identity 的權杖，並經由內部 HTTPS 連線取得簽章金鑰。`zeabur-identityctl kube-config` 會交由 cert-manager 簽發這條連線的憑證，再輸出 kube-apiserver 所需的設定。它也會輸出 k3s 設定指示，包含一次重新啟動。步驟 2 已完成這部分，可略過這些指示。
+
+kube-apiserver 約每分鐘檢查一次設定檔。比較修改前後的成功重新載入次數，就能確認新設定是否生效。在伺服器 shell 定義以下兩個輔助函式：
+
+```sh
+# Successful reloads of the authentication configuration so far.
+reloads() {
+  kubectl get --raw /metrics |
+    awk '/^apiserver_authentication_config_controller_automatic_reloads_total/ &&
+      /status="success"/ { n += $NF } END { print n + 0 }'
+}
+# Waits up to three minutes for the count to pass $1; prints the k3s log if it never does.
+wait_for_reload() {
+  for _ in $(seq 1 36); do
+    [ "$(reloads)" -gt "$1" ] && return 0
+    sleep 5
+  done
+  echo "Authentication configuration did not reload; inspect k3s logs." >&2
+  sudo journalctl -u k3s --since "5 minutes ago" --no-pager
+  return 1
+}
+```
+
+把新設定寫入暫存檔，再一次移到正式位置，避免 kube-apiserver 讀到尚未寫完的檔案。接著等待重新載入：
+
+```sh
+before=$(reloads)
+zeabur-identityctl kube-config --distro k3s > ~/authn.yaml &&
+  sudo install -m 600 ~/authn.yaml /etc/rancher/k3s/zeabur-identity/.authn.yaml.tmp &&
+  sudo mv /etc/rancher/k3s/zeabur-identity/.authn.yaml.tmp /etc/rancher/k3s/zeabur-identity/authn.yaml &&
+  wait_for_reload "$before"
+```
+
+cert-manager 會自動更新內部憑證，檢查與維護方式見[備份與還原](../operations/backup-restore.mdx)。
+
+</Step>
+
+<Step>
+
+### 註冊 kubectl 並建立第一把通行密鑰
+
+使用 Zeabur Identity 登入的應用程式都要註冊為用戶端。在伺服器註冊 `kubectl`，由 kubelogin 在 127.0.0.1 接收登入結果：
+
+```sh
+zeabur-identityctl client create kubectl --type public \
+  --redirect-uri http://127.0.0.1:8000/ --audience kubernetes | kubectl apply -f -
+```
+
+取得第一個管理員的一次性設定連結：
+
+```sh
+zeabur-identityctl setup-link --username admin
+```
+
+這會建立 `admin` 使用者，帳號類型為管理員帳號。管理員帳號只能用通行密鑰登入，並取得 Kubernetes 的完整權限 `cluster-admin`。詳見[管理員帳號與工作階段](../users/admin-sessions.mdx)。
+
+在你電腦的瀏覽器開啟輸出的連結，建立通行密鑰。連結只能使用一次，並在 60 分鐘後到期。需要新連結時，再執行一次指令。
+
+</Step>
+
+<Step>
+
+### 設定你電腦上的 kubectl
+
+在你的電腦從伺服器複製叢集的 CA 憑證。這是公開資料，只供 `kubectl` 確認連到正確的 API 伺服器。
+
+```sh
+CA=$(ssh "$SERVER" "grep certificate-authority-data ~/.kube/config | awk '{print \$2}'")
+```
+
+接著寫入 kubeconfig。kubelogin 會在你登入後使用更新權杖自動更新權杖，直到工作階段結束：
+
+```sh
+mkdir -p ~/.kube
+cat > ~/.kube/zeabur-identity-k3s.yaml <<EOF
+apiVersion: v1
+kind: Config
+clusters:
+- name: zeabur-identity-k3s
+  cluster:
+    server: https://identity.example.test:6443
+    certificate-authority-data: $CA
+users:
+- name: passkey
+  user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1
+      interactiveMode: IfAvailable
+      command: kubectl
+      args: [oidc-login, get-token,
+        --oidc-issuer-url=https://identity.example.test,
+        --oidc-client-id=kubectl,
+        --oidc-use-access-token,
+        --listen-address=127.0.0.1:8000,
+        --oidc-redirect-url=http://127.0.0.1:8000/]
+contexts:
+- {name: zeabur-identity-k3s, context: {cluster: zeabur-identity-k3s, user: passkey}}
+current-context: zeabur-identity-k3s
+EOF
+```
+
+Krew 和 Nix 會把 kubelogin 安裝成 `kubectl` 外掛，可直接使用這份設定。使用 Homebrew 安裝時，改成 `command: kubelogin`，並從 `args` 移除 `oidc-login`。
+
+使用 WSL 時，kubelogin 在 Linux 內執行，無法取得 Windows 版 mkcert 信任的 CA。使用步驟 4 檢查時的路徑，把 CA 加入 `args`：
+
+```sh
+wslpath "$(mkcert.exe -CAROOT | tr -d '\r')"   # e.g. /mnt/c/Users/you/AppData/Local/mkcert
+```
+
+```yaml
+        --certificate-authority=/mnt/c/Users/you/AppData/Local/mkcert/rootCA.pem,
+```
+
+kubelogin 也無法從 WSL 開啟 Windows 瀏覽器，會改為輸出 `Please visit the following URL in your browser manually: http://127.0.0.1:8000/`。在瀏覽器開啟該位址，即可繼續登入。
+
+保留 `--oidc-use-access-token`。kube-apiserver 只接受 Zeabur Identity 的存取權杖，不接受 ID 權杖。
+
+kubelogin 預設把更新權杖存放在 `~/.kube/cache/oidc-login`。加入 `--token-cache-storage=keyring` 可改存系統鑰匙圈。使用 `--token-cache-storage=none` 時，kubelogin 不儲存權杖，每次執行 `kubectl` 都會開啟登入頁面。
+
+</Step>
+
+<Step>
+
+### 登入並測試權限
+
+在你的電腦執行以下指令，登入後查詢身分、列出 Pod，並測試建立與刪除 ConfigMap：
+
+```sh
+export KUBECONFIG=~/.kube/zeabur-identity-k3s.yaml
+kubectl auth whoami                      # opens the browser; user zeabur:admin, group zeabur:admins
+kubectl get pods -A                      # allowed: zeabur:admins is bound to cluster-admin
+kubectl -n default create configmap zeabur-identity-permission-check --from-literal=check=ok
+kubectl -n default delete configmap zeabur-identity-permission-check
+```
+
+</Step>
+
+</Steps>
+
+## 確認結果
+
+- **管理員權杖會自動更新**：有效期為 5 分鐘，更新時不會要求操作。首次登入 12 小時後，或停用 `kubectl` 達 1 小時後，需重新登入；多團隊共用叢集時，閒置期限為 15 分鐘。一般帳號的權杖有效期為 10 分鐘。詳見[管理員帳號與工作階段](../users/admin-sessions.mdx)。
+- **管理員帳號只用於管理工作**：日常操作請邀請自己建立一般帳號，再依需求替群組綁定權限。詳見[管理使用者](../users/manage-users.mdx)。
+- **每個權杖都能追溯**：`kubectl auth whoami` 會顯示 `identity.zeabur.com/jti` 和 `identity.zeabur.com/client-id`。Kubernetes 稽核事件也會記錄這些欄位，供你將每個請求對應到一次登入。
+- **使用者、通行密鑰和工作階段都是 Kubernetes 物件**：它們位於 `zeabur-identity` Namespace。通行密鑰是 `Credential`，登入後的工作階段是 `Grant`。在伺服器執行 `kubectl -n zeabur-identity get users,credentials,grants` 可列出這些物件，操作方式見[管理使用者](../users/manage-users.mdx)。
+
+接著設定[備份與還原](../operations/backup-restore.mdx)、[升級與回復](../operations/upgrade.mdx)，並[保留不經過 Zeabur Identity 的入口](../operations/emergency-access.mdx)。日常使用可從[管理使用者](../users/manage-users.mdx)開始，設定[用 GitHub 登入](../users/github-sign-in.mdx)或[用 Google 登入](../users/google-sign-in.mdx)，也能[註冊用戶端](../users/clients.mdx)，讓 Grafana 或 Argo CD 等應用程式使用 Zeabur Identity 登入。
+
+## 遇到問題
+
+| 畫面或結果 | 接著處理 |
+|---|---|
+| 瀏覽器顯示憑證錯誤，或沒有通行密鑰選項 | 在執行瀏覽器的環境執行 `mkcert -install`，確認信任 mkcert 的 CA。檢查憑證名稱是否符合 Issuer 的主機名稱。 |
+| `kubectl` 顯示 `Unauthorized` | 檢查步驟 5 的設定是否成功載入。kube-apiserver 遇到設定檔錯誤時，會忽略該檔案，直到檔案再次變更。在 k3s 伺服器執行 `sudo journalctl -u k3s \| grep -i "authentication config"` 查看原因。 |
+| 連接埠 8000 已占用 | kubelogin 使用這個連接埠接收瀏覽器重新導向。同時修改 `--listen-address` 和 `--oidc-redirect-url`。已註冊的重新導向 URI 接受 127.0.0.1 上的任意連接埠。 |
+
+## 清理
+
+在伺服器解除安裝 k3s。這會移除整個叢集、Zeabur Identity，以及叢集內安裝的所有其他資源：
+
+```sh
+sudo /usr/local/bin/k3s-uninstall.sh
+rm -rf ~/zeabur-identity-tls ~/authn.yaml ~/zeabur-identity-download
+```
+
+接著在你的電腦執行：
+
+```sh
+rm ~/.kube/zeabur-identity-k3s.yaml
+rm -rf ~/.kube/cache/oidc-login
+```

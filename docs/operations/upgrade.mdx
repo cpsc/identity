@@ -1,0 +1,223 @@
+---
+title: Upgrade and roll back Zeabur Identity
+description: Back up and record your current deployment, review version differences, upgrade Zeabur Identity, and use data compatibility to decide whether to roll back to an older version or restore a backup.
+---
+
+Back up and record your current deployment, then review version differences, apply the new configuration, and verify sign-in and permissions. If you need to roll back, use data compatibility to decide whether to switch to the old image or restore the pre-upgrade backup.
+
+### Current limitations
+
+Zeabur Identity is currently in alpha and provides no upgrade or rollback guarantees. Resource versions are still `v1alpha1`, and there's no conversion mechanism between versions. Until the release notes explicitly guarantee compatibility, don't assume that switching versions in either direction will succeed. Record the full commit and image that's actually running. Don't record only a reusable tag such as `zeabur-identity:dev`.
+
+`kubectl rollout undo` only restores the Pod template. It doesn't restore CRDs, users, signing keys, Secrets, RBAC, Services, Ingresses, or kube-apiserver files. After a newer version of Zeabur Identity writes data, there's no guarantee that an older version can read it.
+
+Zeabur Identity runs a single replica. Updates replace that replica rather than perform a rolling update. An upgrade briefly interrupts service, and users who are signing in at that time must sign in again. Don't add replicas to hide the interruption.
+
+## Before upgrading
+
+<Steps>
+
+<Step>
+
+### Verify emergency access and create a backup
+
+Confirm that [access without Zeabur Identity](./emergency-access.mdx) works, then follow [Backup and restore](./backup-restore.mdx) to create a full backup.
+
+Record the backup time. If you restore this backup, you'll lose all data created after that time.
+
+</Step>
+
+<Step>
+
+### Record the current deployment
+
+Record the source commit, the `zeabur-identityctl` version, and every option you used during installation, including the Issuer, Namespace, image, each `--serve-arg`, `--config-secret`, and all overlays. Keep a usable copy of the old image on every node.
+
+Run the following commands to save the current deployment information. Keep these files confidential.
+
+```sh
+umask 077
+NS=zeabur-identity
+mkdir -m 0700 upgrade-record
+kubectl -n "$NS" get deployment zeabur-identity -o yaml > upgrade-record/deployment.before.yaml
+kubectl -n "$NS" get pods -l app.kubernetes.io/name=zeabur-identity \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.containerStatuses[*]}{.name}{"\t"}{.image}{"\t"}{.imageID}{"\n"}{end}{end}' \
+  > upgrade-record/image-identities.before.txt
+kubectl -n "$NS" rollout history deployment/zeabur-identity > upgrade-record/rollout-history.before.txt
+```
+
+These files are deployment records, not backups.
+
+</Step>
+
+<Step>
+
+### Prepare the new image
+
+Use a digest or a non-reusable tag that points to a known commit. Load the image onto every node that can run Zeabur Identity.
+
+</Step>
+
+<Step>
+
+### Prepare the new manifests
+
+Use the new version of `zeabur-identityctl` with your original installation options to generate the new manifests into a file, then compare them with the current deployment. Don't pipe manifests generated with the new defaults directly into the cluster.
+
+</Step>
+
+<Step>
+
+### Review version differences and test the upgrade
+
+Read the changes between the two versions, including the CRD schema, storage format, options, and token claims.
+
+Test the exact upgrade procedure on a restored copy first. Also test signing in with an existing passkey.
+
+</Step>
+
+<Step>
+
+### Choose a rollback method
+
+If you can't confirm that the old version can read the new data, restore the previous backup and accept the loss of data created after the backup.
+
+If the data requires migration and no migration method exists, don't upgrade.
+
+</Step>
+
+</Steps>
+
+## Upgrade
+
+<Steps>
+
+<Step>
+
+### Generate the upgrade files
+
+Replace the first four lines with your settings. The following `manifests` command matches the one in [Install and sign in on k3s](../get-started/quickstart.mdx) and enables invitations. Add every option you used during installation. If you didn't enable invitations in the original installation, remove `--serve-arg=--invitations`.
+
+```sh
+NS=zeabur-identity
+NEXT_ZEABUR_IDENTITYCTL=/path/to/new/zeabur-identityctl
+NEXT_IMAGE=registry.example.test/zeabur-identity@sha256:...   # the new image, by digest
+ZEABUR_IDENTITY_ISSUER=https://identity.example.test
+"$NEXT_ZEABUR_IDENTITYCTL" crds > upgrade-record/crds.next.json
+"$NEXT_ZEABUR_IDENTITYCTL" manifests --issuer "$ZEABUR_IDENTITY_ISSUER" --namespace "$NS" --image "$NEXT_IMAGE" \
+  --serve-arg=--invitations > upgrade-record/manifests.next.json
+# Leave out the empty signing-key Secret: it's only for new installs.
+jq '.items |= map(select(.kind != "Secret"))' upgrade-record/manifests.next.json \
+  > upgrade-record/manifests.upgrade.json
+```
+
+</Step>
+
+<Step>
+
+### Review and apply the manifests
+
+Read `upgrade-record/crds.next.json` and `upgrade-record/manifests.upgrade.json` before applying them.
+
+If a conflict occurs when you apply the manifests, find the cause first. Don't add `--force-conflicts`. Don't delete and recreate a CRD to resolve an error. That deletes every object of that type.
+
+```sh
+kubectl apply --server-side -f upgrade-record/crds.next.json
+kubectl apply --server-side -f upgrade-record/manifests.upgrade.json
+kubectl -n "$NS" rollout status deployment/zeabur-identity --timeout=5m
+kubectl -n "$NS" logs deployment/zeabur-identity --tail=200
+```
+
+Keep the `zeabur-identity` Service, `zeabur-identity-internal-ca`, and `zeabur-identity-signing-keys`. Don't replace them. A new Service isn't guaranteed to retain the original IP, and every kube-apiserver's authentication file uses the old IP as a fixed value.
+
+Don't replace the root CA, change the Issuer, or delete sessions during an upgrade. If the new version requires different kube-apiserver settings, treat that as a separate change and handle one machine at a time.
+
+</Step>
+
+<Step>
+
+### Verify the upgrade
+
+Check the image that's actually running, readiness, and logs, then complete these checks:
+
+- Sign in again with an existing passkey.
+- Attempt one operation you have permission to perform and one you don't.
+- Confirm that admin access works.
+
+A ready Pod doesn't mean sign-in works.
+
+</Step>
+
+</Steps>
+
+## Roll back
+
+<Steps>
+
+<Step>
+
+### Stop writes if the data state is uncertain
+
+If you can't confirm what data the new version has written, stop Zeabur Identity first to prevent further writes:
+
+```sh
+kubectl -n zeabur-identity scale deployment/zeabur-identity --replicas=0
+```
+
+</Step>
+
+<Step>
+
+### Choose a rollback method based on data compatibility
+
+#### The old version can read the current data
+
+Switch to the old image only after you confirm that the old version can read the current data.
+
+If only the image changed, run:
+
+```sh
+kubectl -n zeabur-identity set image deployment/zeabur-identity zeabur-identity="$PREVIOUS_IMAGE"
+```
+
+If the Pod template has other changes, inspect the revision history first:
+
+```sh
+kubectl rollout history deployment/zeabur-identity --revision=N
+```
+
+Then roll back to the specified revision:
+
+```sh
+kubectl rollout undo deployment/zeabur-identity --to-revision=N
+```
+
+Manually revert the other changes, then restore the replica count.
+
+#### You can't confirm that the old version can read the current data
+
+Follow the restore procedure in [Backup and restore](./backup-restore.mdx) to restore the pre-upgrade backup, along with the old image, manifests, CRDs, and Secrets. Keep Zeabur Identity stopped throughout the restore.
+
+You'll lose all changes made after the backup, including new passkeys, group changes, client updates, and key rotations.
+
+<Callout type="warn">
+
+Restoring a backup brings back revoked sessions and used invitations that the backup contains. Delete these sessions and invitations before reopening the service.
+
+</Callout>
+
+Don't install an empty signing-key Secret, delete certificates, or issue new setup links to get the old version running.
+
+</Step>
+
+<Step>
+
+### Verify the rollback and record data loss
+
+Check the image, readiness, and logs, then sign in again. Confirm that regular access, admin access, and emergency access all work.
+
+Record what you restored and what data you lost.
+
+</Step>
+
+</Steps>

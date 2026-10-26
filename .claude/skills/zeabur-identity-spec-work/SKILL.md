@@ -23,5 +23,5 @@ description: Implement or change a protocol behaviour in Zeabur Identity (OAuth,
    expiry, disabled users, privilege boundaries (Zeabur Identity's own service account must not gain
    rights its users lack). Use the real apiserver for anything admission or RBAC related
    (`zeabur-identity-cluster-tests`).
-5. **Record conformance.** Add or update the row in `docs/conformance.md`: section, requirement,
+5. **Record conformance.** Add or update the row in `docs/reference/conformance.mdx`: section, requirement,
    level, code path, test name, status. Partial or not implemented is fine when stated plainly.

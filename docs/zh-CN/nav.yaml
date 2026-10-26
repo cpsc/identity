@@ -1,0 +1,28 @@
+- group: get-started
+  label: 开始使用
+  pages:
+    quickstart: 在 Ubuntu 的 k3s 上安装，用通行密钥登录 kubectl
+    existing-cluster: 安装到已有集群
+- group: users
+  label: 用户与应用
+  pages:
+    manage-users: 添加与管理用户
+    admin-sessions: 管理员账号与会话
+    offboarding: 退出登录、找回账号与移除用户
+    github-sign-in: 用 GitHub 登录
+    google-sign-in: 用 Google 登录
+    provisioning: 从目录同步用户
+    clients: 注册客户端
+- group: operations
+  label: 运维
+  pages:
+    emergency-access: 保留不经过 Zeabur Identity 的入口
+    backup-restore: 备份与恢复
+    upgrade: 升级与回滚
+- group: reference
+  label: 参考
+  pages:
+    architecture: 架构
+    conformance: 规范符合度
+    releases: 发行文件与验证
+    security: 安全与支持政策

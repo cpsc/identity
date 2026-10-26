@@ -1,0 +1,199 @@
+---
+title: Register clients
+description: Register public or confidential clients so applications such as Grafana and Argo CD can use Zeabur Identity for sign-in.
+---
+
+Register an application as a Zeabur Identity client to use Zeabur Identity for sign-in. Each client is an `OAuthClient` object in the Namespace where Zeabur Identity runs. The object’s name is the application’s `client_id`.
+
+`kubectl` is also a client. The steps in [Install and sign in on k3s](../get-started/quickstart.mdx) already registered this client.
+
+## Before you begin
+
+- The commands below use the cluster from [Install and sign in on k3s](../get-started/quickstart.mdx), with `zeabur-identity` as the Namespace.
+- Run the commands with a cluster administrator’s kubeconfig.
+- Choose a client type based on how the application runs:
+
+| Type | Use case | Authentication method |
+|---|---|---|
+| `public` | Programs that run on a user’s device, such as `kubectl`, desktop applications, and browser-only applications | `client_id` and PKCE |
+| `confidential` | Web applications with a server side, such as Grafana, Argo CD, and Headlamp | Client secret and PKCE |
+
+## Register a public client
+
+<Steps>
+
+<Step>
+
+### Prepare redirect URIs and options
+
+A redirect URI is the address the browser returns to after sign-in. Specify each address with a separate `--redirect-uri` flag.
+
+Zeabur Identity accepts the following addresses:
+
+- `https://` addresses with a hostname, such as `https://app.example.com/callback`.
+- `http://127.0.0.1/…` or `http://[::1]/…`, for applications that receive sign-in results on the user’s own device. These addresses accept any port, so `kubectl` can still sign in when it listens on a different port.
+
+Zeabur Identity matches redirect URIs exactly. `zeabur-identityctl` only accepts the format that browsers actually send:
+
+- Use lowercase for the scheme and hostname, and omit the default port `:443`.
+- Include at least `/` in the path. For example, use `https://app.example.com/`, not `https://app.example.com`.
+- Use the `xn--` format for non-ASCII hostnames and percent-encoding for non-ASCII paths.
+
+`zeabur-identityctl` rejects fragments (`#…`), URIs with a username, plain `http` addresses for other hosts, and addresses that browsers don’t accept, such as 999.1.1.1 or port 99999.
+
+Add other options as needed:
+
+| Option | Purpose |
+|---|---|
+| `--audience kubernetes` | Let the client obtain tokens that kube-apiserver accepts. Add this only when the application needs to call the Kubernetes API as the signed-in user. |
+| `--home-url` | Specify the address users open to access the application, such as `https://zeabur.example.com/`. Only `https://` is accepted, with the same format rules as redirect URIs. |
+
+When you set `--home-url`, the sign-in page displays the application’s name and a link to open it when users open the sign-in page directly without an application to sign in to, or after they finish setting up a passkey. Anyone who can open the sign-in page can see these names and addresses.
+
+</Step>
+
+<Step>
+
+### Create and apply the client
+
+`zeabur-identityctl client create` validates the input and outputs an object. Pipe the output to `kubectl apply` to apply it to the cluster.
+
+This is the `kubectl` client used in the getting-started steps:
+
+```sh
+zeabur-identityctl client create kubectl --type public \
+  --redirect-uri http://127.0.0.1:8000/ --audience kubernetes | kubectl apply -f -
+```
+
+<Callout type="warn">
+
+Running `client create` with an existing name replaces the existing client. Include the full set of options every time. For example, if you omit `--audience kubernetes` here, `kubectl` can no longer obtain tokens that kube-apiserver accepts.
+
+</Callout>
+
+</Step>
+
+</Steps>
+
+## Register a confidential client
+
+<Steps>
+
+<Step>
+
+### Create the client and get its secret
+
+The following command creates a Grafana client and generates a secret:
+
+```sh
+zeabur-identityctl client create grafana --type confidential --display-name Grafana \
+  --redirect-uri https://grafana.example.com/login/generic_oauth | kubectl apply -f -
+```
+
+The command prints the secret to the terminal’s stderr, separate from the object output. The secret doesn’t appear in the object, the input to `kubectl`, or Git.
+
+<Callout type="warn">
+
+The secret appears only once. The cluster stores only its SHA-256 hash. Give the secret to the application immediately.
+
+</Callout>
+
+</Step>
+
+<Step>
+
+### Store the secret in the application’s Secret
+
+You can store the secret in a Secret in the application’s Namespace. The following example uses the `monitoring` Namespace, where Grafana runs.
+
+Run the command, paste the secret, and press Enter. Don’t pass the secret directly as a command argument, because other users on the same machine can see arguments in the process list.
+
+```sh
+read -rs CLIENT_SECRET     # paste the secret, then Enter
+# monitoring: the namespace Grafana runs in.
+printf %s "$CLIENT_SECRET" | kubectl -n monitoring create secret generic grafana-oidc \
+  --from-file=client-secret=/dev/stdin
+unset CLIENT_SECRET
+```
+
+</Step>
+
+<Step>
+
+### Configure the application
+
+Enter the following in the application:
+
+- The Issuer URL.
+- The `client_id`, which is `grafana` in this example.
+- The secret you just obtained.
+
+The application retrieves the remaining settings from `<issuer>/.well-known/openid-configuration`. Zeabur Identity accepts secrets sent with HTTP Basic (`client_secret_basic`) or form fields (`client_secret_post`).
+
+</Step>
+
+</Steps>
+
+### Use a randomly generated secret
+
+Use `zeabur-identityctl client create` to generate the secret. Don’t choose your own password as the secret.
+
+Anyone who can read the `OAuthClient` object or Git repository can see the secret’s hash. The hash is unsalted and suitable for long, random secrets. A password you choose is vulnerable to offline guessing, which Zeabur Identity can’t detect.
+
+If you don’t use `zeabur-identityctl`, generate 32 random bytes and calculate the hash yourself:
+
+```sh
+CLIENT_SECRET=$(openssl rand -hex 32)
+printf 'sha256:%s\n' "$(printf %s "$CLIENT_SECRET" | sha256sum | cut -d' ' -f1)"   # secretHash
+```
+
+## Rotate a secret
+
+Run the same `zeabur-identityctl client create` command again and apply the output. The new hash replaces the old one, and the old secret stops working immediately. Update the application’s Secret at the same time.
+
+## Modify or remove a client
+
+Edit the object with `kubectl -n zeabur-identity edit oauthclient grafana`, or run `zeabur-identityctl client create` with new options and apply the output. Running `client create` again for a confidential client also rotates its secret.
+
+List clients or remove the Grafana client:
+
+```sh
+kubectl -n zeabur-identity get oauthclients                  # short name: zbclient
+kubectl -n zeabur-identity delete oauthclient grafana        # nobody can sign in to it any more
+```
+
+After removal, users can no longer sign in to that client.
+
+## Manage clients with GitOps
+
+<Steps>
+
+<Step>
+
+### Generate YAML to commit
+
+The object in the command output doesn’t contain the secret, so you can commit it to Git. To convert it to YAML, run:
+
+```sh
+zeabur-identityctl client create grafana --type confidential --display-name Grafana \
+  --redirect-uri https://grafana.example.com/login/generic_oauth \
+  | kubectl create --dry-run=client -o yaml -f - > grafana-client.yaml
+```
+
+Use `kubectl create --dry-run=client`. Don’t replace it with `kubectl apply --dry-run=client`. `apply` adds a `last-applied-configuration` annotation. If the client already exists, it also adds `resourceVersion`, which prevents you from applying the file later.
+
+</Step>
+
+<Step>
+
+### Update the application’s secret before applying the file
+
+Each run of the command generates a new secret. Before applying the file, give the application the secret from that run.
+
+If you edit the object manually, the cluster validates its contents when you apply it. Plain `http` redirect URIs, redirect URIs with fragments, and malformed `secretHash` values fail during `kubectl apply`, rather than at sign-in.
+
+The cluster’s URL validation is less strict than `zeabur-identityctl`’s. When adding a redirect URI, check it with `zeabur-identityctl client create` first to catch the remaining format issues.
+
+</Step>
+
+</Steps>

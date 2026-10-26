@@ -1,0 +1,254 @@
+---
+title: Keep an access path that bypasses Zeabur Identity
+description: Prepare an admin kubeconfig and access to control plane hosts so you can restore cluster access if Zeabur Identity or kube-apiserver fails.
+---
+
+Record the current kube-apiserver settings first, and verify that your admin kubeconfig uses a client certificate and works. Keep this kubeconfig and SSH or console access to every control plane host. You can still access the cluster if Zeabur Identity or the login page goes down, and you can fix settings directly on the hosts if kube-apiserver can't start.
+
+## Before you begin
+
+- Prepare an admin kubeconfig that uses a client certificate and doesn't depend on Zeabur Identity for login.
+- Verify that you can access every control plane host through SSH or a console. The admin kubeconfig only works when kube-apiserver is running.
+- The examples below use the `zeabur-identity` Namespace. If you installed elsewhere, use your actual Namespace and paths.
+- Run all command blocks in the same terminal. Later blocks reuse variables from earlier blocks. If a command fails, stop and fix the issue before continuing.
+- For commands labeled K3s and RKE2, run only the line for your distribution.
+
+<Callout type="warn">
+
+Passkeys can replace the admin kubeconfig for daily work, but you still need this kubeconfig for emergency recovery. Keep an offline copy, and practice regaining access to the cluster. Don't delete your only access path until you've completed that practice.
+
+</Callout>
+
+## Prepare access first
+
+<Steps>
+
+<Step>
+
+### Record the current kube-apiserver settings
+
+Before you change authentication settings, record each control plane host's distribution, Kubernetes version, the configuration files kube-apiserver reads, and the existing `--oidc-*`, `--authentication-config`, and `--anonymous-auth` settings. Record any unset settings too. You'll need them during recovery.
+
+Inspect the service unit to identify the configuration sources:
+
+```sh
+sudo systemctl cat k3s              # K3s
+sudo systemctl cat rke2-server      # RKE2
+```
+
+On each host, copy the current configuration to a directory that only root can access and that neither kube-apiserver nor kubelet watches:
+
+```sh
+RECOVERY=/var/backups/zeabur-identity-control-plane/$(date -u +%Y%m%dT%H%M%SZ)
+sudo install -d -m 0700 "$RECOVERY"
+# Run the line for your distribution.
+sudo cp -a /etc/rancher/k3s "$RECOVERY/k3s"           # K3s
+sudo cp -a /etc/rancher/rke2 "$RECOVERY/rke2"         # RKE2
+```
+
+These copies contain private keys. Store an encrypted copy somewhere off the host as well.
+
+If the cluster's existing authentication configuration file already includes other Issuers, keep that file and add the Zeabur Identity `jwt` entry to it. Don't overwrite it with the file Zeabur Identity generates.
+
+</Step>
+
+<Step>
+
+### Verify that the admin kubeconfig works independently
+
+Each distribution stores its admin kubeconfig at the following path:
+
+| Distribution | Admin kubeconfig |
+| --- | --- |
+| K3s | `/etc/rancher/k3s/k3s.yaml` |
+| RKE2 | `/etc/rancher/rke2/rke2.yaml` |
+
+Before you change kube-apiserver's authentication settings, use the admin kubeconfig to check your identity and readiness:
+
+```sh
+# Run the line for your distribution.
+KUBECTL="k3s kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml"                         # K3s
+KUBECTL="/var/lib/rancher/rke2/bin/kubectl --kubeconfig=/etc/rancher/rke2/rke2.yaml"  # RKE2
+sudo $KUBECTL auth whoami
+sudo $KUBECTL get --raw=/readyz
+```
+
+</Step>
+
+<Step>
+
+### Safeguard emergency credentials
+
+- Don't keep the admin kubeconfig on your everyday computer. It has `cluster-admin` privileges.
+- Keep an encrypted copy offline, outside the cluster, and store the decryption key separately. If the only copy is on the server, you'll lose it when you lose the server.
+- Track certificate expiration dates, and renew certificates according to your distribution's procedure. A kubeconfig that works on installation day will still expire.
+
+</Step>
+
+</Steps>
+
+### Preserve authentication and anonymous access settings together
+
+When you restore settings, restore both the original authentication settings and the original anonymous access settings. kube-apiserver has these restrictions:
+
+- You can't combine `--authentication-config` with `--oidc-*` flags.
+- If the authentication configuration file includes an `anonymous` section, you can't also pass the `--anonymous-auth` flag.
+
+The configuration Zeabur Identity generates varies by distribution:
+
+- The K3s/RKE2 authentication configuration file sets `anonymous.enabled: false`. When you use an authentication configuration file, K3s/RKE2 removes the `--anonymous-auth=false` flag it adds automatically.
+- `generic` mode doesn't configure anonymous access. You must handle it yourself.
+
+A running kube-apiserver automatically reloads valid authentication configuration files. Don't delete or break the file to disable Zeabur Identity. That leaves kube-apiserver in an uncertain state.
+
+## When Zeabur Identity goes down
+
+Use the admin kubeconfig to connect directly to kube-apiserver. Don't rely on cached Zeabur Identity tokens or an open browser session. Issued tokens remain valid until they expire, with lifetimes measured in minutes. While Zeabur Identity is down, users can't log in or refresh tokens.
+
+<Steps>
+
+<Step>
+
+### Check kube-apiserver and Zeabur Identity
+
+Run these commands on a K3s server:
+
+```sh
+sudo k3s kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get --raw=/readyz
+sudo k3s kubectl -n zeabur-identity get deploy,pods,svc,endpointslices
+sudo k3s kubectl -n zeabur-identity logs deploy/zeabur-identity --tail=100
+```
+
+If `/readyz` fails, follow the “When kube-apiserver can't start” section below first.
+
+</Step>
+
+<Step>
+
+### Fix the failed component
+
+If Zeabur Identity's replica count has dropped to zero, restore its usual replica count. A standard installation uses 1 replica:
+
+```sh
+sudo k3s kubectl -n zeabur-identity scale deploy/zeabur-identity --replicas=1
+sudo k3s kubectl -n zeabur-identity rollout status deploy/zeabur-identity --timeout=5m
+```
+
+For other cases, use the following table:
+
+| Symptom or result | Next action |
+| --- | --- |
+| Zeabur Identity has started but keeps reporting errors | Check the logs, and fix image, configuration, or resource issues. Repeated restarts usually don't address the cause. |
+| Zeabur Identity is healthy, but its public URL is unreachable | Check the Ingress controller, routing, DNS, and public certificate. Kubernetes uses an internal address to fetch Zeabur Identity's keys. Browser and `kubectl` logins use the public address. |
+
+</Step>
+
+</Steps>
+
+During recovery, avoid these actions:
+
+- Don't change the Issuer hostname to work around the failure. Tokens and passkeys are both bound to that hostname. Changing it invalidates both.
+- Don't run `zeabur-identityctl setup-link --reset`. It deletes users' passkeys and sessions and can't fix Pods, Ingress, or kube-apiserver.
+- Don't paste tokens, links, headers, or Secret contents into chats or issue reports.
+
+## When kube-apiserver can't start
+
+First, confirm that kube-apiserver can't start. If only Zeabur Identity has failed and kube-apiserver still responds, use the admin kubeconfig to fix Zeabur Identity. You don't need to remove the authentication settings.
+
+Revert the authentication configuration changes on the hosts only if kube-apiserver can't start or you decide to stop trusting Zeabur Identity.
+
+### Recovery order for multiple control plane hosts
+
+Fix one host at a time. Check each host after you fix it, then move to the next. Don't change hosts that are working.
+
+If all control plane hosts are down and the cluster uses embedded etcd, enough hosts must recover before the first host can become ready. In this case, fix each host's configuration in sequence without waiting for the previous host to become ready. Don't use `cluster-reset` to address authentication errors.
+
+Use the admin kubeconfig to connect directly to each host's own address. A load balancer can send requests to other hosts, so it can't confirm the state of the host you fixed. Don't use `--insecure-skip-tls-verify`.
+
+### K3s/RKE2
+
+<Steps>
+
+<Step>
+
+### Find the source of the authentication settings
+
+The Zeabur Identity setup process adds the following files. K3s uses `k3s` in the paths, and RKE2 uses `rke2`:
+
+- Authentication configuration file: `/etc/rancher/k3s/zeabur-identity/authn.yaml`.
+- Drop-in that points to the authentication configuration file: `/etc/rancher/k3s/config.yaml.d/50-zeabur-identity.yaml`.
+
+On RKE2, the drop-in also mounts `/etc/rancher/rke2/zeabur-identity` into the kube-apiserver Pod. The Zeabur installer configures these files on RKE2.
+
+K3s/RKE2 reads drop-ins in alphabetical order. Unless a key ends with `+`, a later file replaces the earlier list. As a result, `50-zeabur-identity.yaml` overrides `kube-apiserver-arg` settings in earlier files. Before you remove it, check which settings will take effect again.
+
+</Step>
+
+<Step>
+
+### Restore the original settings and restart
+
+Run the following commands to move the drop-in only if `50-zeabur-identity.yaml` is dedicated to Zeabur Identity and no other location sets `--authentication-config`:
+
+```sh
+# Run the line for your distribution.
+DIR=/etc/rancher/k3s; UNIT=k3s; KUBECTL="k3s kubectl --kubeconfig=$DIR/k3s.yaml"                                   # K3s
+DIR=/etc/rancher/rke2; UNIT=rke2-server; KUBECTL="/var/lib/rancher/rke2/bin/kubectl --kubeconfig=$DIR/rke2.yaml"  # RKE2
+RECOVERY=/var/backups/zeabur-identity-emergency/$(date -u +%Y%m%dT%H%M%SZ)
+sudo install -d -m 0700 "$RECOVERY"
+if sudo test -f "$DIR/zeabur-identity/authn.yaml"; then
+  sudo cp -a "$DIR/zeabur-identity/authn.yaml" "$RECOVERY/authn.failed.yaml"
+fi
+sudo mv "$DIR/config.yaml.d/50-zeabur-identity.yaml" "$RECOVERY/50-zeabur-identity.failed.yaml"
+sudo systemctl restart "$UNIT"
+sudo journalctl -u "$UNIT" --since '5 minutes ago' --no-pager
+sudo $KUBECTL get --raw=/readyz
+```
+
+If this drop-in existed before you installed Zeabur Identity, restore its original contents instead of moving the entire file.
+
+If you added flags to `config.yaml`, another drop-in, or a systemd service unit, revert the changes there and preserve the other parameters. Restore authentication and anonymous access settings together.
+
+Keep `authn.yaml` in its original location. After you remove the flag, kube-apiserver ignores the file, and you can still use it to compare the failed configuration.
+
+The next time you configure Zeabur Identity, merge its parameters into the existing list. Don't replace the entire list.
+
+</Step>
+
+</Steps>
+
+### Other distributions
+
+`--distro generic` only writes the authentication configuration file. Before you use it, record how the cluster starts kube-apiserver and how to revert the changes when the API is unavailable.
+
+If your managed Kubernetes provider offers a way to configure authentication, use the provider's supported method.
+
+## Verify the recovery
+
+### Verify that you can log in to Zeabur Identity again
+
+Ready Pods aren't enough. Clear cached tokens, then log in again with a passkey to verify that new login requests succeed.
+
+On your computer, use the kubeconfig you configured in [Install and log in on k3s](../get-started/quickstart.mdx):
+
+```sh
+export KUBECONFIG=~/.kube/zeabur-identity-k3s.yaml
+rm -rf ~/.kube/cache/oidc-login   # forget cached tokens
+kubectl auth whoami
+kubectl auth can-i '*' '*' --all-namespaces   # yes for an admin account
+```
+
+Verify that the username is `zeabur:<username>`. The permission check should return `yes` for an admin account.
+
+Right after kube-apiserver restarts, login attempts briefly return `oidc: authenticator not initialized` because it hasn't fetched Zeabur Identity's keys yet. Wait a few minutes and try again. If the error persists, check the kube-apiserver logs, the `zeabur-identity` Service's endpoints, and the internal certificate. Don't disable certificate verification.
+
+### Verify that kube-apiserver has recovered
+
+On each host you repaired, use the admin kubeconfig to check:
+
+- `/readyz`, node status, and authentication settings.
+- Whether anonymous access and health checks match their behavior before the change.
+
+If you decided to stop trusting Zeabur Identity, also use a kubeconfig that contains only a Zeabur Identity token to verify that the token no longer works. Don't use the admin kubeconfig for this check. Its client certificate authenticates independently and masks the token check result.
+
+Keep Zeabur Identity's Namespace, objects, and Secrets. Deleting them doesn't revert kube-apiserver's authentication settings. It only destroys data.

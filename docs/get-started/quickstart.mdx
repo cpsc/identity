@@ -1,0 +1,530 @@
+---
+title: Install on k3s on Ubuntu and sign in to kubectl with a passkey
+description: Install Zeabur Identity on an Ubuntu server, configure HTTPS and an admin account, and sign in to your k3s cluster from your computer with a passkey.
+---
+
+Install Zeabur Identity on an Ubuntu server, configure HTTPS, and create the first admin account. You can then sign in to the k3s cluster from your computer with a passkey and run `kubectl`. The server uses k3s's built-in Traefik to handle Ingress.
+
+Keep the cluster's admin kubeconfig on the server to install components or recover access if Zeabur Identity stops working. Keep a separate encrypted copy offline. Your computer gets only the cluster's CA certificate and a kubeconfig that uses Zeabur Identity for sign-in. Every request from your computer carries a token that expires within a few minutes.
+
+```text
+Your computer                               server (k3s)
+ browser ──https://identity.example.test──▶ Traefik :443 ──▶ zeabur-identity (zeabur-identity)
+ kubectl ──https://identity.example.test:6443──▶ kube-apiserver
+                                              │ verifies tokens itself; discovery and keys
+                                              └─▶ https://<zeabur-identity ClusterIP> (internal TLS)
+```
+
+## Before you begin
+
+Prepare two machines:
+
+- **Your computer**: Runs your browser and `kubectl`. You can use macOS, Linux, or Windows. The commands use a POSIX shell; use WSL on Windows.
+- **Server**: Runs k3s and Zeabur Identity. You can use a VPS, a home lab host, a spare computer, or a local VM, as long as your computer can reach the Ubuntu machine over the network.
+
+On your computer, prepare:
+
+- `kubectl`.
+- [kubelogin](https://github.com/int128/kubelogin): A `kubectl` plugin that opens a browser for sign-in. Install it with Homebrew using `brew install int128/kubelogin/kubelogin`, with Nix using `nixpkgs#kubelogin-oidc`, or install [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/) first and run `kubectl krew install oidc-login`.
+- [mkcert](https://github.com/FiloSottile/mkcert): Run `mkcert -install` once in the environment where your browser runs to trust the local CA. The command prompts for a password if needed. Firefox also requires NSS's `certutil`; see the mkcert README. With WSL, the browser runs on Windows, so install the Windows version, for example, with `winget install FiloSottile.mkcert`. Call `mkcert.exe` from WSL both here and in step 4.
+- SSH access to the server using `ssh`.
+
+The server needs:
+
+- Ubuntu 24.04 or later on `amd64` or `arm64`.
+- 4 CPUs, 8 GiB of memory, and 30 GiB of free disk space.
+- `curl` and [cosign 3.x](https://docs.sigstore.dev/cosign/system_config/installation/).
+- Access from your computer to TCP ports 443 (sign-in) and 6443 (Kubernetes API).
+
+Use a spare machine or VM. The following steps install k3s and change its configuration.
+
+The examples use these names. Replace them with your own values:
+
+| Name | Example value |
+|---|---|
+| Server hostname | `identity.example.test` |
+| Issuer (Zeabur Identity's public URL) | `https://identity.example.test` |
+| Server SSH login | `ubuntu@identity.example.test`; the user needs `sudo` privileges |
+
+The hostname must resolve to the server from your computer. If you use your own domain, add a DNS record. `.test` names don't resolve on the internet, so add an entry to your hosts file instead: `/etc/hosts` on Linux and macOS, or `C:\Windows\System32\drivers\etc\hosts` on Windows.
+
+WSL copies the Windows hosts file when it starts. After you edit the file, run `wsl --shutdown` on Windows, then open a new WSL terminal.
+
+Keep two terminals open: one on your computer and one logged in to the server. Each step specifies where to run the commands. In your computer's terminal, set the SSH login for later commands:
+
+```sh
+SERVER=ubuntu@identity.example.test
+```
+
+<Steps>
+
+<Step>
+
+### Download and verify Zeabur Identity
+
+Sign in to the server from your computer:
+
+```sh
+ssh "$SERVER"
+```
+
+Choose a version from [GitHub Releases](https://github.com/zeabur-oss/identity/releases). This example uses `v0.1.0`. Set `arch` to `amd64` for x86_64 or `arm64` for aarch64:
+
+```sh
+version=v0.1.0
+arch=arm64
+mkdir -p ~/zeabur-identity-download
+```
+
+Download the CLI, signed checksums, and image digests. These commands verify the files before installing `zeabur-identityctl`:
+
+```sh
+(
+  set -eu
+  cd ~/zeabur-identity-download
+  url="https://github.com/zeabur-oss/identity/releases/download/$version"
+  archive="zeabur-identityctl-$version-linux-$arch.tar.gz"
+  for file in "$archive" SHA256SUMS SHA256SUMS.sigstore.json image-digests.txt; do
+    curl --fail --location "$url/$file" --output "$file"
+  done
+  identity="https://github.com/zeabur-oss/identity/.github/workflows/release.yml@refs/tags/$version"
+  cosign verify-blob --bundle SHA256SUMS.sigstore.json \
+    --certificate-identity "$identity" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+  sha256sum --check --strict --ignore-missing SHA256SUMS
+  tar -xzf "$archive"
+  sudo install -m 0755 zeabur-identityctl /usr/local/bin/zeabur-identityctl
+  zeabur-identityctl --version
+)
+```
+
+Next, verify the image and its SBOM, the list of dependencies in the image. `ZEABUR_IDENTITY_IMAGE` stores the exact image digest for this version for use during installation:
+
+```sh
+ZEABUR_IDENTITY_IMAGE=$(awk '$1 == "index" {print $2}' ~/zeabur-identity-download/image-digests.txt)
+export ZEABUR_IDENTITY_IMAGE
+identity="https://github.com/zeabur-oss/identity/.github/workflows/release.yml@refs/tags/$version"
+cosign verify --certificate-identity "$identity" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com "$ZEABUR_IDENTITY_IMAGE"
+cosign verify-attestation --type cyclonedx --certificate-identity "$identity" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com "$ZEABUR_IDENTITY_IMAGE"
+```
+
+Continue only after both verification commands succeed. See [Release artifacts and verification](../reference/releases.mdx) for supported platforms and other release artifacts.
+
+</Step>
+
+<Step>
+
+### Install k3s
+
+<Callout type="warn">
+
+Step 5 changes how kube-apiserver authenticates identities. Keep the admin kubeconfig below and retain SSH access for recovery. Before running that step, read [Backup and restore](../operations/backup-restore.mdx) and [Keep an access path that bypasses Zeabur Identity](../operations/emergency-access.mdx).
+
+</Callout>
+
+Run these commands on the server to add the hostname to the API server certificate and create an empty authentication configuration file. Step 5 adds the Zeabur Identity configuration.
+
+```sh
+sudo mkdir -p /etc/rancher/k3s/zeabur-identity /etc/rancher/k3s/config.yaml.d
+sudo tee /etc/rancher/k3s/zeabur-identity/authn.yaml >/dev/null <<'EOF'
+apiVersion: apiserver.config.k8s.io/v1
+kind: AuthenticationConfiguration
+anonymous:
+  enabled: false
+jwt: []
+EOF
+sudo tee /etc/rancher/k3s/config.yaml >/dev/null <<'EOF'
+# The name your computer uses for the API server.
+tls-san: [identity.example.test]
+EOF
+sudo tee /etc/rancher/k3s/config.yaml.d/50-zeabur-identity.yaml >/dev/null <<'EOF'
+kube-apiserver-arg:
+  - "authentication-config=/etc/rancher/k3s/zeabur-identity/authn.yaml"
+EOF
+curl -sfL https://get.k3s.io | sudo INSTALL_K3S_VERSION=v1.36.5+k3s1 sh -
+
+install -d -m 700 ~/.kube
+sudo install -o "$USER" -m 600 /etc/rancher/k3s/k3s.yaml ~/.kube/config
+export KUBECONFIG="$HOME/.kube/config"
+```
+
+`~/.kube/config` contains credentials with `cluster-admin` privileges. Use it only to install components or recover access when Zeabur Identity is unavailable, not for daily work. Keep it on the server, and follow [Keep an access path that bypasses Zeabur Identity](../operations/emergency-access.mdx) to store a separate encrypted copy offline.
+
+Confirm that the node and k3s's built-in Ingress are ready:
+
+```sh
+kubectl wait --for=condition=Ready node --all --timeout=180s
+kubectl -n kube-system wait --for=create deployment/traefik --timeout=180s
+kubectl -n kube-system rollout status deployment/traefik --timeout=180s
+```
+
+Install [cert-manager](https://cert-manager.io/docs/installation/kubectl/). In step 5, it issues and renews the certificate that kube-apiserver uses to connect to Zeabur Identity:
+
+```sh
+kubectl apply --server-side -f https://github.com/cert-manager/cert-manager/releases/download/v1.21.3/cert-manager.yaml
+kubectl -n cert-manager wait deployment --all --for=condition=Available --timeout=300s
+```
+
+</Step>
+
+<Step>
+
+### Install Zeabur Identity
+
+Run these commands in the same server shell:
+
+```sh
+export ZEABUR_IDENTITY_ISSUER=https://identity.example.test
+zeabur-identityctl crds | kubectl apply --server-side -f -
+kubectl wait --for=condition=Established --timeout=90s \
+  crd/users.identity.zeabur.com crd/credentials.identity.zeabur.com \
+  crd/oauthclients.identity.zeabur.com crd/grants.identity.zeabur.com \
+  crd/invitations.identity.zeabur.com
+zeabur-identityctl manifests --image "$ZEABUR_IDENTITY_IMAGE" \
+  --serve-arg=--invitations | kubectl apply --server-side -f -
+kubectl -n zeabur-identity rollout status deploy/zeabur-identity --timeout=180s
+```
+
+The generated manifests include RBAC, a Service, and a Deployment. All resources that Zeabur Identity manages reside in the `zeabur-identity` Namespace. `--invitations` enables links to [invite users](../users/manage-users.mdx).
+
+Continue using this server shell. If you open a new shell, restore these settings first:
+
+```sh
+export KUBECONFIG="$HOME/.kube/config"
+export ZEABUR_IDENTITY_ISSUER=https://identity.example.test
+ZEABUR_IDENTITY_IMAGE=$(kubectl -n zeabur-identity get deployment zeabur-identity -o jsonpath='{.spec.template.spec.containers[0].image}')
+export ZEABUR_IDENTITY_IMAGE
+```
+
+</Step>
+
+<Step>
+
+### Expose the sign-in page over HTTPS
+
+Browsers require a trusted HTTPS connection to create passkeys. This guide uses mkcert for your test computer. For a public service, use a certificate from a public CA instead, for example, with [cert-manager](https://cert-manager.io/docs/).
+
+On your computer, issue a certificate for the Issuer's hostname, then copy it to the server. Copy only the certificate and its private key. Keep the CA private key on your computer. With WSL, replace `mkcert` with `mkcert.exe`.
+
+```sh
+mkcert -cert-file zeabur-identity.crt -key-file zeabur-identity.key identity.example.test
+ssh "$SERVER" 'install -d -m 700 ~/zeabur-identity-tls'
+scp zeabur-identity.crt zeabur-identity.key "$SERVER":zeabur-identity-tls/
+rm zeabur-identity.key
+```
+
+On the server, store the certificate in a Secret and create an Ingress. Traefik in k3s receives HTTPS on port 443 and forwards requests to Zeabur Identity:
+
+```sh
+kubectl -n zeabur-identity create secret tls zeabur-identity-tls \
+  --cert=$HOME/zeabur-identity-tls/zeabur-identity.crt --key=$HOME/zeabur-identity-tls/zeabur-identity.key
+kubectl apply -f - <<'EOF'
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: zeabur-identity
+  namespace: zeabur-identity
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+  - hosts: [identity.example.test]
+    secretName: zeabur-identity-tls
+  rules:
+  - host: identity.example.test
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: zeabur-identity
+            port: {number: 80}
+EOF
+```
+
+Wait a few seconds for Traefik to load the route and certificate, then check from your computer. In the JSON response, `issuer` should be `https://identity.example.test`:
+
+```sh
+curl --cacert "$(mkcert -CAROOT)/rootCA.pem" \
+  https://identity.example.test/.well-known/openid-configuration
+```
+
+When you use the Windows version of mkcert from WSL, `mkcert -CAROOT` outputs a Windows path. Convert it first:
+
+```sh
+curl --cacert "$(wslpath "$(mkcert.exe -CAROOT | tr -d '\r')")/rootCA.pem" \
+  https://identity.example.test/.well-known/openid-configuration
+```
+
+#### Rate-limit sign-in requests before making the service public
+
+Public servers should rate-limit sign-in endpoints by client IP address. Skip this section if only you can reach the server.
+
+On the server, set Traefik's `externalTrafficPolicy` to `Local` so the k3s load balancer preserves visitor IP addresses. Each address then gets its own rate-limit counter:
+
+```sh
+kubectl apply -f - <<'EOF'
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata: {name: traefik, namespace: kube-system}
+spec:
+  valuesContent: |-
+    service:
+      spec:
+        externalTrafficPolicy: Local
+EOF
+```
+
+This uses the k3s method for [configuring Traefik](https://docs.k3s.io/helm/#customizing-packaged-components-with-helmchartconfig). In a multi-node cluster with `Local`, only nodes that run a Traefik Pod receive traffic.
+
+Next, add rate limiting to the sign-in routes:
+
+```sh
+kubectl apply -f - <<'EOF'
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: {name: zeabur-identity-rate-limit, namespace: zeabur-identity}
+spec:
+  rateLimit:
+    average: 10
+    period: 1s
+    burst: 20
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: zeabur-identity-rate-limited
+  namespace: zeabur-identity
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: zeabur-identity-zeabur-identity-rate-limit@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+  - hosts: [identity.example.test]
+    secretName: zeabur-identity-tls
+  rules:
+  - host: identity.example.test
+    http:
+      paths:
+      - {path: /authorize, pathType: Exact, backend: {service: {name: zeabur-identity, port: {number: 80}}}}
+      - {path: /token, pathType: Exact, backend: {service: {name: zeabur-identity, port: {number: 80}}}}
+      - {path: /par, pathType: Exact, backend: {service: {name: zeabur-identity, port: {number: 80}}}}
+      - {path: /revoke, pathType: Exact, backend: {service: {name: zeabur-identity, port: {number: 80}}}}
+      - {path: /login, pathType: Prefix, backend: {service: {name: zeabur-identity, port: {number: 80}}}}
+      - {path: /setup, pathType: Prefix, backend: {service: {name: zeabur-identity, port: {number: 80}}}}
+      - {path: /upstream, pathType: Prefix, backend: {service: {name: zeabur-identity, port: {number: 80}}}}
+EOF
+```
+
+This route takes precedence over the catch-all route for the listed paths. The discovery and key endpoints have no rate limit because kube-apiserver and all clients read them.
+
+From your computer, send 60 concurrent requests to check the rate limit. Expect about 20 responses with status 200 and the rest with `429 Too Many Requests`:
+
+```sh
+ca="$(mkcert -CAROOT)/rootCA.pem"
+for i in $(seq 1 60); do
+  curl -s -o /dev/null -w '%{http_code}\n' --cacert "$ca" https://identity.example.test/login &
+done | sort | uniq -c
+```
+
+These values are a starting point. Adjust them for your usage:
+
+- Users behind the same NAT share an IP address and a rate limit. Raise the limit if everyone in an office signs in at the same time each morning.
+- If another proxy sits in front of Traefik, trust forwarded headers only from that proxy. Otherwise, everyone shares one rate limit, or someone can forge headers to bypass it.
+- Each Traefik replica maintains its own counter unless you configure distributed rate limiting.
+
+See Traefik's [RateLimit options](https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/ratelimit/) for configuration details.
+
+</Step>
+
+<Step>
+
+### Configure kube-apiserver to trust Zeabur Identity
+
+First, confirm that you can access the cluster without Zeabur Identity. On the server, check the admin kubeconfig from step 2:
+
+```sh
+sudo k3s kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml auth whoami
+sudo k3s kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get --raw=/readyz
+```
+
+If either command fails, stop and fix the problem before continuing. If you haven't stored an encrypted copy offline yet, back it up now.
+
+kube-apiserver verifies Zeabur Identity tokens itself and fetches signing keys over internal HTTPS. `zeabur-identityctl kube-config` asks cert-manager to issue the certificate for this connection, then outputs the configuration that kube-apiserver needs. It also outputs k3s configuration instructions, including one restart. Step 2 already completed that part, so skip those instructions.
+
+kube-apiserver checks the configuration file about once a minute. Compare the successful reload count before and after the change to confirm that the new configuration took effect. Define these two helper functions in the server shell:
+
+```sh
+# Successful reloads of the authentication configuration so far.
+reloads() {
+  kubectl get --raw /metrics |
+    awk '/^apiserver_authentication_config_controller_automatic_reloads_total/ &&
+      /status="success"/ { n += $NF } END { print n + 0 }'
+}
+# Waits up to three minutes for the count to pass $1; prints the k3s log if it never does.
+wait_for_reload() {
+  for _ in $(seq 1 36); do
+    [ "$(reloads)" -gt "$1" ] && return 0
+    sleep 5
+  done
+  echo "Authentication configuration did not reload; inspect k3s logs." >&2
+  sudo journalctl -u k3s --since "5 minutes ago" --no-pager
+  return 1
+}
+```
+
+Write the new configuration to a temporary file, then move it into place in one operation so kube-apiserver doesn't read a partially written file. Then wait for the reload:
+
+```sh
+before=$(reloads)
+zeabur-identityctl kube-config --distro k3s > ~/authn.yaml &&
+  sudo install -m 600 ~/authn.yaml /etc/rancher/k3s/zeabur-identity/.authn.yaml.tmp &&
+  sudo mv /etc/rancher/k3s/zeabur-identity/.authn.yaml.tmp /etc/rancher/k3s/zeabur-identity/authn.yaml &&
+  wait_for_reload "$before"
+```
+
+cert-manager automatically renews the internal certificate. See [Backup and restore](../operations/backup-restore.mdx) for checks and maintenance.
+
+</Step>
+
+<Step>
+
+### Register kubectl and create your first passkey
+
+Every application that uses Zeabur Identity for sign-in must register as a client. On the server, register `kubectl` so kubelogin can receive the sign-in result on 127.0.0.1:
+
+```sh
+zeabur-identityctl client create kubectl --type public \
+  --redirect-uri http://127.0.0.1:8000/ --audience kubernetes | kubectl apply -f -
+```
+
+Get a one-time setup link for the first admin:
+
+```sh
+zeabur-identityctl setup-link --username admin
+```
+
+This creates the `admin` user as an admin account. Admin accounts can sign in only with passkeys and receive full Kubernetes privileges through `cluster-admin`. See [Admin accounts and sessions](../users/admin-sessions.mdx).
+
+Open the output link in your computer's browser and create a passkey. The link works once and expires after 60 minutes. Run the command again if you need a new link.
+
+</Step>
+
+<Step>
+
+### Configure kubectl on your computer
+
+From your computer, copy the cluster's CA certificate from the server. This is public data that `kubectl` uses only to confirm that it has reached the correct API server.
+
+```sh
+CA=$(ssh "$SERVER" "grep certificate-authority-data ~/.kube/config | awk '{print \$2}'")
+```
+
+Next, write the kubeconfig. After you sign in, kubelogin uses a refresh token to renew tokens automatically until the session ends:
+
+```sh
+mkdir -p ~/.kube
+cat > ~/.kube/zeabur-identity-k3s.yaml <<EOF
+apiVersion: v1
+kind: Config
+clusters:
+- name: zeabur-identity-k3s
+  cluster:
+    server: https://identity.example.test:6443
+    certificate-authority-data: $CA
+users:
+- name: passkey
+  user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1
+      interactiveMode: IfAvailable
+      command: kubectl
+      args: [oidc-login, get-token,
+        --oidc-issuer-url=https://identity.example.test,
+        --oidc-client-id=kubectl,
+        --oidc-use-access-token,
+        --listen-address=127.0.0.1:8000,
+        --oidc-redirect-url=http://127.0.0.1:8000/]
+contexts:
+- {name: zeabur-identity-k3s, context: {cluster: zeabur-identity-k3s, user: passkey}}
+current-context: zeabur-identity-k3s
+EOF
+```
+
+Krew and Nix install kubelogin as a `kubectl` plugin, so you can use this configuration as written. If you installed it with Homebrew, change it to `command: kubelogin` and remove `oidc-login` from `args`.
+
+With WSL, kubelogin runs inside Linux and can't access the CA trusted by the Windows version of mkcert. Use the path from the check in step 4 to add the CA to `args`:
+
+```sh
+wslpath "$(mkcert.exe -CAROOT | tr -d '\r')"   # e.g. /mnt/c/Users/you/AppData/Local/mkcert
+```
+
+```yaml
+        --certificate-authority=/mnt/c/Users/you/AppData/Local/mkcert/rootCA.pem,
+```
+
+kubelogin also can't open the Windows browser from WSL. It prints `Please visit the following URL in your browser manually: http://127.0.0.1:8000/` instead. Open that address in your browser to continue signing in.
+
+Keep `--oidc-use-access-token`. kube-apiserver accepts only Zeabur Identity access tokens, not ID tokens.
+
+By default, kubelogin stores refresh tokens in `~/.kube/cache/oidc-login`. Add `--token-cache-storage=keyring` to store them in the system keyring instead. With `--token-cache-storage=none`, kubelogin doesn't store tokens and opens the sign-in page every time you run `kubectl`.
+
+</Step>
+
+<Step>
+
+### Sign in and test permissions
+
+Run these commands on your computer to sign in, check your identity, list Pods, and test creating and deleting a ConfigMap:
+
+```sh
+export KUBECONFIG=~/.kube/zeabur-identity-k3s.yaml
+kubectl auth whoami                      # opens the browser; user zeabur:admin, group zeabur:admins
+kubectl get pods -A                      # allowed: zeabur:admins is bound to cluster-admin
+kubectl -n default create configmap zeabur-identity-permission-check --from-literal=check=ok
+kubectl -n default delete configmap zeabur-identity-permission-check
+```
+
+</Step>
+
+</Steps>
+
+## Check the results
+
+- **Admin tokens renew automatically**: Tokens expire after 5 minutes and renew without interaction. You must sign in again 12 hours after the initial sign-in or after 1 hour without using `kubectl`; the idle timeout is 15 minutes for clusters shared by multiple teams. Regular account tokens expire after 10 minutes. See [Admin accounts and sessions](../users/admin-sessions.mdx).
+- **Use admin accounts only for administrative work**: For daily work, invite yourself to create a regular account, then bind permissions to groups as needed. See [Manage users](../users/manage-users.mdx).
+- **Every token is traceable**: `kubectl auth whoami` shows `identity.zeabur.com/jti` and `identity.zeabur.com/client-id`. Kubernetes audit events also record these fields so you can map each request to a sign-in.
+- **Users, passkeys, and sessions are Kubernetes objects**: They reside in the `zeabur-identity` Namespace. A passkey is a `Credential`, and a session after sign-in is a `Grant`. Run `kubectl -n zeabur-identity get users,credentials,grants` on the server to list these objects. See [Manage users](../users/manage-users.mdx) for operations.
+
+Next, configure [Backup and restore](../operations/backup-restore.mdx), [Upgrade and rollback](../operations/upgrade.mdx), and [Keep an access path that bypasses Zeabur Identity](../operations/emergency-access.mdx). For daily use, start with [Manage users](../users/manage-users.mdx), configure [Sign in with GitHub](../users/github-sign-in.mdx) or [Sign in with Google](../users/google-sign-in.mdx), or [register clients](../users/clients.mdx) so applications such as Grafana or Argo CD can use Zeabur Identity for sign-in.
+
+## Troubleshooting
+
+| Symptom or result | What to do next |
+|---|---|
+| The browser shows a certificate error or no passkey option | Run `mkcert -install` in the environment where the browser runs to confirm that it trusts mkcert's CA. Check that the certificate name matches the Issuer's hostname. |
+| `kubectl` reports `Unauthorized` | Check that the configuration in step 5 loaded successfully. If kube-apiserver encounters an error in the configuration file, it ignores the file until the file changes again. Run `sudo journalctl -u k3s \| grep -i "authentication config"` on the k3s server to find the cause. |
+| Port 8000 is already in use | kubelogin uses this port to receive the browser redirect. Change both `--listen-address` and `--oidc-redirect-url`. The registered redirect URI accepts any port on 127.0.0.1. |
+
+## Clean up
+
+Uninstall k3s on the server. This removes the entire cluster, Zeabur Identity, and all other resources installed in the cluster:
+
+```sh
+sudo /usr/local/bin/k3s-uninstall.sh
+rm -rf ~/zeabur-identity-tls ~/authn.yaml ~/zeabur-identity-download
+```
+
+Then run these commands on your computer:
+
+```sh
+rm ~/.kube/zeabur-identity-k3s.yaml
+rm -rf ~/.kube/cache/oidc-login
+```

@@ -1,7 +1,7 @@
 ---
 title: Zeabur Identity 的架構
 description: 了解 Zeabur Identity 如何在 Kubernetes 叢集中運作、安全性質、元件關係與 crate 分工。
-source: "2f0f9bc48009"
+source: "4721387d99da"
 ---
 
 Zeabur Identity 是一個 OpenID Connect Issuer，以通行密鑰作為主要登入方式，在自管 Kubernetes 叢集中執行。kube-apiserver 使用 [Structured Authentication Configuration][kep-3331]，自行驗證 Zeabur Identity 簽發的權杖。你可以用通行密鑰登入，不必持有無法撤銷的長效管理員 kubeconfig。其他 OpenID Connect 用戶端，例如 Argo CD、Grafana 和 Headlamp，也能使用同一個 Issuer。
@@ -15,7 +15,6 @@ k3s 與 RKE2 使用相同設定。CI 測試涵蓋 k3s。
 - **權杖有效期限短。** 權杖綁定目標對象（audience），簽章金鑰會定期輪替。
 - **使用者自行管理登入方式。** 不論是新增或移除通行密鑰，還是連結或解除連結 GitHub 或 Google 帳號，使用者都需要再次用通行密鑰完成驗證。使用者無法移除最後一把通行密鑰，也無法解除連結最後一種登入方式。
 - **狀態儲存在 Kubernetes。** 自訂資源儲存使用者、認證資訊、用戶端、工作階段與邀請，不需要資料庫。撤銷存取權與刪除資料的順序，請見[登出、救援與移除使用者](../users/offboarding.mdx)。
-- **體積小。** 映像檔只包含一個靜態執行檔，沒有其他內容。
 
 [規格符合度](./conformance.mdx)列出 Zeabur Identity 實作的各項規格要求，以及對應的程式碼和驗證測試。
 
@@ -77,8 +76,6 @@ kube-apiserver 使用 Zeabur Identity 公開的金鑰驗證權杖簽章。它會
 
 管理工具 `zeabur-identityctl` 在管理員的電腦上執行，使用管理員自己的 kubeconfig。它會輸出安裝清單，並依 Kubernetes 發行版產生適用的 kube-apiserver `AuthenticationConfiguration`。它也會簽發一次性連結，讓使用者註冊通行密鑰。
 
-`deploy/crds.json` 和 `deploy/rbac.json` 分別是 `zeabur-identityctl crds` 與 `zeabur-identityctl rbac` 的輸出。這些檔案會提交到版本庫，供 pull request 審查。
-
 ## Crate 分工
 
 程式碼分成多個小型 crate，全都放在 `crates/` 目錄下的同一層：
@@ -104,7 +101,7 @@ kube-apiserver 使用 Zeabur Identity 公開的金鑰驗證權杖簽章。它會
 | [`zeabur-identityctl`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identityctl) | **binary**: the administrator's CLI | core, k8s |
 | [`zeabur-identity-test-support`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-test-support), [`zeabur-identity-e2e`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-e2e) | test helpers; end-to-end tests on a cluster | — |
 
-登入頁面的 TypeScript 與 Tailwind 原始程式碼放在 [`ui/`](https://github.com/zeabur-oss/identity/tree/main/ui)，並以套件形式使用 Zeabur 設計系統。建置產物與設計系統的樣式類別都會提交到 `crates/zeabur-identity-ui`，並嵌入執行檔。樣式類別以 askama 巨集儲存在 `templates/ds.html`，因此建置 Zeabur Identity 只需要 Cargo。
+登入頁面的 TypeScript 與 Tailwind 原始程式碼放在 [`ui/`](https://github.com/zeabur-oss/identity/tree/main/ui)，並以套件形式使用 Zeabur 設計系統。建置產物與設計系統的樣式類別都會提交到 `crates/zeabur-identity-ui`，並嵌入執行檔。樣式類別以 askama 巨集儲存在 `templates/ds.html`。
 
 ## 開發
 

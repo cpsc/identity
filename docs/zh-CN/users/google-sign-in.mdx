@@ -1,7 +1,7 @@
 ---
 title: 让用户用 Google 登录
 description: 配置 Google OAuth 客户端并关联用户账号，让普通账号使用 Google 登录 Zeabur Identity。
-source: "40e8a5d545da"
+source: "b297dce33371"
 ---
 
 配置 Google OAuth 客户端，再将 Google 账号关联到 Zeabur Identity 用户，用户就能在登录页选择 **Continue with Google**。管理员账号只能用通行密钥登录，不能关联 Google 账号。
@@ -22,8 +22,6 @@ export ZEABUR_IDENTITY_ISSUER=https://identity.example.com
 Issuer 在安装时就已固定。Zeabur Identity 的 Deployment、TLS 证书和 kube-apiserver 配置必须使用相同名称。安装后修改 shell 里的 `ZEABUR_IDENTITY_ISSUER` 不会更改现有安装的 Issuer。
 
 Google 账号必须先关联到 Zeabur Identity 用户，才能登录。Zeabur Identity 不会在首次登录时创建用户，也不会根据电子邮件地址、姓名或 Workspace 域名匹配账号。用户的组和显示名称都取自 `User`。
-
-Zeabur Identity 只记录 Google 的固定账号 ID（`sub`），不会向 Google 请求电子邮件地址或个人资料。
 
 ## 配置 Google 登录
 

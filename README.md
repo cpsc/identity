@@ -30,7 +30,7 @@ and restarting a deployment is refused with 403 for an account without that righ
 - **No forever key on anyone's laptop.** Tokens last minutes and Kubernetes checks them itself.
   Every session ends 12 hours after sign-in. Revoke a person's sessions and their access ends
   when the token in hand expires, within ten minutes.
-- **Runs inside the cluster it protects.** One small pod (CI holds its memory under 30 MiB), no database, no extra
+- **Runs inside the cluster it protects.** One small pod, no database, no extra
   servers. Tested in CI on k3s; RKE2 uses the same configuration. OpenID Connect apps such as Argo CD or Grafana can use the same issuer.
 
 ## What it looks like

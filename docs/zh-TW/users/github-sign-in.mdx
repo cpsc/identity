@@ -1,7 +1,7 @@
 ---
 title: 讓使用者用 GitHub 登入
 description: 啟用 GitHub 登入，將 GitHub 帳號連結到一般帳號，讓使用者用 GitHub 帳號存取叢集。
-source: "da77beaaca16"
+source: "9b9993029cc0"
 ---
 
 在 Zeabur Identity 啟用 GitHub 登入，再將 GitHub 帳號連結到一般帳號。使用者就能在登入頁面選擇 **Continue with GitHub**，用 GitHub 帳號登入。
@@ -15,7 +15,7 @@ source: "da77beaaca16"
 - 完成[在 k3s 上安裝並登入](../get-started/quickstart.mdx)。
 - 在伺服器的 `nix develop` 環境中執行安裝指令，把下方的 Issuer 換成你的網址。
 - 確認叢集允許 Zeabur Identity 的 Pod 使用 HTTPS 對外連線到 `github.com` 與 `api.github.com`。
-- 準備要連結的一般帳號。[管理員帳號](./admin-sessions.mdx)只能用通行密鑰登入，不能連結 GitHub 帳號。GitHub 無法向 Zeabur Identity 證明使用者曾用指紋或 PIN 確認本人在場。
+- 準備要連結的一般帳號。[管理員帳號](./admin-sessions.mdx)只能用通行密鑰登入，不能連結 GitHub 帳號。
 
 ```sh
 export ZEABUR_IDENTITY_ISSUER=https://identity.example.test
@@ -38,7 +38,7 @@ export ZEABUR_IDENTITY_ISSUER=https://identity.example.test
 | **Authorization callback URL** | `https://identity.example.test/upstream/github/callback` |
 | **Enable Device Flow** | 關閉 |
 
-將網址換成你的 Issuer。回呼網址只用來將瀏覽器重新導向，GitHub 不需要連線到叢集。
+將網址換成你的 Issuer。回呼網址只用來將瀏覽器重新導向。
 
 註冊完成後，記下 **Client ID**，並產生 **client secret**。
 

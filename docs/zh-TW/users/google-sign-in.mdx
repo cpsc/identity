@@ -1,7 +1,7 @@
 ---
 title: 讓使用者用 Google 登入
 description: 設定 Google OAuth 用戶端並連結使用者帳號，讓一般帳號使用 Google 登入 Zeabur Identity。
-source: "40e8a5d545da"
+source: "b297dce33371"
 ---
 
 設定 Google OAuth 用戶端，再把 Google 帳號連結到 Zeabur Identity 使用者。使用者就能在登入頁選擇 **Continue with Google**。管理員帳號只能用通行密鑰登入，不能連結 Google 帳號。
@@ -22,8 +22,6 @@ export ZEABUR_IDENTITY_ISSUER=https://identity.example.com
 Issuer 在安裝時就已固定。Zeabur Identity 的 Deployment、TLS 憑證和 kube-apiserver 設定必須使用相同名稱。事後修改 shell 裡的 `ZEABUR_IDENTITY_ISSUER`，不會改變既有安裝的 Issuer。
 
 Google 帳號必須先連結到 Zeabur Identity 使用者，才能登入。Zeabur Identity 不會在首次登入時建立使用者，也不會依電子郵件地址、姓名或 Workspace 網域配對帳號。群組和顯示名稱都取自 `User`。
-
-Zeabur Identity 只記錄 Google 的固定帳號 ID（`sub`），不會向 Google 要求電子郵件地址或個人資料。
 
 ## 設定 Google 登入
 

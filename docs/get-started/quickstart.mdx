@@ -5,7 +5,7 @@ description: Install Zeabur Identity on an Ubuntu server, configure HTTPS and an
 
 Install Zeabur Identity on an Ubuntu server, configure HTTPS, and create the first admin account. You can then sign in to the k3s cluster from your computer with a passkey and run `kubectl`. The server uses k3s's built-in Traefik to handle Ingress.
 
-Keep the cluster's admin kubeconfig on the server to install components or recover access if Zeabur Identity stops working. Keep a separate encrypted copy offline. Your computer gets only the cluster's CA certificate and a kubeconfig that uses Zeabur Identity for sign-in. Every request from your computer carries a token that expires within a few minutes.
+Keep the cluster's admin kubeconfig on the server to install components or recover access if Zeabur Identity stops working. Keep a separate encrypted copy offline. Your computer gets only the cluster's CA certificate and a kubeconfig that uses Zeabur Identity for sign-in.
 
 ```text
 Your computer                               server (k3s)
@@ -336,7 +336,6 @@ These values are a starting point. Adjust them for your usage:
 
 - Users behind the same NAT share an IP address and a rate limit. Raise the limit if everyone in an office signs in at the same time each morning.
 - If another proxy sits in front of Traefik, trust forwarded headers only from that proxy. Otherwise, everyone shares one rate limit, or someone can forge headers to bypass it.
-- Each Traefik replica maintains its own counter unless you configure distributed rate limiting.
 
 See Traefik's [RateLimit options](https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/ratelimit/) for configuration details.
 
@@ -387,8 +386,6 @@ zeabur-identityctl kube-config --distro k3s > ~/authn.yaml &&
   sudo mv /etc/rancher/k3s/zeabur-identity/.authn.yaml.tmp /etc/rancher/k3s/zeabur-identity/authn.yaml &&
   wait_for_reload "$before"
 ```
-
-cert-manager automatically renews the internal certificate. See [Backup and restore](../operations/backup-restore.mdx) for checks and maintenance.
 
 </Step>
 
@@ -498,7 +495,6 @@ kubectl -n default delete configmap zeabur-identity-permission-check
 
 - **Admin tokens renew automatically**: Tokens expire after 5 minutes and renew without interaction. You must sign in again 12 hours after the initial sign-in or after 1 hour without using `kubectl`; the idle timeout is 15 minutes for clusters shared by multiple teams. Regular account tokens expire after 10 minutes. See [Admin accounts and sessions](../users/admin-sessions.mdx).
 - **Use admin accounts only for administrative work**: For daily work, invite yourself to create a regular account, then bind permissions to groups as needed. See [Manage users](../users/manage-users.mdx).
-- **Every token is traceable**: `kubectl auth whoami` shows `identity.zeabur.com/jti` and `identity.zeabur.com/client-id`. Kubernetes audit events also record these fields so you can map each request to a sign-in.
 - **Users, passkeys, and sessions are Kubernetes objects**: They reside in the `zeabur-identity` Namespace. A passkey is a `Credential`, and a session after sign-in is a `Grant`. Run `kubectl -n zeabur-identity get users,credentials,grants` on the server to list these objects. See [Manage users](../users/manage-users.mdx) for operations.
 
 Next, configure [Backup and restore](../operations/backup-restore.mdx), [Upgrade and rollback](../operations/upgrade.mdx), and [Keep an access path that bypasses Zeabur Identity](../operations/emergency-access.mdx). For daily use, start with [Manage users](../users/manage-users.mdx), configure [Sign in with GitHub](../users/github-sign-in.mdx) or [Sign in with Google](../users/google-sign-in.mdx), or [register clients](../users/clients.mdx) so applications such as Grafana or Argo CD can use Zeabur Identity for sign-in.

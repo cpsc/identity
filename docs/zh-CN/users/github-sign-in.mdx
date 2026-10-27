@@ -1,7 +1,7 @@
 ---
 title: 让用户用 GitHub 登录
 description: 启用 GitHub 登录并关联普通账号，让用户通过 GitHub 账号访问集群。
-source: "da77beaaca16"
+source: "9b9993029cc0"
 ---
 
 在 Zeabur Identity 启用 GitHub 登录，并将 GitHub 账号关联到普通账号后，用户就能在登录页面选择 **Continue with GitHub**，用 GitHub 账号登录。
@@ -15,7 +15,7 @@ source: "da77beaaca16"
 - 完成[在 k3s 上安装并登录](../get-started/quickstart.mdx)。
 - 在服务器的 `nix develop` 环境中执行安装命令，并将下方 Issuer 换成你的网址。
 - 确认集群允许 Zeabur Identity 的 Pod 通过 HTTPS 连接到外部的 `github.com` 和 `api.github.com`。
-- 准备要关联的普通账号。[管理员账号](./admin-sessions.mdx)只能用通行密钥登录，不能关联 GitHub 账号。GitHub 无法向 Zeabur Identity 证明用户曾通过指纹或 PIN 确认本人在场。
+- 准备要关联的普通账号。[管理员账号](./admin-sessions.mdx)只能用通行密钥登录，不能关联 GitHub 账号。
 
 ```sh
 export ZEABUR_IDENTITY_ISSUER=https://identity.example.test
@@ -38,7 +38,7 @@ export ZEABUR_IDENTITY_ISSUER=https://identity.example.test
 | **Authorization callback URL** | `https://identity.example.test/upstream/github/callback` |
 | **Enable Device Flow** | 关闭 |
 
-将网址换成你的 Issuer。回调网址只负责重定向浏览器，GitHub 不需要连接到集群。
+将网址换成你的 Issuer。回调网址只负责重定向浏览器。
 
 注册完成后，记下 **Client ID**，并生成 **client secret**。
 

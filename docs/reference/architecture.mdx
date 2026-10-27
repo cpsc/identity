@@ -14,7 +14,6 @@ k3s and RKE2 use the same configuration. CI tests cover k3s.
 - **Tokens are short-lived.** They are bound to an audience, and signing keys rotate regularly.
 - **Users manage their own sign-in methods.** Adding or removing a passkey, or linking or unlinking a GitHub or Google account, requires the user to authenticate again with a passkey. Users can't remove their last passkey or unlink their last sign-in method.
 - **Kubernetes stores the state.** Custom resources store users, credentials, clients, sessions, and invitations. No database is required. For the order of access revocation and data deletion, see [Sign out, recover access, and remove users](../users/offboarding.mdx).
-- **Small footprint.** The image contains a single static executable and is otherwise empty.
 
 [Specification conformance](./conformance.mdx) lists the specification requirements Zeabur Identity implements, along with the corresponding code and verification tests.
 
@@ -76,8 +75,6 @@ When the token expires, kubelogin uses the refresh token to obtain a new token w
 
 The admin tool `zeabur-identityctl` runs on the administrator's computer with the administrator's own kubeconfig. It outputs installation manifests, generates a kube-apiserver `AuthenticationConfiguration` for the Kubernetes distribution, and issues one-time links for users to register passkeys.
 
-`deploy/crds.json` and `deploy/rbac.json` are the outputs of `zeabur-identityctl crds` and `zeabur-identityctl rbac`, respectively. These files are committed to the repository for pull request review.
-
 ## Crate responsibilities
 
 The code is split into small crates, all at the same level in the `crates/` directory:
@@ -103,7 +100,7 @@ Each crate has a README that also serves as its crate-level documentation. Open 
 | [`zeabur-identityctl`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identityctl) | **binary**: the administrator's CLI | core, k8s |
 | [`zeabur-identity-test-support`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-test-support), [`zeabur-identity-e2e`](https://github.com/zeabur-oss/identity/tree/main/crates/zeabur-identity-e2e) | test helpers; end-to-end tests on a cluster | — |
 
-The sign-in page's TypeScript and Tailwind source lives in [`ui/`](https://github.com/zeabur-oss/identity/tree/main/ui) and uses the Zeabur design system as a package. Build output and the design system's style classes are committed to `crates/zeabur-identity-ui` and embedded in the executable. The style classes are stored as askama macros in `templates/ds.html`, so building Zeabur Identity requires only Cargo.
+The sign-in page's TypeScript and Tailwind source lives in [`ui/`](https://github.com/zeabur-oss/identity/tree/main/ui) and uses the Zeabur design system as a package. Build output and the design system's style classes are committed to `crates/zeabur-identity-ui` and embedded in the executable. The style classes are stored as askama macros in `templates/ds.html`.
 
 ## Development
 

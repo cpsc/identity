@@ -91,7 +91,7 @@ The ConfigMap `zeabur-identity-settings` in the Namespace where Zeabur Identity 
 | `teams` | `single`, `multiple` | `single` | When set to `multiple`, admin sessions end after 15 minutes of inactivity by default. |
 | `admin-aal3` | `false`, `true` | `false` | When set to `true`, admin accounts must use device-bound passkeys. |
 
-The installer can't determine the number of teams, so every installation starts in single-team mode. A single-team cluster typically has only one person—the admin—and uses the same idle timeout for admin and regular accounts.
+Every installation starts in single-team mode, where admin and regular accounts use the same idle timeout.
 
 When multiple teams share a cluster, create the following configuration:
 

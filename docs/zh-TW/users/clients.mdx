@@ -1,7 +1,7 @@
 ---
 title: 註冊用戶端
 description: 註冊公開或機密用戶端，讓 Grafana、Argo CD 這類應用程式用 Zeabur Identity 登入。
-source: "af09d2c67dec"
+source: "29f86b6d975f"
 ---
 
 將應用程式註冊為 Zeabur Identity 用戶端後，就能用 Zeabur Identity 登入。每個用戶端都是一個 `OAuthClient` 物件，放在 Zeabur Identity 所在的 Namespace 中。物件名稱就是應用程式的 `client_id`。
@@ -91,7 +91,7 @@ zeabur-identityctl client create grafana --type confidential --display-name Graf
   --redirect-uri https://grafana.example.com/login/generic_oauth | kubectl apply -f -
 ```
 
-指令會將密鑰輸出到終端機的 stderr，與物件分開輸出。密鑰不會出現在物件、`kubectl` 的輸入或 Git 中。
+指令會將密鑰輸出到終端機的 stderr，與物件分開輸出。
 
 <Callout type="warn">
 

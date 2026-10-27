@@ -1,7 +1,7 @@
 ---
 title: 發行檔與驗證
 description: 選擇適合平台的 Zeabur Identity 發行檔，下載並驗證簽章與 checksum 後再執行。
-source: "8c6a03852a59"
+source: "a269e0cd4af4"
 ---
 
 到 [GitHub Releases](https://github.com/zeabur-oss/identity/releases) 下載 Zeabur Identity，先驗證簽章與 checksum 再執行。Zeabur Identity 在 alpha 階段的所有版本都會標記為預先發行版。
@@ -13,7 +13,7 @@ source: "8c6a03852a59"
 | Linux amd64 / x86_64 | `zeabur-identityctl-v<VERSION>-linux-amd64.tar.gz` | `ghcr.io/zeabur-oss/identity:v<VERSION>` |
 | Linux arm64 / aarch64 | `zeabur-identityctl-v<VERSION>-linux-arm64.tar.gz` | 使用相同的映像檔 tag，Docker 會選擇你的架構 |
 
-CLI 與伺服器都採用靜態連結。如果使用 macOS、Windows 或其他架構，需要從原始程式碼建置 CLI。
+如果使用 macOS、Windows 或其他架構，需要從原始程式碼建置 CLI。
 
 每個發行版本都包含 checksum、簽章與 SBOM。SBOM 列出發行檔包含的相依套件。供下載的 SBOM 檔名以 `.cdx.json` 結尾。
 

@@ -14,7 +14,7 @@ You decide who can sign in. Unlinked GitHub accounts can't sign in, and Zeabur I
 - Complete [Install and sign in on k3s](../get-started/quickstart.mdx).
 - Run the installation commands in the server's `nix develop` environment, and replace the Issuer below with your URL.
 - Confirm that the cluster lets Zeabur Identity Pods make outbound HTTPS connections to `github.com` and `api.github.com`.
-- Prepare the regular accounts you want to link. [Admin accounts](./admin-sessions.mdx) can only sign in with passkeys and can't link GitHub accounts. GitHub can't prove to Zeabur Identity that a user confirmed their presence with a fingerprint or PIN.
+- Prepare the regular accounts you want to link. [Admin accounts](./admin-sessions.mdx) can only sign in with passkeys and can't link GitHub accounts.
 
 ```sh
 export ZEABUR_IDENTITY_ISSUER=https://identity.example.test
@@ -37,7 +37,7 @@ In GitHub, open **Settings → Developer settings → OAuth Apps → New OAuth A
 | **Authorization callback URL** | `https://identity.example.test/upstream/github/callback` |
 | **Enable Device Flow** | Off |
 
-Replace the URLs with your Issuer. The callback URL only redirects the browser; GitHub doesn't need to connect to the cluster.
+Replace the URLs with your Issuer. The callback URL only redirects the browser.
 
 After registration, record the **Client ID** and generate a **client secret**.
 

@@ -1,7 +1,7 @@
 ---
 title: 管理员账号与会话
 description: 创建和切换管理员账号、调整会话时长，并配置全站团队模式与 AAL3 通行密钥限制。
-source: "988f25d63345"
+source: "26c6aed4ee6e"
 ---
 
 管理员账号只能用通行密钥登录，访问令牌有效期为 5 分钟；普通账号的访问令牌有效期为 10 分钟。你可以调整会话时长，并要求管理员使用设备绑定的通行密钥。每个会话最晚在登录后 12 小时结束。
@@ -59,7 +59,7 @@ kubectl -n zeabur-identity get zbuser            # the Type column shows the acc
 
 每次登录都会创建一个会话。应用会获取短期访问令牌和刷新令牌，并在会话结束前使用刷新令牌获取新的访问令牌，无需再次使用通行密钥。
 
-会话会在空闲超时或达到最长时限时结束。默认限制遵循 NIST SP 800-63B-4 的重新验证指南：
+会话会在空闲超时或达到最长时限时结束。默认限制如下：
 
 | 账号 | 访问令牌有效期 | 空闲多久后结束会话 | 会话最晚结束时间 |
 |---|---|---|---|
@@ -82,8 +82,6 @@ Zeabur Identity 不保留单点登录会话，因此每次授权请求都会显�
 | `--refresh-absolute` | `12h` | 从登录开始计算的会话最长时限 |
 
 令牌有效期必须介于 1 分钟与 1 小时之间。空闲时限不得超过 `--refresh-absolute`。
-
-kube-apiserver 也会拒绝有效期超过 `zeabur-identityctl kube-config --max-token-lifetime` 所设上限的令牌。这个上限默认为 `1h`。
 
 ## 全站配置
 
@@ -110,7 +108,7 @@ kubectl -n zeabur-identity patch configmap zeabur-identity-settings --type merge
 
 Zeabur 的 **Settings** 页面也会写入同一个 ConfigMap。Zeabur Identity 在每次登录和刷新令牌时读取配置，无需重启。
 
-ConfigMap 或配置键不存在时，Zeabur Identity 会使用默认值。遇到无法识别的值时，Zeabur Identity 会采用更严格的配置，即 `multiple` 或 `true`，并在日志中记录警告。
+ConfigMap 或配置键不存在时，Zeabur Identity 会使用默认值。
 
 ## 限制管理员使用设备绑定的通行密钥（AAL3）
 
@@ -121,14 +119,6 @@ Zeabur Identity 会在登录、添加通行密钥及刷新令牌时，拒绝 iCl
 > This passkey syncs to other devices. Admin accounts here need a security key, or a passkey that stays on one device.
 
 启用后，无论 `teams` 如何配置，管理员会话默认都会在空闲 15 分钟后结束。普通账号不受影响。
-
-NIST SP 800-63B-4 允许同步通行密钥达到的最高等级为 AAL2。设备绑定的通行密钥可符合 AAL3。
-
-<Callout type="warn">
-
-验证器会通过 WebAuthn 备份资格标志 `BE` 报告通行密钥是否可同步。Zeabur Identity 不要求验证器证明（attestation），因此不会验证这项报告。这里的 AAL3 限制会排除同步通行密钥，但无法证明密钥存放在哪种硬件上。
-
-</Callout>
 
 <Steps>
 
@@ -150,8 +140,6 @@ kubectl -n zeabur-identity get zbcred \
 ```sh
 zeabur-identityctl setup-link --username <admin> --reset
 ```
-
-Zeabur 的 **Settings** 页面会先检查当前操作的管理员是否有设备绑定的通行密钥。如果没有，页面会拒绝启用 AAL3。
 
 </Step>
 

@@ -1,7 +1,7 @@
 ---
 title: Zeabur Identity 的架构
 description: 了解 Zeabur Identity 在 Kubernetes 集群中的运行方式、安全特性、组件关系与 crate 分工。
-source: "e8a7ef88ae42"
+source: "90d425f1daba"
 ---
 
 Zeabur Identity 是以通行密钥为主要登录方式的 OpenID Connect Issuer，在自管 Kubernetes 集群中运行。kube-apiserver 使用 [Structured Authentication Configuration][kep-3331]，自行验证 Zeabur Identity 签发的令牌。你可以用通行密钥登录，无需持有无法撤销的长期有效的管理员 kubeconfig。其他 OpenID Connect 客户端，例如 Argo CD、Grafana 和 Headlamp，也能使用同一个 Issuer。
@@ -11,11 +11,11 @@ k3s 已纳入 CI 测试。RKE2 使用相同配置，但尚未验证发行版本�
 ## 安全特性
 
 - **不使用密码。** 通行密钥是主要凭证，使用 WebAuthn，且必须完成用户验证。普通访问也能关联 GitHub 或 Google 账号，作为替代登录方式。
-- **管理员权限只授予管理员账号。** 只有 `accountType: Admin` 的 `User` 会获得 `zeabur:admins` 组，该组绑定 `cluster-admin`。管理员账号只能用通行密钥登录，令牌默认有效期为五分钟，会话也能因空闲而提前结束。如果安装配置启用 AAL3，管理员账号还必须使用绑定设备的通行密钥。普通账号只能获得所属组绑定的权限。所有会话都会在登录 12 小时后结束，kube-apiserver 的配置也会独立限制每个令牌的有效期。
-- **Issuer 不持有长期有效的机密。** 令牌有效期短，且绑定目标受众（audience）。授权码、刷新令牌和链接只存储哈希值，签名密钥会定期轮换。服务账号无权创建 Secret、权限绑定或用户。
-- **自助操作不增加权限。** 账号页面只会操作当前登录用户自己的对象，并通过 UID 匹配。添加或移除通行密钥、关联或取消关联 GitHub 或 Google 账号，都需要重新使用通行密钥完成验证。用户无法移除最后一把通行密钥，也无法取消关联最后一种登录方式。
+- **管理员权限只授予管理员账号。** 只有 `accountType: Admin` 的 `User` 会获得 `zeabur:admins` 组，该组绑定 `cluster-admin`。管理员账号只能用通行密钥登录，令牌默认有效期为五分钟，会话也能因空闲而提前结束。如果安装配置启用 AAL3，管理员账号还必须使用绑定设备的通行密钥。普通账号只能获得所属组绑定的权限。所有会话都会在登录 12 小时后结束。
+- **令牌有效期短。** 令牌绑定目标受众（audience），签名密钥会定期轮换。
+- **用户自行管理登录方式。** 添加或移除通行密钥、关联或取消关联 GitHub 或 Google 账号，都需要重新使用通行密钥完成验证。用户无法移除最后一把通行密钥，也无法取消关联最后一种登录方式。
 - **状态存储在 Kubernetes 中。** 自定义资源存储用户、凭证、客户端、会话与邀请，无需数据库。撤销访问权限与删除数据的顺序，见[退出登录、救援与移除用户](../users/offboarding.mdx)。
-- **体积小。** 镜像只包含一个静态可执行文件，其余内容为空。端到端测试要求登录后 Pod 的 working set 不超过 30 MiB。服务器生成登录页面，每页的脚本压缩后（brotli）不超过 3 KB。
+- **体积小。** 镜像只包含一个静态可执行文件，其余内容为空。
 
 [规范符合度](./conformance.mdx)列出 Zeabur Identity 实现的各项规范要求，以及对应的代码和验证测试。
 

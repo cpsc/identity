@@ -1,7 +1,7 @@
 ---
 title: 在 Ubuntu 的 k3s 上安装，用通行密钥登录 kubectl
 description: 在 Ubuntu 服务器安装 Zeabur Identity、配置 HTTPS 和管理员账号，并从你的电脑用通行密钥登录 k3s 集群。
-source: "78634ead1114"
+source: "3bb46bdf9011"
 ---
 
 在 Ubuntu 服务器安装 Zeabur Identity，配置 HTTPS 和第一个管理员账号后，你就能从自己的电脑用通行密钥登录 k3s 集群，运行 `kubectl`。服务器使用 k3s 内置的 Traefik 处理 Ingress。
@@ -324,8 +324,6 @@ spec:
 EOF
 ```
 
-列出的路径会优先匹配这条路由，其次才是接收所有路径的路由。发现文档与密钥端点不限流，因为 kube-apiserver 和所有客户端都会读取它们。
-
 从你的电脑同时发出 60 个请求，检查限流结果。预期约 20 个返回 200，其余返回 `429 Too Many Requests`：
 
 ```sh
@@ -422,7 +420,7 @@ zeabur-identityctl setup-link --username admin
 
 ### 配置你电脑上的 kubectl
 
-在你的电脑上从服务器复制集群的 CA 证书。这是公开数据，只供 `kubectl` 确认连接的是正确的 API 服务器。
+在你的电脑上从服务器复制集群的 CA 证书。
 
 ```sh
 CA=$(ssh "$SERVER" "grep certificate-authority-data ~/.kube/config | awk '{print \$2}'")

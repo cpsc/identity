@@ -41,7 +41,7 @@ gh release download "$version" --repo zeabur-oss/identity --dir downloaded
 
 ### Verify the signature and checksums
 
-Verify the signature on `SHA256SUMS` first, then use it to check the downloaded files. `identity` ties the signature to the Zeabur Identity release workflow and your selected version.
+Verify the signature on `SHA256SUMS` first, then use it to check the downloaded files.
 
 ```sh
 (
@@ -73,7 +73,7 @@ tar -xzf "downloaded/zeabur-identityctl-$version-linux-$arch.tar.gz"
 
 ### Verify and pull the container image
 
-Read the image digest from the verified `image-digests.txt` file. The digest identifies the image's exact byte content.
+Read the image digest from the verified `image-digests.txt` file.
 
 ```sh
 image=$(awk '$1 == "index" {print $2}' downloaded/image-digests.txt)
@@ -83,8 +83,6 @@ cosign verify-attestation --type cyclonedx --certificate-identity "$identity" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com "$image"
 docker pull --platform "linux/$arch" "$image"
 ```
-
-The image and each platform-specific version have signatures and include the server's SBOM. The signed checksums also cover the CLI archives, downloadable SBOMs, image digests, and `provenance.json`. `provenance.json` records the source commit and build run.
 
 </Step>
 

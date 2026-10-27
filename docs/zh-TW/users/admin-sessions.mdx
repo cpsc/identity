@@ -1,7 +1,7 @@
 ---
 title: 管理員帳號與工作階段
 description: 建立與切換管理員帳號、調整工作階段時長，並設定全站團隊模式與 AAL3 通行密鑰限制。
-source: "988f25d63345"
+source: "26c6aed4ee6e"
 ---
 
 管理員帳號只能用通行密鑰登入，存取權杖的有效期是 5 分鐘。一般帳號的存取權杖有效期是 10 分鐘。你可以調整工作階段時長，也可以要求管理員使用裝置綁定的通行密鑰。每個工作階段最晚在登入後 12 小時結束。
@@ -59,7 +59,7 @@ kubectl -n zeabur-identity get zbuser            # the Type column shows the acc
 
 每次登入都會建立一個工作階段。應用程式會取得短效存取權杖與更新權杖。在工作階段結束前，應用程式會用更新權杖取得新的存取權杖，不必再次使用通行密鑰。
 
-工作階段會在閒置逾時或達到最長時限時結束。預設限制遵循 NIST SP 800-63B-4 的重新驗證指引：
+工作階段會在閒置逾時或達到最長時限時結束。預設限制如下：
 
 | 帳號 | 存取權杖有效期 | 閒置多久後結束工作階段 | 工作階段最晚結束時間 |
 |---|---|---|---|
@@ -82,8 +82,6 @@ Zeabur Identity 不保留單一登入工作階段，因此每次授權請求都�
 | `--refresh-absolute` | `12h` | 從登入起算的工作階段最長時限 |
 
 權杖有效期必須介於 1 分鐘與 1 小時之間。閒置時限不得超過 `--refresh-absolute`。
-
-權杖的有效期超過 `zeabur-identityctl kube-config --max-token-lifetime` 的上限時，kube-apiserver 也會拒絕它。這個上限預設為 `1h`。
 
 ## 全站設定
 
@@ -110,7 +108,7 @@ kubectl -n zeabur-identity patch configmap zeabur-identity-settings --type merge
 
 Zeabur 的 **Settings** 頁面也會將設定寫入同一個 ConfigMap。Zeabur Identity 每次登入與更新權杖時都會讀取設定，不需要重新啟動。
 
-如果 ConfigMap 或設定鍵不存在，Zeabur Identity 會使用預設值。如果設定值無法辨識，Zeabur Identity 會採用較嚴格的設定，也就是 `multiple` 或 `true`，並在日誌中記錄警告。
+如果 ConfigMap 或設定鍵不存在，Zeabur Identity 會使用預設值。
 
 ## 限制管理員使用裝置綁定的通行密鑰（AAL3）
 
@@ -121,14 +119,6 @@ Zeabur Identity 會在登入、新增通行密鑰及更新權杖時，拒絕 iCl
 > This passkey syncs to other devices. Admin accounts here need a security key, or a passkey that stays on one device.
 
 啟用後，不論 `teams` 如何設定，管理員工作階段預設都會在閒置 15 分鐘後結束。一般帳號不受影響。
-
-依 NIST SP 800-63B-4 的規定，同步通行密鑰最高只能達到 AAL2。裝置綁定的通行密鑰則可符合 AAL3。
-
-<Callout type="warn">
-
-驗證器會用 WebAuthn 備份資格旗標 `BE` 回報通行密鑰是否可同步。Zeabur Identity 不要求驗證器證明（attestation），因此不會驗證這項回報。這裡的 AAL3 限制會排除同步通行密鑰，但無法證明金鑰存放在哪種硬體上。
-
-</Callout>
 
 <Steps>
 
@@ -150,8 +140,6 @@ kubectl -n zeabur-identity get zbcred \
 ```sh
 zeabur-identityctl setup-link --username <admin> --reset
 ```
-
-在 Zeabur 的 **Settings** 頁面啟用 AAL3 前，你的管理員帳號要先有不會同步的通行密鑰，沒有就無法啟用。
 
 </Step>
 

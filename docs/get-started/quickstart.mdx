@@ -323,8 +323,6 @@ spec:
 EOF
 ```
 
-This route takes precedence over the catch-all route for the listed paths. The discovery and key endpoints have no rate limit because kube-apiserver and all clients read them.
-
 From your computer, send 60 concurrent requests to check the rate limit. Expect about 20 responses with status 200 and the rest with `429 Too Many Requests`:
 
 ```sh
@@ -421,7 +419,7 @@ Open the output link in your computer's browser and create a passkey. The link w
 
 ### Configure kubectl on your computer
 
-From your computer, copy the cluster's CA certificate from the server. This is public data that `kubectl` uses only to confirm that it has reached the correct API server.
+From your computer, copy the cluster's CA certificate from the server.
 
 ```sh
 CA=$(ssh "$SERVER" "grep certificate-authority-data ~/.kube/config | awk '{print \$2}'")

@@ -1,7 +1,7 @@
 ---
 title: 发行文件与验证
 description: 选择适合平台的 Zeabur Identity 发行文件，下载并验证签名与 checksum 后再运行。
-source: "2d2a26346b77"
+source: "8c6a03852a59"
 ---
 
 到 [GitHub Releases](https://github.com/zeabur-oss/identity/releases) 下载 Zeabur Identity，先验证签名与 checksum 再运行。Zeabur Identity 在 alpha 阶段的发行版本均标记为预发行版。
@@ -42,7 +42,7 @@ gh release download "$version" --repo zeabur-oss/identity --dir downloaded
 
 ### 验证签名与 checksum
 
-先验证 `SHA256SUMS` 的签名，再用它检查下载的文件。`identity` 将签名关联到 Zeabur Identity 的发行工作流和你选择的版本。
+先验证 `SHA256SUMS` 的签名，再用它检查下载的文件。
 
 ```sh
 (
@@ -74,7 +74,7 @@ tar -xzf "downloaded/zeabur-identityctl-$version-linux-$arch.tar.gz"
 
 ### 验证并拉取容器镜像
 
-从已通过检查的 `image-digests.txt` 读取镜像 digest。digest 可标识镜像的确切字节内容。
+从已通过检查的 `image-digests.txt` 读取镜像 digest。
 
 ```sh
 image=$(awk '$1 == "index" {print $2}' downloaded/image-digests.txt)
@@ -84,8 +84,6 @@ cosign verify-attestation --type cyclonedx --certificate-identity "$identity" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com "$image"
 docker pull --platform "linux/$arch" "$image"
 ```
-
-镜像及其各平台版本都有签名，并附带服务器的 SBOM。已签名的 checksum 也涵盖 CLI 压缩包、可下载的 SBOM、镜像 digest 和 `provenance.json`。`provenance.json` 记录源码提交和构建运行记录。
 
 </Step>
 

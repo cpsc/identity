@@ -58,7 +58,7 @@ Directory sync doesn't change an account's admin status. See [Sync users from a 
 
 Each sign-in creates a session. Applications receive a short-lived access token and a refresh token. Until the session ends, they use the refresh token to obtain new access tokens without requiring another passkey sign-in.
 
-A session ends when it reaches its idle timeout or maximum duration. The default limits follow the reauthentication guidance in NIST SP 800-63B-4:
+A session ends when it reaches its idle timeout or maximum duration. The default limits are:
 
 | Account | Access token lifetime | Session idle timeout | Maximum session duration |
 |---|---|---|---|
@@ -81,8 +81,6 @@ Pass the following options to `zeabur-identity` to adjust the limits. When gener
 | `--refresh-absolute` | `12h` | Maximum session duration from sign-in |
 
 Token lifetimes must be between 1 minute and 1 hour. Idle timeouts must not exceed `--refresh-absolute`.
-
-kube-apiserver also rejects tokens whose lifetime exceeds the limit set by `zeabur-identityctl kube-config --max-token-lifetime`. This limit defaults to `1h`.
 
 ## Site-wide settings
 
@@ -109,7 +107,7 @@ kubectl -n zeabur-identity patch configmap zeabur-identity-settings --type merge
 
 The **Settings** page in Zeabur also writes to this ConfigMap. Zeabur Identity reads the settings at each sign-in and token refresh. No restart is required.
 
-If the ConfigMap or a setting key doesn't exist, Zeabur Identity uses the default value. For unrecognized values, Zeabur Identity uses the stricter setting, `multiple` or `true`, and logs a warning.
+If the ConfigMap or a setting key doesn't exist, Zeabur Identity uses the default value.
 
 ## Require device-bound passkeys for admins (AAL3)
 
@@ -120,14 +118,6 @@ Zeabur Identity rejects synced passkeys, such as those in iCloud Keychain or Goo
 > This passkey syncs to other devices. Admin accounts here need a security key, or a passkey that stays on one device.
 
 With this setting enabled, admin sessions end after 15 minutes of inactivity by default, regardless of the `teams` setting. Regular accounts aren't affected.
-
-NIST SP 800-63B-4 permits synced passkeys up to AAL2. Device-bound passkeys can meet AAL3.
-
-<Callout type="warn">
-
-Authenticators report whether a passkey can sync through the WebAuthn backup eligibility flag `BE`. Zeabur Identity doesn't require authenticator attestation, so it doesn't verify this report. The AAL3 restriction here excludes synced passkeys but can't prove what kind of hardware stores the key.
-
-</Callout>
 
 <Steps>
 
@@ -149,8 +139,6 @@ Admins without such a passkey won't be able to sign in until you run the followi
 ```sh
 zeabur-identityctl setup-link --username <admin> --reset
 ```
-
-The **Settings** page in Zeabur first checks whether the admin using the page has a device-bound passkey. If they don't, the page refuses to enable AAL3.
 
 </Step>
 

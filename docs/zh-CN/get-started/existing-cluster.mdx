@@ -1,7 +1,7 @@
 ---
 title: 将 Zeabur Identity 安装到现有集群
 description: 在现有 Kubernetes 集群安装 Zeabur Identity，配置 kube-apiserver 认证，并用第一位管理员的通行密钥登录。
-source: "0420b9ba1429"
+source: "f336adad2664"
 ---
 
 使用集群管理员的 kubeconfig 安装 Zeabur Identity，再将认证配置交给 kube-apiserver。完成后，你就能用通行密钥登录，让 `kubectl` 获取短期令牌。
@@ -9,6 +9,7 @@ source: "0420b9ba1429"
 ## 开始前
 
 - 准备具有 `cluster-admin` 权限的 kubeconfig。
+- 安装 [cert-manager](https://cert-manager.io/docs/installation/kubectl/)。`kube-config` 用它签发内部证书，供 kube-apiserver 连接 Zeabur Identity。未安装时命令会失败，除非加上 `--discovery public`。
 - 准备可访问的 HTTPS Issuer 地址。浏览器必须信任这个地址的 HTTPS 证书，才能创建通行密钥。
 - 确认你保留了[不经过 Zeabur Identity 的入口](../operations/emergency-access.mdx)：使用客户端证书的管理员 kubeconfig，以及每台控制平面节点的 SSH 或控制台访问权限。
 - 记录 kube-apiserver 当前的启动方式和认证配置，并备份配置文件。使用 `generic` 时，还要先确认如何在无法访问 Kubernetes API 的情况下恢复配置。
@@ -63,7 +64,7 @@ zeabur-identityctl kube-config --distro k3s > authn.yaml
 
 命令会输出安装步骤。按输出的说明安装配置，并重启一次 `k3s` 或 `rke2-server`。之后修改有效的 `authn.yaml` 时，kube-apiserver 会在约一分钟内重新加载。
 
-RKE2 使用相同配置，但安装流程尚未验证。
+在 RKE2 上，重启 `rke2-server` 前，先在每台服务器创建 `/etc/rancher/rke2/zeabur-identity/` 并保存 `authn.yaml`。RKE2 只会挂载已存在的文件。
 
 #### 其他集群
 

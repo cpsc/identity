@@ -31,8 +31,7 @@ and restarting a deployment is refused with 403 for an account without that righ
   Every session ends 12 hours after sign-in. Revoke a person's sessions and their access ends
   when the token in hand expires, within ten minutes.
 - **Runs inside the cluster it protects.** One small pod (CI holds its memory under 30 MiB), no database, no extra
-  servers. Tested in CI on k3s; the same configuration covers RKE2, but installation there is
-  unverified. OpenID Connect apps such as Argo CD or Grafana can use the same issuer.
+  servers. Tested in CI on k3s; RKE2 uses the same configuration. OpenID Connect apps such as Argo CD or Grafana can use the same issuer.
 
 ## What it looks like
 

@@ -30,7 +30,7 @@ Tests marked *(cluster)* use k3s `v1.36.5` and run with `--run-ignored only`. Te
 | RFC 8414 OAuth 2.0 Authorization Server Metadata | RFC | Met |
 | RFC 7515 JWS, RFC 7517 JWK, RFC 7518 JWA, RFC 7638 thumbprints | RFC | Met |
 | RFC 7519 JWT, RFC 8725 JWT BCP, RFC 9068 JWT access tokens | RFC | Met |
-| KEP-3331 Structured Authentication Configuration (`apiserver.config.k8s.io/v1`) | GA in Kubernetes 1.34 | Met on k3s; RKE2 configuration generation implemented, clean release installation unverified |
+| KEP-3331 Structured Authentication Configuration (`apiserver.config.k8s.io/v1`) | GA in Kubernetes 1.34 | Met on k3s in CI; verified manually on RKE2 v1.36.5+rke2r1 |
 | RFC 6749 OAuth 2.0 (authorization code, refresh) | RFC | Met |
 | RFC 7636 PKCE | RFC | Met (S256 only) |
 | RFC 9700 OAuth 2.0 Security BCP | BCP 240 | Partial: sender-constrained tokens (DPoP) not implemented |
@@ -107,7 +107,7 @@ Tests marked *(cluster)* use k3s `v1.36.5` and run with `--run-ignored only`. Te
 | `validation.go` | `discoveryURL` https and different from `url` | internal TLS listener at the Service's ClusterIP | *(e2e)* | Met |
 | `oidc.go` | Internal discovery keeps `issuer`; `jwks_uri` from that document | `zeabur-identity-oauth/src/discovery.rs` | `zeabur-identity-oauth: discovery::tests::internal_variant_changes_only_the_jwks_uri`; *(e2e)* | Met |
 | AuthenticationConfiguration | Prefixed usernames and groups; no `system:`; access tokens only (`has(claims.client_id)`); lifetime bound | `zeabur-identity-k8s/src/kube_config.rs` | `zeabur-identity-k8s: kube_config::tests::*`; *(e2e)* `passkey_sign_in_then_kubectl_auth_whoami` | Met |
-| Distributions | `anonymous` per distribution; install steps for K3s/RKE2 | `kube_config.rs` | `zeabur-identity-k8s: kube_config::tests::*` | Partial: configuration generation tested; cluster E2E covers k3s only, RKE2 release installation unverified |
+| Distributions | `anonymous` per distribution; install steps for K3s/RKE2 | `kube_config.rs` | `zeabur-identity-k8s: kube_config::tests::*` | Partial: configuration generation tested; CI cluster E2E covers k3s; verified manually on RKE2 v1.36.5+rke2r1 |
 | Project requirement | `kubectl auth whoami` on k3s | — | *(e2e)* | Met |
 
 ## Kubernetes storage

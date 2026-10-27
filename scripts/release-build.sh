@@ -35,7 +35,7 @@ target_dir="${CARGO_TARGET_DIR:-$root/target}"
 mkdir -p "$target_dir"
 target_dir="$(cd "$target_dir" && pwd)"
 
-# Release binaries are always compiled, never taken from the kache compiler cache (flake.nix).
+# Release binaries are always compiled, never taken from a compiler cache (CONTRIBUTING.md).
 unset RUSTC_WRAPPER
 
 # Embedded cargo-auditable metadata lets Syft inventory dependencies in shipped binaries,

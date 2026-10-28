@@ -8,7 +8,7 @@ on:
       version:
         description: 'Candidate version (must match Cargo.toml); rehearsal never publishes'
         required: true
-        default: v0.0.1
+        default: v0.1.0
       verify_only:
         description: 'Verify existing signed release assets without rebuilding or publishing'
         type: boolean

@@ -46,7 +46,7 @@ itself, so a job runs the same on your machine:
 
 ```sh
 ./scripts/ci.sh --list          # format clippy docs test cargo-deny unsafe-report ui kubernetes
-./scripts/ci.sh format          # cargo fmt, nixfmt, shellcheck, actionlint, check-brand.sh
+./scripts/ci.sh format          # cargo fmt, nixfmt, shellcheck, actionlint
 ./scripts/ci.sh clippy          # cargo lint: all targets and features, -D warnings
 ./scripts/ci.sh test            # and docs, cargo-deny, unsafe-report, ui
 ./scripts/ci.sh kubernetes      # k3s with Docker: see "Disposable k3d cluster" below
@@ -132,10 +132,11 @@ allowlist entry below is added and reviewed, so those pull requests are never me
 
 A dependency that reaches the shipped binaries and contains `unsafe` code or builds native code
 needs an entry in `supply-chain/unsafe-allowlist.toml` with a reason and the date a maintainer
-approved it. `scripts/unsafe-report.sh` scans the shipped dependency graph (normal and build
-dependencies of `zeabur-identity` and `zeabur-identityctl` for the image target), lists every such crate and fails
-on one that is not approved; an entry marked `pending` is a proposal awaiting review. The count
-is a review signal, not an audit.
+approved it. `zeabur-oss-unsafe-report` (from zeabur-oss/.github, run by `scripts/ci.sh
+unsafe-report`) scans the shipped dependency graph (normal and build dependencies of
+`zeabur-identity` and `zeabur-identityctl` for the image target), lists every such crate and fails
+on one that is not approved; an entry marked `pending` is a proposal awaiting review. The count is a
+review signal, not an audit.
 
 ## Tests
 

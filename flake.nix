@@ -8,6 +8,11 @@
       url = "https://flakehub.com/f/oxalica/rust-overlay/0.1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # zeabur-oss-release (scripts/release.sh) and zeabur-oss-unsafe-report (scripts/ci.sh).
+    oss-release = {
+      url = "github:zeabur-oss/.github";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -70,10 +75,11 @@
               jq
               shellcheck
               actionlint
-              # Release signing, SBOM generation and registry transport; pinned by flake.lock.
+              # Releases: SBOM generation and attestation; pinned by flake.lock.
+              inputs.oss-release.packages.${system}.zeabur-oss-release
+              inputs.oss-release.packages.${system}.zeabur-oss-unsafe-report
               cosign
               syft
-              skopeo
               curl
               gh
               binutils

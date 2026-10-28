@@ -12,7 +12,7 @@
     "fmt:check": "oxfmt --check"
   },
   "dependencies": {
-    "@zeabur/design-system": "git+ssh://git@github.com/zeabur-oss/design-system.git#28c09304b3bc9e581a5632997ba6c6f6d239195d"
+    "@zeabur/design-system": "github:zeabur-oss/design-system#28c09304b3bc9e581a5632997ba6c6f6d239195d"
   },
   "devDependencies": {
     "@tailwindcss/cli": "4.3.3",

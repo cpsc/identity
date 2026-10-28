@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.1.0] - 2026-10-28
+## v0.1.0
 
 First alpha for evaluating passkey-based access to self-managed Kubernetes clusters.
 Use a disposable cluster and keep an independent cluster-admin kubeconfig.

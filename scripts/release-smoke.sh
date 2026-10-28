@@ -21,9 +21,9 @@ esac
 archive="$1"
 image="$2"
 work="$(mktemp -d)"
-cluster="zeabur-identity-release-${work##*.}"
+cluster="identity-smoke-${work##*.}"
 cluster="${cluster,,}"
-local_image="zeabur-identity:smoke-${cluster#zeabur-identity-release-}"
+local_image="zeabur-identity:smoke-${cluster#identity-smoke-}"
 namespace=zeabur-identity-release-smoke
 issuer=https://release-smoke.zeabur-identity.invalid
 cluster_started=false

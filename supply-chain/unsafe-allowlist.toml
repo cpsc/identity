@@ -761,6 +761,12 @@ reason = "WebAuthn relying party"
 approved = "2026-10-28"
 
 [[crate]]
+name = "cmov"
+kind = "unsafe"
+reason = "WebAuthn relying party"
+approved = "pending"
+
+[[crate]]
 name = "cpufeatures"
 kind = "unsafe"
 reason = "WebAuthn relying party"
@@ -771,6 +777,12 @@ name = "crypto-bigint"
 kind = "unsafe"
 reason = "WebAuthn relying party"
 approved = "2026-10-28"
+
+[[crate]]
+name = "ctutils"
+kind = "unsafe"
+reason = "WebAuthn relying party"
+approved = "pending"
 
 [[crate]]
 name = "data-encoding"

@@ -1026,9 +1026,15 @@ mod tests {
         let mut device: PasskeyClient<
             Option<passkey::types::Passkey>,
             PresenceOnly,
+            passkey::crypto::aws_lc_rs::AwsLcRsBackend,
             public_suffix::PublicSuffixList,
             (),
-        > = PasskeyClient::new(Authenticator::new(Aaguid::new_empty(), None, PresenceOnly));
+        > = PasskeyClient::new(Authenticator::new(
+            Aaguid::new_empty(),
+            None,
+            PresenceOnly,
+            passkey::crypto::aws_lc_rs::AwsLcRsBackend,
+        ));
         let reply = post(
             &h.app,
             "/setup/options",

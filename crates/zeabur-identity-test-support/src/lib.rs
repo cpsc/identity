@@ -5,6 +5,7 @@ pub mod logging;
 
 use passkey::authenticator::{Authenticator, UiHint, UserCheck, UserValidationMethod};
 use passkey::client::Client as PasskeyClient;
+use passkey::crypto::aws_lc_rs::AwsLcRsBackend;
 use passkey::types::ctap2::{Aaguid, Ctap2Error};
 
 /// A device whose user always passes verification (biometric or PIN).
@@ -40,6 +41,7 @@ impl UserValidationMethod for VerifiedUser {
 pub type Device = PasskeyClient<
     Option<passkey::types::Passkey>,
     VerifiedUser,
+    AwsLcRsBackend,
     public_suffix::PublicSuffixList,
     (),
 >;
@@ -47,5 +49,10 @@ pub type Device = PasskeyClient<
 /// A new device with no passkey.
 #[must_use]
 pub fn device() -> Device {
-    PasskeyClient::new(Authenticator::new(Aaguid::new_empty(), None, VerifiedUser))
+    PasskeyClient::new(Authenticator::new(
+        Aaguid::new_empty(),
+        None,
+        VerifiedUser,
+        AwsLcRsBackend,
+    ))
 }

@@ -5,7 +5,7 @@ description: Back up and record your current deployment, review version differen
 
 Back up and record your current deployment, then review version differences, apply the new configuration, and verify sign-in and permissions. If you need to roll back, use data compatibility to decide whether to switch to the old image or restore the pre-upgrade backup.
 
-### Current limitations
+### Upgrade risks
 
 Zeabur Identity is currently in alpha and provides no upgrade or rollback guarantees. Resource versions are still `v1alpha1`, and there's no conversion mechanism between versions. Until the release notes explicitly guarantee compatibility, don't assume that switching versions in either direction will succeed. Record the full commit and image that's actually running. Don't record only a reusable tag such as `zeabur-identity:dev`.
 
@@ -144,7 +144,7 @@ Check the image that's actually running, readiness, and logs, then complete thes
 - Attempt one operation you have permission to perform and one you don't.
 - Confirm that admin access works.
 
-A ready Pod doesn't mean sign-in works.
+Sign-in can still fail after the Pod is ready, so complete every check above.
 
 </Step>
 

@@ -1,7 +1,7 @@
 ---
 title: 升級與回復 Zeabur Identity
 description: 備份並記錄目前的部署，檢查版本差異後升級 Zeabur Identity，再依資料相容性切回舊版或還原備份。
-source: "59a539cb61a1"
+source: "11c8a979e25e"
 ---
 
 先備份並記錄目前的部署，再檢查版本差異、套用新版設定，確認登入與權限正常。需要回復到舊版時，依資料相容性選擇切回舊映像檔或還原升級前的備份。
@@ -73,7 +73,7 @@ kubectl -n "$NS" rollout history deployment/zeabur-identity > upgrade-record/rol
 
 閱讀兩個版本之間的變更，包括 CRD schema、儲存格式、選項與權杖宣告。
 
-先用備份還原出一份副本，在副本上完整試跑同一套升級流程，也要用既有通行密鑰登入。
+先用備份還原出一份複本，在複本上完整試跑同一套升級流程，也要用既有通行密鑰登入。
 
 </Step>
 
@@ -145,7 +145,7 @@ kubectl -n "$NS" logs deployment/zeabur-identity --tail=200
 - 分別試做一項你有權限執行的操作，以及一項你沒有權限執行的操作。
 - 確認管理員能正常存取。
 
-Pod 就緒不代表登入功能正常。
+Pod 就緒後，登入仍可能失敗，所以上面的驗證都要做完。
 
 </Step>
 
@@ -159,7 +159,7 @@ Pod 就緒不代表登入功能正常。
 
 ### 停止不確定的資料寫入
 
-如果無法確認新版寫入了哪些資料，先停止 Zeabur Identity，避免它繼續寫入：
+如果無法確認新版寫入了哪些資料，先停止 Zeabur Identity，不讓新版繼續寫入：
 
 ```sh
 kubectl -n zeabur-identity scale deployment/zeabur-identity --replicas=0
